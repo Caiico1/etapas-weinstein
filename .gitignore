@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Los informes se regeneran cada día y se publican en GitHub Pages; solo se versiona
+# el historial, que la rutina necesita para detectar cambios de etapa.
+out/*
+!out/historial/
+!out/rutina.log
+
+# Fuera del proyecto
+Users/
+informes/

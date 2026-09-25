@@ -1,0 +1,56 @@
+{
+  "fecha": "2026-09-25",
+  "activos": {
+    "BTC": {
+      "1M": {
+        "etapa": 3,
+        "transicion": "",
+        "vela": "2026-08-01"
+      },
+      "1w": {
+        "etapa": 1,
+        "transicion": "",
+        "vela": "2026-09-14"
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-24"
+      }
+    },
+    "ETH": {
+      "1M": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-08-01"
+      },
+      "1w": {
+        "etapa": 1,
+        "transicion": "",
+        "vela": "2026-09-14"
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-24"
+      }
+    },
+    "SOL": {
+      "1M": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-08-01"
+      },
+      "1w": {
+        "etapa": 1,
+        "transicion": "",
+        "vela": "2026-09-14"
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-24"
+      }
+    }
+  }
+}

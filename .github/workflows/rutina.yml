@@ -1,0 +1,61 @@
+name: Rutina diaria de etapas
+
+on:
+  schedule:
+    - cron: "0 6 * * *"        # 06:00 UTC = 08:00 en España en verano (07:00 en invierno)
+  workflow_dispatch:            # botón "Run workflow" para lanzarla a mano
+  push:
+    branches: [main]
+    paths: ["watchlist.txt", "etapas/**"]   # al cambiar la lista o el código, se actualiza
+
+permissions:
+  contents: write               # guardar el historial en el repositorio
+  pages: write                  # publicar la web
+  id-token: write
+
+concurrency:
+  group: rutina
+  cancel-in-progress: false
+
+jobs:
+  rutina:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Tests
+        run: python -m pytest -q
+
+      - name: Ejecutar la rutina
+        run: python -m etapas --rutina
+
+      - name: Guardar el historial (para detectar cambios mañana)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add out/historial out/rutina.log
+          if ! git diff --cached --quiet; then
+            git commit -m "Historial $(date -u +%F)"
+            git pull --rebase
+            git push
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,8 @@
+# Lista de seguimiento de etapas
+# Una moneda por línea: el símbolo tal como cotiza en Binance, sin /USDT (BTC, ETH, SOL...).
+# Lo que va detrás de # es un comentario. Las líneas vacías se ignoran.
+# Para dejar de seguir una moneda sin borrarla, ponle # delante.
+
+BTC
+ETH
+SOL
