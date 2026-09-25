@@ -47,6 +47,8 @@ class TimeframeResult:
     est_high: float | None = None
     est_period: str = ""
     last_price: float | None = None   # último precio conocido, incluida la vela en curso
+    atr: float | None = None
+    ma_run: int = 0                   # velas seguidas que la media sube (+) o baja (−)
     provisional: "TimeframeResult | None" = None
     history: pd.DataFrame | None = field(default=None, repr=False)   # para el HTML
     candles: pd.DataFrame | None = field(default=None, repr=False)
@@ -149,6 +151,7 @@ def snapshot(hist: pd.DataFrame, cfg: TimeframeConfig, ma_len: int) -> Timeframe
         prior_since=hist.index[anchor].strftime("%Y-%m-%d") if anchor >= 0 else "",
         range_top=_f(row["range_top"]), range_bottom=_f(row["range_bottom"]),
         volume_ratio=_f(row["vol_ratio"]), breakout=row["breakout"],
+        atr=_f(row["atr"]), ma_run=int(row["ma_run"]),
         confirm_level=_f(confirm), invalid_level=_f(invalid),
     )
 

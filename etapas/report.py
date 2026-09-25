@@ -9,6 +9,7 @@ import pandas as pd
 from .analysis import AssetResult, TimeframeResult
 from .classifier import STAGE_NAMES
 from .config import DISCLAIMER, ORDER
+from .explain import KEY_ZONE_NOTE, KEY_ZONE_TITLE, key_zone, meaning
 
 STAGE_COLORS = {1: "#2563eb", 2: "#16a34a", 3: "#eab308", 4: "#dc2626"}
 HEADERS = ["Marco", "Etapa", "Confianza", "Transición", "Precio", "Media clave", "Pendiente",
@@ -196,6 +197,15 @@ def render_text(asset: AssetResult) -> str:
     out.append(render_table(rows))
     out.append(RANGE_NOTE)
     out.append("")
+    out.append("Qué significa:")
+    out.extend(f"  {asset.timeframes[k].label}: {meaning(asset.timeframes[k], asset.kind)}" for k in ORDER)
+    zone = key_zone(asset)
+    if zone:
+        out.append("")
+        out.append(f"⚠ {KEY_ZONE_TITLE.upper()}")
+        out.extend(f"  · {z}" for z in zone)
+        out.append(f"  ({KEY_ZONE_NOTE})")
+    out.append("")
     out.append("Métricas:")
     out.extend(detail_line(asset.timeframes[k]) for k in ORDER)
     notes = [f"  [{asset.timeframes[k].label}] {n}" for k in ORDER for n in asset.timeframes[k].notes]
@@ -212,9 +222,16 @@ def render_text(asset: AssetResult) -> str:
     return "\n".join(out)
 
 
+def _asset_json(a: AssetResult) -> dict:
+    d = a.to_dict() | {"alineacion": alignment_summary(a), "zona_clave": key_zone(a)}
+    for k, tf in d["marcos"].items():
+        tf["que_significa"] = meaning(a.timeframes[k], a.kind)
+    return d
+
+
 def render_json(assets: list[AssetResult]) -> str:
     payload = {
-        "activos": [a.to_dict() | {"alineacion": alignment_summary(a)} for a in assets],
+        "activos": [_asset_json(a) for a in assets],
         "aviso": DISCLAIMER,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
@@ -296,8 +313,19 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
         return None
     fig = build_figure(asset)
     rows = [table_row(asset.timeframes[k]) for k in ORDER]
-    thead = "".join(f"<th>{html.escape(h)}</th>" for h in HEADERS)
-    tbody = "".join("<tr>" + "".join(f"<td>{html.escape(c)}</td>" for c in r) + "</tr>" for r in rows)
+    meanings = [meaning(asset.timeframes[k], asset.kind) for k in ORDER]
+    # "Qué significa" va justo después de "Etapa", para que se lea sin desplazar la tabla
+    heads = HEADERS[:2] + ["Qué significa"] + HEADERS[2:]
+    thead = "".join(f"<th>{html.escape(h)}</th>" for h in heads)
+    cell = lambda c: f"<td>{html.escape(c)}</td>"
+    tbody = "".join("<tr>" + "".join(cell(c) for c in r[:2]) + f'<td class="meaning">{html.escape(m)}</td>'
+                    + "".join(cell(c) for c in r[2:]) + "</tr>" for r, m in zip(rows, meanings))
+    zone = key_zone(asset)
+    zone_html = ""
+    if zone:
+        items = "".join(f"<li>{html.escape(z)}</li>" for z in zone)
+        zone_html = (f'<div class="keyzone"><b>⚠ {html.escape(KEY_ZONE_TITLE)}</b><ul>{items}</ul>'
+                     f'<p>{html.escape(KEY_ZONE_NOTE)}</p></div>')
     details = "".join(f"<li>{html.escape(detail_line(asset.timeframes[k]).strip())}</li>" for k in ORDER)
     summary = html.escape(alignment_summary(asset)).replace("\n", "<br>")
     back = '<p><a href="index.html">← Todos los activos</a></p>' if index_link else ""
@@ -310,6 +338,12 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
  body {{ font-family: system-ui, sans-serif; margin: 24px; color: #111; background: #fff; }}
  table {{ border-collapse: collapse; font-size: 14px; margin: 12px 0; }}
  th, td {{ border: 1px solid #ddd; padding: 6px 10px; text-align: left; white-space: nowrap; }}
+ td.meaning {{ white-space: normal; min-width: 320px; max-width: 460px; font-size: 13px; }}
+ .keyzone {{ background: #fffbeb; border: 1px solid #f59e0b; border-left: 6px solid #f59e0b;
+             border-radius: 6px; padding: 10px 14px; margin: 12px 0; }}
+ .keyzone ul {{ margin: 6px 0; padding-left: 20px; }}
+ .keyzone li {{ margin: 4px 0; font-size: 14px; }}
+ .keyzone p {{ color: #78350f; font-size: 12px; margin: 4px 0 0; }}
  th {{ background: #f4f4f5; }}
  .wrap {{ overflow-x: auto; }}
  li {{ font-size: 13px; margin: 4px 0; }}
@@ -321,6 +355,7 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
 {token_html}
 <div class="wrap"><table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table></div>
 <p class="note">{html.escape(RANGE_NOTE)}</p>
+{zone_html}
 <p class="summary">{summary}</p>
 <details><summary>Métricas que justifican cada etapa</summary><ul>{details}</ul></details>
 {fig.to_html(full_html=False, include_plotlyjs="cdn")}
@@ -379,6 +414,10 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
         changes_html = f"<h2>Cambios desde {prev_date}</h2><p class='muted'>Ninguno.</p>"
     else:
         changes_html = "<p class='muted'>Primera ejecución: los cambios aparecerán a partir de la próxima.</p>"
+    zone_items = "".join(
+        f"<li><b>{html.escape(a.title)}</b> · {html.escape(z)}</li>" for a in assets for z in key_zone(a))
+    zone_html = (f'<div class="keyzone"><b>⚠ {html.escape(KEY_ZONE_TITLE)}</b><ul>{zone_items}</ul>'
+                 f'<p>{html.escape(KEY_ZONE_NOTE)}</p></div>') if zone_items else ""
     warn_html = ("<h2>Avisos</h2><ul>" + "".join(f"<li>{html.escape(w)}</li>" for w in warnings)
                  + "</ul>") if warnings else ""
     legend = " ".join(f'<span class="chip" style="background:{c}">{s}</span> {STAGE_NAMES[s]}'
@@ -391,6 +430,11 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
  body {{ font-family: system-ui, sans-serif; margin: 24px; color: #111; background: #fff; }}
  table {{ border-collapse: collapse; font-size: 14px; margin: 12px 0; }}
  th, td {{ border: 1px solid #ddd; padding: 8px 10px; text-align: left; vertical-align: top; }}
+ .keyzone {{ background: #fffbeb; border: 1px solid #f59e0b; border-left: 6px solid #f59e0b;
+             border-radius: 6px; padding: 10px 14px; margin: 12px 0; }}
+ .keyzone ul {{ margin: 6px 0; padding-left: 20px; }}
+ .keyzone li {{ margin: 4px 0; font-size: 14px; }}
+ .keyzone p {{ color: #78350f; font-size: 12px; margin: 4px 0 0; }}
  th {{ background: #f4f4f5; }}
  .wrap {{ overflow-x: auto; }}
  .chip {{ display: inline-block; min-width: 18px; text-align: center; color: #fff; border-radius: 4px;
@@ -406,6 +450,7 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
 </style></head><body>
 <h1>Etapas de Weinstein · resumen</h1>
 <p class="muted">Actualizado {now:%Y-%m-%d %H:%M} UTC · solo velas cerradas · {legend}</p>
+{zone_html}
 {changes_html}
 <div class="wrap"><table>
 <thead><tr><th>Activo</th><th>Mensual (contexto)</th><th>Semanal (tendencia)</th>
