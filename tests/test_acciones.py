@@ -98,3 +98,24 @@ def test_stock_asset_end_to_end(monkeypatch, tmp_path):
     html = index.read_text(encoding="utf-8")
     assert 'href="etapas_accion_NVDA.html"' in html and "NVDAon" in html
     assert rutina.snapshot([asset]).keys() == {"accion:NVDA"}
+
+
+def test_chart_level_lines_and_labels_on_log_axis(monkeypatch):
+    """Líneas de nivel en precio; etiquetas en log10(precio) (así lo exige Plotly en ejes log)."""
+    import math
+
+    from etapas.report import build_figure
+
+    def fake_fetch(ticker, cfg):
+        df, _ = cycle_for(cfg, seed=2)
+        return data.Candles(df, None, "test")
+    monkeypatch.setattr(analysis, "fetch_stock_candles", fake_fetch)
+    monkeypatch.setattr(analysis, "fetch_ondo_token", lambda t: None)
+    asset = analysis.analyze_symbol("accion:TEST")
+    fig = build_figure(asset)
+    daily = asset.timeframes["1d"]
+    lines = [s for s in fig.layout.shapes if s.type == "line" and s.yref == "y3"]
+    assert any(math.isclose(s.y0, daily.confirm_level) for s in lines)
+    label = next(a for a in fig.layout.annotations if a.text.startswith("Confirma") and a.yref == "y3")
+    assert math.isclose(label.y, math.log10(daily.confirm_level))
+    assert all(ax.type == "log" for ax in (fig.layout.yaxis, fig.layout.yaxis2, fig.layout.yaxis3))

@@ -3,6 +3,7 @@ import html
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from .analysis import AssetResult, TimeframeResult
@@ -234,6 +235,12 @@ def _stage_runs(hist: pd.DataFrame):
     return runs
 
 
+def _log_y(price: float) -> float:
+    """Posición de una etiqueta sobre un eje logarítmico. Plotly espera log10(precio) en las
+    anotaciones de ejes 'log' (las líneas horizontales, en cambio, van en precio)."""
+    return float(np.log10(price))
+
+
 def build_figure(asset: AssetResult):
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
@@ -258,17 +265,18 @@ def build_figure(asset: AssetResult):
         for x0, x1, s in _stage_runs(h):
             fig.add_vrect(x0=x0, x1=x1, fillcolor=STAGE_COLORS[s], opacity=0.15,
                           line_width=0, layer="below", row=i, col=1)
-        for y, name, color in [(r.confirm_level, "Confirma", "#16a34a"),
-                               (r.invalid_level, "Invalida", "#dc2626")]:
-            if y is not None:
-                fig.add_hline(y=y, line_dash="dash", line_color=color, line_width=1.2,
-                              annotation_text=f"{name} {fmt_price(y)}",
-                              annotation_position="top left", row=i, col=1)
-        for y, name in [(r.est_low, "Mín. est."), (r.est_high, "Máx. est.")]:
-            if y is not None:
-                fig.add_hline(y=y, line_dash="dot", line_color="#64748b", line_width=1,
-                              annotation_text=f"{name} {r.est_period} {fmt_price(y)}",
-                              annotation_position="bottom right", row=i, col=1)
+        levels = [(r.confirm_level, f"Confirma {fmt_price(r.confirm_level)}", "#16a34a", "dash", 2.2),
+                  (r.invalid_level, f"Invalida {fmt_price(r.invalid_level)}", "#dc2626", "dash", 2.2),
+                  (r.est_low, f"Mín. est. {r.est_period} {fmt_price(r.est_low)}", "#475569", "dot", 1.4),
+                  (r.est_high, f"Máx. est. {r.est_period} {fmt_price(r.est_high)}", "#475569", "dot", 1.4)]
+        axis = "" if i == 1 else str(i)
+        for y, text, color, dash, width in levels:
+            if y is None or y <= 0:
+                continue
+            fig.add_hline(y=y, line_dash=dash, line_color=color, line_width=width, row=i, col=1)
+            fig.add_annotation(text=text, x=1, xref=f"x{axis} domain", xanchor="right",
+                               y=_log_y(y), yref=f"y{axis}", yanchor="bottom", showarrow=False,
+                               font=dict(size=11, color=color), bgcolor="rgba(255,255,255,0.8)")
         fig.update_xaxes(rangeslider_visible=False, row=i, col=1)
         fig.update_yaxes(type="log", row=i, col=1)
     # Leyenda de colores de etapa
