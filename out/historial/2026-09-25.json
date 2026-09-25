@@ -68,6 +68,74 @@
         "transicion": "",
         "vela": "2026-09-24"
       }
+    },
+    "accion:NVDA": {
+      "1M": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-08-01"
+      },
+      "1w": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-14"
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-24"
+      }
+    },
+    "accion:TSLA": {
+      "1M": {
+        "etapa": 3,
+        "transicion": "",
+        "vela": "2026-08-01"
+      },
+      "1w": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-09-14"
+      },
+      "1d": {
+        "etapa": 1,
+        "transicion": "",
+        "vela": "2026-09-24"
+      }
+    },
+    "accion:SPY": {
+      "1M": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-08-01"
+      },
+      "1w": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-14"
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-24"
+      }
+    },
+    "accion:BE": {
+      "1M": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-08-01"
+      },
+      "1w": {
+        "etapa": 2,
+        "transicion": "2→3",
+        "vela": "2026-09-14"
+      },
+      "1d": {
+        "etapa": 3,
+        "transicion": "",
+        "vela": "2026-09-24"
+      }
     }
   }
 }
