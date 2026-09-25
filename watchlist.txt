@@ -11,3 +11,7 @@ BTC
 ETH
 SOL
 ADA
+accion:NVDA
+accion:TSLA
+accion:SPY
+accion:BE     # Bloom Energy
