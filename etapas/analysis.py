@@ -6,8 +6,9 @@ import numpy as np
 import pandas as pd
 
 from .classifier import STAGE_NAMES, classify, levels
-from .config import ORDER, TIMEFRAMES, TimeframeConfig
+from .config import ORDER, RANGE_QUANTILE, TIMEFRAMES, TimeframeConfig
 from .data import Candles, DataError, fetch_candles
+from .indicators import expected_range
 
 
 @dataclass
@@ -42,6 +43,9 @@ class TimeframeResult:
     breakout: str = ""
     confirm_level: float | None = None
     invalid_level: float | None = None
+    est_low: float | None = None      # rango estimado de la vela en curso
+    est_high: float | None = None
+    est_period: str = ""
     provisional: "TimeframeResult | None" = None
     history: pd.DataFrame | None = field(default=None, repr=False)   # para el HTML
     candles: pd.DataFrame | None = field(default=None, repr=False)
@@ -129,6 +133,9 @@ def analyze_candles(candles: Candles, cfg: TimeframeConfig, provisional: bool = 
     res.notes = candles.notes + notes
     res.source = candles.source
     res.history, res.candles = hist, df
+    if res.status == "ok":
+        low, high = expected_range(df, hist["atr"], RANGE_QUANTILE, cfg.range_lookback)
+        res.est_low, res.est_high, res.est_period = _f(low), _f(high), cfg.period_name
     if provisional and candles.current is not None:
         cur = pd.concat([df, candles.current.to_frame().T.astype(float)])
         res.provisional = snapshot(classify(cur, cfg, ma_len), cfg, ma_len)

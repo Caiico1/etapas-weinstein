@@ -14,6 +14,8 @@ class TimeframeConfig:
     history: int           # velas a descargar (>= 3 × media + tendencia previa)
     atr: int = 14
     volume_ma: int = 20
+    range_lookback: int = 250  # velas pasadas para estimar el rango de fluctuación
+    period_name: str = ""      # cómo se llama la vela en curso ("hoy", "esta semana"...)
 
     @property
     def position_window(self) -> int:
@@ -27,11 +29,14 @@ class TimeframeConfig:
 
 TIMEFRAMES: dict[str, TimeframeConfig] = {
     "1d": TimeframeConfig("1d", "Diario", ma=50, ma_alt=None, slope_window=10,
-                          pivot_window=5, prior_window=60, history=730),
+                          pivot_window=5, prior_window=60, history=730,
+                          range_lookback=250, period_name="hoy"),
     "1w": TimeframeConfig("1w", "Semanal", ma=30, ma_alt=None, slope_window=5,
-                          pivot_window=3, prior_window=30, history=400),
+                          pivot_window=3, prior_window=30, history=400,
+                          range_lookback=104, period_name="esta semana"),
     "1M": TimeframeConfig("1M", "Mensual", ma=20, ma_alt=12, slope_window=3,
-                          pivot_window=2, prior_window=18, history=240),
+                          pivot_window=2, prior_window=18, history=240,
+                          range_lookback=48, period_name="este mes"),
 }
 
 # Orden de presentación: contexto → tendencia principal → momento de entrada
@@ -58,6 +63,10 @@ WEIGHTS = {
     "previa": 0.15,
     "volumen": 0.05,
 }
+
+# Rango estimado de fluctuación: cada extremo usa el cuantil RANGE_QUANTILE de los movimientos
+# pasados (0.9 ⇒ cada extremo se supera ~1 de cada 10 velas; ~80 % de velas dentro del rango)
+RANGE_QUANTILE = 0.9
 
 # Confianza = puntuación 1ª − puntuación 2ª
 CONF_HIGH = 30

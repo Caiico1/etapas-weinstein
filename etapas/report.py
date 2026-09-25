@@ -11,7 +11,10 @@ from .config import DISCLAIMER, ORDER
 
 STAGE_COLORS = {1: "#2563eb", 2: "#16a34a", 3: "#eab308", 4: "#dc2626"}
 HEADERS = ["Marco", "Etapa", "Confianza", "Transición", "Precio", "Media clave", "Pendiente",
-           "Estructura", "Nivel que confirma", "Nivel que invalida"]
+           "Estructura", "Nivel que confirma", "Nivel que invalida", "Mín. estimado", "Máx. estimado"]
+RANGE_NOTE = ("Mín./máx. estimado: rango en el que se espera que fluctúe el precio durante la vela en "
+              "curso (hoy, esta semana, este mes), medido desde el último cierre con la volatilidad "
+              "actual. En el histórico, ~8 de cada 10 velas quedaron dentro. No indica dirección.")
 
 
 def fmt_price(x) -> str:
@@ -32,8 +35,7 @@ def fmt_pct(x, sign: bool = True) -> str:
 
 def table_row(r: TimeframeResult) -> list[str]:
     if r.status != "ok":
-        return [r.label, r.message if r.status == "insuficiente" else "error",
-                "", "", "", "", "", "", "", ""]
+        return [r.label, r.message if r.status == "insuficiente" else "error"] + [""] * (len(HEADERS) - 2)
     return [
         r.label,
         f"{r.stage} · {r.stage_name}",
@@ -45,6 +47,8 @@ def table_row(r: TimeframeResult) -> list[str]:
         r.structure,
         fmt_price(r.confirm_level),
         fmt_price(r.invalid_level),
+        fmt_price(r.est_low),
+        fmt_price(r.est_high),
     ]
 
 
@@ -68,7 +72,14 @@ def detail_line(r: TimeframeResult) -> str:
             f"±{r.slope_threshold:.1%} → {r.slope_label} · {fmt_pct(r.pct_above, False)} de cierres "
             f"sobre la media, {r.crosses} cruces · estructura {r.structure} · tendencia previa {prior} · "
             f"rango {fmt_price(r.range_bottom)}–{fmt_price(r.range_top)} · volumen {vol} su media{brk} · "
-            f"puntuaciones {scores}")
+            f"puntuaciones {scores}{_range_text(r)}")
+
+
+def _range_text(r: TimeframeResult) -> str:
+    if r.est_low is None or r.est_high is None or not r.price:
+        return ""
+    return (f" · rango estimado {r.est_period}: {fmt_price(r.est_low)}–{fmt_price(r.est_high)} "
+            f"({(r.est_low / r.price - 1):+.1%} / {(r.est_high / r.price - 1):+.1%})")
 
 
 def _stage_text(r: TimeframeResult) -> str:
@@ -167,6 +178,7 @@ def render_text(asset: AssetResult) -> str:
         if r.provisional:
             rows.append(table_row(r.provisional))
     out.append(render_table(rows))
+    out.append(RANGE_NOTE)
     out.append("")
     out.append("Métricas:")
     out.extend(detail_line(asset.timeframes[k]) for k in ORDER)
@@ -237,6 +249,11 @@ def build_figure(asset: AssetResult):
                 fig.add_hline(y=y, line_dash="dash", line_color=color, line_width=1.2,
                               annotation_text=f"{name} {fmt_price(y)}",
                               annotation_position="top left", row=i, col=1)
+        for y, name in [(r.est_low, "Mín. est."), (r.est_high, "Máx. est.")]:
+            if y is not None:
+                fig.add_hline(y=y, line_dash="dot", line_color="#64748b", line_width=1,
+                              annotation_text=f"{name} {r.est_period} {fmt_price(y)}",
+                              annotation_position="bottom right", row=i, col=1)
         fig.update_xaxes(rangeslider_visible=False, row=i, col=1)
         fig.update_yaxes(type="log", row=i, col=1)
     # Leyenda de colores de etapa
@@ -272,11 +289,13 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
  th {{ background: #f4f4f5; }}
  .wrap {{ overflow-x: auto; }}
  li {{ font-size: 13px; margin: 4px 0; }}
+ .note {{ color: #555; font-size: 12px; margin: 0 0 12px; }}
  .summary {{ background: #f8fafc; border-left: 4px solid #7c3aed; padding: 10px 14px; }}
  .disclaimer {{ color: #666; font-size: 13px; margin-top: 24px; }}
 </style></head><body>
 {back}<h1>Etapas de Weinstein · {asset.symbol}</h1>
 <div class="wrap"><table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table></div>
+<p class="note">{html.escape(RANGE_NOTE)}</p>
 <p class="summary">{summary}</p>
 <details><summary>Métricas que justifican cada etapa</summary><ul>{details}</ul></details>
 {fig.to_html(full_html=False, include_plotlyjs="cdn")}
@@ -299,7 +318,8 @@ def _stage_cell(r: TimeframeResult) -> str:
     trans = f' <span class="trans">{r.transition}</span>' if r.transition else ""
     return (f'<td><span class="chip" style="background:{STAGE_COLORS[r.stage]}">{r.stage}</span> '
             f'{html.escape(r.stage_name)}{trans}<br><span class="muted">confianza {r.confidence_label} · '
-            f'confirma {fmt_price(r.confirm_level)} · invalida {fmt_price(r.invalid_level)}</span></td>')
+            f'confirma {fmt_price(r.confirm_level)} · invalida {fmt_price(r.invalid_level)}<br>'
+            f'rango {html.escape(r.est_period)}: {fmt_price(r.est_low)} – {fmt_price(r.est_high)}</span></td>')
 
 
 def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str | None,
@@ -358,6 +378,7 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
 <thead><tr><th>Activo</th><th>Mensual (contexto)</th><th>Semanal (tendencia)</th>
 <th>Diario (entrada)</th><th>Alineación</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table></div>
+<p class="muted">{html.escape(RANGE_NOTE)}</p>
 {warn_html}
 <p class="disclaimer">{DISCLAIMER}</p>
 </body></html>"""

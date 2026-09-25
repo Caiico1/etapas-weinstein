@@ -118,6 +118,29 @@ Parámetros en [`etapas/config.py`](etapas/config.py):
 
 La línea "Métricas" de la salida muestra todos los valores que justifican cada etapa.
 
+### Rango estimado de fluctuación (columnas Mín. / Máx. estimado)
+
+Es el rango en el que se espera que se mueva el precio durante la **vela en curso** (hoy, esta
+semana, este mes), contado desde el último cierre. Mide cuánto se mueve el precio, no hacia dónde:
+
+1. Para cada vela pasada (250 días, 104 semanas o 48 meses) se mide cuántos ATR se alejaron su
+   máximo y su mínimo del cierre anterior.
+2. Mín. = último cierre − percentil 90 de las bajadas × ATR actual.
+   Máx. = último cierre + percentil 90 de las subidas × ATR actual.
+3. Así se adapta a la volatilidad actual y a la asimetría real entre subidas y bajadas. El
+   percentil se ajusta con `RANGE_QUANTILE` en `config.py`.
+
+Comprobación fuera de muestra (el rango de cada vela se calcula solo con los datos anteriores
+a ella), sep-2026:
+
+| | Diario | Semanal | Mensual |
+|---|---|---|---|
+| Velas dentro del rango (BTC / ETH / SOL) | 81 / 80 / 79 % | 77 / 78 / 77 % | 75 / 75 / 76 % |
+| Anchura media del rango | ±4–6 % | ±11–23 % | ±39–57 % |
+
+En semanal y mensual el precio se sale algo más de lo previsto, porque las criptomonedas tienen
+movimientos extremos más frecuentes que los que refleja el pasado reciente.
+
 ### Reglas añadidas al diseño original (y por qué)
 
 Todas se descubrieron en las pruebas y se pueden ajustar en `classifier.py`/`config.py`:
