@@ -1,0 +1,2 @@
+# El log de la rutina solo crece: si dos ejecuciones coinciden, se conservan las líneas de ambas
+out/rutina.log merge=union
