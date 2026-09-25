@@ -38,8 +38,10 @@ def test_key_zone_crossed_near_and_far():
     crossed = key_zone(_asset({"1w": weekly, "1d": daily}, last_price=112))
     assert len(crossed) == 1 and "ya está por encima del nivel que confirma (110.00)" in crossed[0]
     assert "domingo 27/09" in crossed[0] and "pasaría a etapa 2" in crossed[0]
-    near = key_zone(_asset({"1w": weekly, "1d": daily}, last_price=107))   # a 3 < 0.5 × ATR(8)=4
-    assert len(near) == 1 and "está a 2.8% del nivel que confirma" in near[0]
+    near = key_zone(_asset({"1w": weekly, "1d": daily}, last_price=108.5))  # a 1.5 < 0.25 × ATR(8)=2
+    assert len(near) == 1 and "está a 1.4% del nivel que confirma" in near[0]
+    assert "la vela semanal" in near[0]
+    assert key_zone(_asset({"1w": weekly, "1d": daily}, last_price=107)) == []      # a 3 > 2
     assert key_zone(_asset({"1w": weekly, "1d": daily}, last_price=100)) == []
 
 

@@ -8,6 +8,7 @@ from .data import candle_close_time
 
 _UNITS = {"1d": ("día", "días"), "1w": ("semana", "semanas"), "1M": ("mes", "meses")}
 _UNITS_STOCK = {**_UNITS, "1d": ("sesión", "sesiones")}
+_CANDLE = {"1d": "diaria", "1w": "semanal", "1M": "mensual"}
 _WEEKDAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
 # Qué pasaría si se cruza cada nivel, según la etapa
@@ -19,7 +20,7 @@ _ON_INVALID = {1: "la base fallaría y la caída podría continuar",
                2: "debilitaría la tendencia alcista",
                3: "anularía el techo y podría volver la etapa 2",
                4: "pondría en duda la tendencia bajista"}
-NEAR_ATR = 0.5   # "cerca" = a menos de medio ATR del marco
+NEAR_ATR = 0.25  # "cerca" = a menos de un cuarto de ATR del marco
 
 
 def _p(x) -> str:
@@ -88,7 +89,8 @@ def next_close(r: TimeframeResult, kind: str) -> str:
 
 
 def key_zone(asset: AssetResult) -> list[str]:
-    """Niveles que el precio actual ya ha cruzado o tiene muy cerca, con su consecuencia."""
+    """Niveles que el precio actual ya ha cruzado o tiene muy cerca (a menos de NEAR_ATR × ATR),
+    con su consecuencia."""
     price = asset.last_price
     if asset.error or price is None:
         return []
@@ -98,7 +100,7 @@ def key_zone(asset: AssetResult) -> list[str]:
         if r.status != "ok" or r.atr is None:
             continue
         up = r.stage in (1, 2)
-        marco = r.label.lower()
+        marco = _CANDLE[r.timeframe]
         for level, name, consequences, cross_up in (
                 (r.confirm_level, "que confirma", _ON_CONFIRM, up),
                 (r.invalid_level, "que invalida", _ON_INVALID, not up)):
