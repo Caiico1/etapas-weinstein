@@ -77,6 +77,13 @@ tarea de Windows, pero en los servidores de GitHub, así que funciona con el PC 
 - La lista se edita desde la web de GitHub: abre `watchlist.txt`, pulsa el lápiz y luego
   "Commit changes". La web se actualiza en un par de minutos.
 - Si la ejecución falla, GitHub envía un correo a la cuenta.
+- **Avisos por correo**: si hay novedades, la rutina abre una *issue* en el repositorio y te la
+  asigna, y GitHub la envía por correo. Cuenta como novedad un cambio de etapa, una transición
+  nueva o un cierre que cruce el nivel que confirma o que invalida. Solo se miran velas nuevas
+  cerradas, así que el semanal y el mensual avisan como mucho una vez por vela. Si no hay
+  novedades, no llega nada. Para probarlo: Actions → Rutina diaria de etapas → Run workflow →
+  marca "Enviar un aviso de prueba por correo". Los correos se configuran en
+  github.com/settings/notifications.
 - Los servidores de GitHub están en EE. UU., donde `api.binance.com` está bloqueada. Por eso la
   herramienta usa `data-api.binance.vision`, la API pública de solo datos de Binance, antes de
   recurrir a Kraken.

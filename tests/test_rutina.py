@@ -77,3 +77,42 @@ def test_routine_missing_or_empty_list(tmp_path):
     vacia = tmp_path / "vacia.txt"
     vacia.write_text("# nada\n", encoding="utf-8")
     assert rutina.run(vacia, tmp_path / "out") == 1
+
+
+def _tf(etapa, vela, cierre, confirma, invalida):
+    return {"etapa": etapa, "transicion": "", "vela": vela, "cierre": cierre,
+            "confirma": confirma, "invalida": invalida}
+
+
+def test_level_alerts_direction_and_new_candle_only():
+    prev = {"ETH": {"1w": _tf(1, "2026-09-14", 2645, 2668, 1750),     # base: confirma arriba
+                    "1d": _tf(4, "2026-09-24", 100, 90, 110),         # bajista: confirma abajo
+                    "1M": _tf(2, "2026-08-01", 2468, 3000, 2000)}}
+    curr = {"ETH": {"1w": _tf(2, "2026-09-21", 2700, 2900, 2400),     # cierra sobre 2668
+                    "1d": _tf(4, "2026-09-25", 115, 95, 120),         # cierra sobre 110 → invalida
+                    "1M": _tf(2, "2026-08-01", 1900, 3000, 2000)}}    # misma vela → sin aviso
+    texts = [(a["marco"], a["texto"]) for a in rutina.level_alerts(prev, curr)]
+    assert len(texts) == 2
+    assert texts[0][0] == "Semanal" and "por encima del nivel que confirma" in texts[0][1]
+    assert texts[1][0] == "Diario" and "por encima del nivel que invalida" in texts[1][1]
+
+
+def test_alert_files_written_only_with_news(tmp_path, monkeypatch):
+    monkeypatch.setenv("ETAPAS_WEB_URL", "https://ejemplo.github.io/etapas/")
+    items = [{"simbolo": "ETH", "marco": "Semanal", "texto": "etapa 1 → 2"}]
+    path = rutina.write_alerts(items, "2026-09-24", tmp_path, "2026-09-25")
+    body = path.read_text(encoding="utf-8")
+    assert "**ETH** Semanal: etapa 1 → 2" in body and "ejemplo.github.io" in body
+    assert (tmp_path / "alertas_titulo.txt").read_text(encoding="utf-8") == "Etapas 2026-09-25: 1 novedades"
+    assert rutina.write_alerts([], None, tmp_path, "2026-09-26") is None
+    assert not (tmp_path / "alertas.md").exists()        # se borra el aviso del día anterior
+
+
+def test_routine_test_alert(tmp_path, monkeypatch):
+    monkeypatch.setattr(rutina, "analyze_symbol", _fake_analyze)
+    monkeypatch.setenv("ETAPAS_AVISO_PRUEBA", "1")
+    lista = tmp_path / "w.txt"
+    lista.write_text("AAA\n", encoding="utf-8")
+    assert rutina.run(lista, tmp_path / "out") == 0
+    assert "aviso de prueba" in (tmp_path / "out" / "alertas.md").read_text(encoding="utf-8")
+    assert "aviso de prueba" not in (tmp_path / "out" / "index.html").read_text(encoding="utf-8")

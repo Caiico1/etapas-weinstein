@@ -1,13 +1,14 @@
 """Rutina: analiza la lista de seguimiento, genera informes e índice y detecta cambios de etapa."""
 import json
+import os
 import re
 from pathlib import Path
 
 import pandas as pd
 
 from .analysis import AssetResult, analyze_symbol, parse_symbol
-from .config import ORDER, TIMEFRAMES
-from .report import write_html, write_index
+from .config import DISCLAIMER, ORDER, TIMEFRAMES
+from .report import fmt_price, write_html, write_index
 
 _CRYPTO = re.compile(r"^[A-Z0-9]{1,15}$")
 _STOCK = re.compile(r"^[A-Z0-9][A-Z0-9.^=-]{0,19}$")
@@ -39,7 +40,8 @@ def snapshot(assets: list[AssetResult]) -> dict:
     out = {}
     for a in assets:
         out[a.key] = {
-            k: {"etapa": r.stage, "transicion": r.transition, "vela": r.candle_time}
+            k: {"etapa": r.stage, "transicion": r.transition, "vela": r.candle_time,
+                "cierre": r.price, "confirma": r.confirm_level, "invalida": r.invalid_level}
             for k, r in a.timeframes.items() if r.status == "ok"
         }
     return out
@@ -78,6 +80,54 @@ def diff(prev: dict, curr: dict) -> list[dict]:
     return changes
 
 
+def level_alerts(prev: dict, curr: dict) -> list[dict]:
+    """Cierres que cruzan el nivel que confirma o que invalida de la ejecución anterior.
+
+    Solo cuenta cuando hay una vela nueva cerrada en ese marco (así el semanal y el mensual no
+    avisan cada día). La dirección depende de la etapa: en 1 y 2 confirmar es cerrar por encima
+    e invalidar por debajo; en 3 y 4, al revés.
+    """
+    alerts = []
+    for sym, tfs in curr.items():
+        for k in ORDER:
+            new, old = tfs.get(k), prev.get(sym, {}).get(k)
+            if not new or not old or new["vela"] == old["vela"] or old.get("cierre") is None:
+                continue
+            close, up = new["cierre"], old["etapa"] in (1, 2)
+            label = TIMEFRAMES[k].label
+            for field, name in (("confirma", "que confirma"), ("invalida", "que invalida")):
+                level = old.get(field)
+                if level is None:
+                    continue
+                above = field == "confirma" if up else field == "invalida"
+                if (close > level) if above else (close < level):
+                    side = "por encima" if close > level else "por debajo"
+                    alerts.append({"simbolo": sym, "marco": label, "tipo": "nivel",
+                                   "texto": f"cierra {side} del nivel {name} de la etapa "
+                                            f"{old['etapa']} ({fmt_price(level)} → cierre {fmt_price(close)})"})
+    return alerts
+
+
+def write_alerts(items: list[dict], prev_date: str | None, out_dir: Path, today: str) -> Path | None:
+    """Escribe out/alertas.md y out/alertas_titulo.txt si hay novedades (los usa GitHub Actions
+    para abrir una issue, que GitHub envía por correo). Si no hay novedades, no escribe nada."""
+    for name in ("alertas.md", "alertas_titulo.txt"):
+        (out_dir / name).unlink(missing_ok=True)
+    if not items:
+        return None
+    web = os.environ.get("ETAPAS_WEB_URL", "")
+    lines = [f"**{len(items)} novedades** en la rutina del {today}"
+             + (f" (comparado con {prev_date})" if prev_date else "") + ":", ""]
+    lines += [f"- **{c['simbolo']}** {c['marco']}: {c['texto']}".replace("  ", " ") for c in items]
+    if web:
+        lines += ["", f"Informes completos: {web}"]
+    lines += ["", f"_{DISCLAIMER}_"]
+    (out_dir / "alertas.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (out_dir / "alertas_titulo.txt").write_text(
+        f"Etapas {today}: {len(items)} novedades", encoding="utf-8")
+    return out_dir / "alertas.md"
+
+
 def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None) -> int:
     now = now or pd.Timestamp.now(tz="UTC")
     today = now.strftime("%Y-%m-%d")
@@ -106,11 +156,17 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None) -> int:
     curr = snapshot([a for a in assets if not a.error])
     previous = load_previous(hist_dir, today)
     changes = diff(previous[1], curr) if previous else []
+    changes += level_alerts(previous[1], curr) if previous else []
+    if os.environ.get("ETAPAS_AVISO_PRUEBA"):
+        changes.append({"simbolo": "PRUEBA", "marco": "", "tipo": "prueba",
+                        "texto": "aviso de prueba: si te llega este correo, los avisos funcionan"})
     prev_date = previous[0] if previous else None
     (hist_dir / f"{today}.json").write_text(
         json.dumps({"fecha": today, "activos": curr}, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    index = write_index(assets, changes, prev_date, log, out_dir, now)
+    index = write_index(assets, [c for c in changes if c.get("tipo") != "prueba"], prev_date, log,
+                        out_dir, now)
+    write_alerts(changes, prev_date, out_dir, today)
 
     ok = sum(1 for a in assets if not a.error)
     summary = (f"{now:%Y-%m-%d %H:%M} UTC · {ok}/{len(assets)} activos analizados · "

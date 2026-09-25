@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "0 6 * * *"        # 06:00 UTC = 08:00 en España en verano (07:00 en invierno)
   workflow_dispatch:            # botón "Run workflow" para lanzarla a mano
+    inputs:
+      aviso_prueba:
+        description: "Enviar un aviso de prueba por correo"
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths: ["watchlist.txt", "etapas/**"]   # al cambiar la lista o el código, se actualiza
@@ -11,6 +16,7 @@ on:
 permissions:
   contents: write               # guardar el historial en el repositorio
   pages: write                  # publicar la web
+  issues: write                 # avisos: una issue por día con novedades (GitHub la envía por correo)
   id-token: write
 
 concurrency:
@@ -40,7 +46,20 @@ jobs:
         run: python -m pytest -q
 
       - name: Ejecutar la rutina
+        env:
+          ETAPAS_WEB_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          ETAPAS_AVISO_PRUEBA: ${{ inputs.aviso_prueba && '1' || '' }}
         run: python -m etapas --rutina
+
+      - name: Aviso por correo si hay novedades
+        if: hashFiles('out/alertas.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --repo "${{ github.repository }}" \
+            --title "$(cat out/alertas_titulo.txt)" \
+            --body-file out/alertas.md \
+            --assignee "${{ github.repository_owner }}"
 
       - name: Guardar el historial (para detectar cambios mañana)
         run: |
