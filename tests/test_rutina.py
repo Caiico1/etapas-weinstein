@@ -103,7 +103,7 @@ def test_alert_files_written_only_with_news(tmp_path, monkeypatch):
     path = rutina.write_alerts(items, "2026-09-24", tmp_path, "2026-09-25")
     body = path.read_text(encoding="utf-8")
     assert "**ETH** Semanal: etapa 1 → 2" in body and "ejemplo.github.io" in body
-    assert (tmp_path / "alertas_titulo.txt").read_text(encoding="utf-8") == "Etapas 2026-09-25: 1 novedades"
+    assert (tmp_path / "alertas_titulo.txt").read_text(encoding="utf-8") == "Etapas 2026-09-25: 1 novedad"
     assert rutina.write_alerts([], None, tmp_path, "2026-09-26") is None
     assert not (tmp_path / "alertas.md").exists()        # se borra el aviso del día anterior
 

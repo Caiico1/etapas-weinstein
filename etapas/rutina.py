@@ -116,15 +116,16 @@ def write_alerts(items: list[dict], prev_date: str | None, out_dir: Path, today:
     if not items:
         return None
     web = os.environ.get("ETAPAS_WEB_URL", "")
-    lines = [f"**{len(items)} novedades** en la rutina del {today}"
+    n = f"{len(items)} novedad" + ("es" if len(items) != 1 else "")
+    lines = [f"**{n}** en la rutina del {today}"
              + (f" (comparado con {prev_date})" if prev_date else "") + ":", ""]
-    lines += [f"- **{c['simbolo']}** {c['marco']}: {c['texto']}".replace("  ", " ") for c in items]
+    lines += [f"- **{c['simbolo']}**{' ' + c['marco'] if c['marco'] else ''}: {c['texto']}" for c in items]
     if web:
         lines += ["", f"Informes completos: {web}"]
     lines += ["", f"_{DISCLAIMER}_"]
     (out_dir / "alertas.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     (out_dir / "alertas_titulo.txt").write_text(
-        f"Etapas {today}: {len(items)} novedades", encoding="utf-8")
+        f"Etapas {today}: {n}", encoding="utf-8")
     return out_dir / "alertas.md"
 
 
