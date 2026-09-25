@@ -51,6 +51,23 @@
         "transicion": "",
         "vela": "2026-09-24"
       }
+    },
+    "ADA": {
+      "1M": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-08-01"
+      },
+      "1w": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-09-14"
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-24"
+      }
     }
   }
 }
