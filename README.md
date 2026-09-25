@@ -1,4 +1,4 @@
-# etapas — Detector de etapas de Weinstein para criptoactivos
+# etapas — Detector de etapas de Weinstein para criptoactivos y acciones
 
 Determina en qué etapa del ciclo de mercado (Stan Weinstein) está un criptoactivo en
 **diario, semanal y mensual**, con reglas explícitas y puntuaciones que se pueden auditar.
@@ -44,6 +44,24 @@ Tests: `python -m pytest`.
   Windows ejecuta `rutina.bat` cada día a las 08:00. Si el PC está apagado a esa hora, se lanza
   al encenderlo; necesita conexión a Internet. Para cambiar la hora o quitarla, usa el
   Programador de tareas. Si mueves la carpeta del proyecto, hay que actualizar la ruta de la tarea.
+
+## Acciones y ETF (y tokens de Ondo)
+
+En `watchlist.txt` o en la línea de comandos, con el prefijo `accion:` y el ticker de Yahoo
+Finance: `accion:NVDA`, `accion:SPY`, `accion:SAN.MC` (bolsa española con `.MC`).
+
+- **Datos**: Yahoo Finance (`yfinance`), con décadas de historial en diario, semanal y mensual.
+  Los precios se ajustan por dividendos y splits, es decir, son de rentabilidad total.
+- **Mismos parámetros que en cripto**: en acciones, una vela diaria es una sesión de bolsa, así
+  que la SMA50 abarca unas 10 semanas, que es su uso clásico. Las fechas son las del mercado local.
+- **Token de Ondo**: si la acción tiene token de Ondo (NVDA → NVDAon) cotizando en MEXC o BingX,
+  el informe muestra su precio y la diferencia con la acción. Ondo replica la rentabilidad total
+  (reinvierte dividendos), así que el token cotiza algo por encima de la acción. Por ejemplo,
+  SPYon estaba un +1 % sobre SPY en sep-2026, un año después de su lanzamiento.
+- **Por qué se analiza la acción y no el token**: los tokens solo tienen ~13 meses de
+  historial (no alcanza para el mensual), su vela diaria se distorsiona los fines de semana (la
+  bolsa está cerrada y el token apenas se mueve) y su liquidez es baja (~200 k$/día). Como el
+  token sigue a la acción, las etapas y niveles de la acción valen para el token.
 
 ## Versión en la nube (GitHub)
 

@@ -5,21 +5,27 @@ from pathlib import Path
 
 import pandas as pd
 
-from .analysis import AssetResult, analyze_symbol
+from .analysis import AssetResult, analyze_symbol, parse_symbol
 from .config import ORDER, TIMEFRAMES
 from .report import write_html, write_index
 
-_SYMBOL = re.compile(r"^[A-Z0-9]{1,15}$")
+_CRYPTO = re.compile(r"^[A-Z0-9]{1,15}$")
+_STOCK = re.compile(r"^[A-Z0-9][A-Z0-9.^=-]{0,19}$")
 
 
 def load_watchlist(path: Path) -> tuple[list[str], list[str]]:
-    """Devuelve (símbolos, avisos). Ignora comentarios (#), líneas vacías y duplicados."""
+    """Devuelve (símbolos, avisos). Ignora comentarios (#), líneas vacías y duplicados.
+
+    Criptomonedas: BTC. Acciones: accion:NVDA (ticker de Yahoo Finance, p. ej. SAN.MC).
+    """
     symbols, warnings = [], []
     for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        sym = line.split("#", 1)[0].strip().upper()
-        if not sym:
+        raw = line.split("#", 1)[0].strip()
+        if not raw:
             continue
-        if not _SYMBOL.match(sym):
+        kind, ticker = parse_symbol(raw)
+        sym = f"accion:{ticker}" if kind == "accion" else ticker
+        if not (_STOCK if kind == "accion" else _CRYPTO).match(ticker):
             warnings.append(f"{path.name} línea {n}: '{sym}' no parece un símbolo válido; se ignora")
         elif sym in symbols:
             warnings.append(f"{path.name} línea {n}: {sym} repetido; se ignora")
@@ -32,7 +38,7 @@ def snapshot(assets: list[AssetResult]) -> dict:
     """Estado mínimo de cada activo para comparar entre ejecuciones."""
     out = {}
     for a in assets:
-        out[a.symbol] = {
+        out[a.key] = {
             k: {"etapa": r.stage, "transicion": r.transition, "vela": r.candle_time}
             for k, r in a.timeframes.items() if r.status == "ok"
         }
@@ -91,7 +97,7 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None) -> int:
         asset = analyze_symbol(sym)
         assets.append(asset)
         if asset.error:
-            log.append(f"{sym}: {asset.error}")
+            log.append(f"{asset.key}: {asset.error}")
         else:
             write_html(asset, out_dir, index_link=True)
 

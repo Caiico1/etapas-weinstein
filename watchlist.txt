@@ -1,7 +1,11 @@
 # Lista de seguimiento de etapas
-# Una moneda por línea: el símbolo tal como cotiza en Binance, sin /USDT (BTC, ETH, SOL...).
-# Lo que va detrás de # es un comentario. Las líneas vacías se ignoran.
-# Para dejar de seguir una moneda sin borrarla, ponle # delante.
+# Un valor por línea. Lo que va detrás de # es un comentario. Las líneas vacías se ignoran.
+# Para dejar de seguir un valor sin borrarlo, ponle # delante.
+#
+# Criptomonedas: el símbolo de Binance, sin /USDT          → BTC, ETH, SOL
+# Acciones y ETF: accion: + el ticker de Yahoo Finance      → accion:NVDA, accion:SPY
+#   Bolsa española: ticker con .MC                          → accion:SAN.MC, accion:ITX.MC
+#   Si la acción tiene token de Ondo (NVDAon...), su precio aparece en el informe.
 
 BTC
 ETH

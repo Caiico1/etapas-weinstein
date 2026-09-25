@@ -126,3 +126,57 @@ def fetch_candles(symbol: str, cfg: TimeframeConfig, now: pd.Timestamp | None = 
         except (ccxt.BaseError, DataError, OSError) as e:
             errors.append(f"{name} {pair}: {type(e).__name__}: {str(e)[:160]}")
     raise DataError("No se pudieron descargar datos. " + " | ".join(errors))
+
+
+# ---------------------------------------------------------------- acciones (Yahoo Finance)
+
+_YF_INTERVAL = {"1d": "1d", "1w": "1wk", "1M": "1mo"}
+
+
+def fetch_stock_candles(ticker: str, cfg: TimeframeConfig, now: pd.Timestamp | None = None) -> Candles:
+    """Velas de una acción o ETF desde Yahoo Finance (ticker de Yahoo: NVDA, SPY, SAN.MC...).
+
+    Los precios se ajustan por dividendos y splits: es la rentabilidad total, la misma que
+    replican los tokens de Ondo (NVDAon...). Lanza DataError si no hay datos.
+    """
+    import yfinance as yf
+
+    now = now or pd.Timestamp.now(tz="UTC")
+    try:
+        raw = yf.Ticker(ticker).history(period="max", interval=_YF_INTERVAL[cfg.key], auto_adjust=True)
+    except Exception as e:  # yfinance lanza excepciones de varios tipos
+        raise DataError(f"Yahoo Finance {ticker}: {type(e).__name__}: {str(e)[:160]}") from e
+    if raw is None or raw.empty or not isinstance(raw.index, pd.DatetimeIndex):
+        raise DataError(f"Yahoo Finance no tiene datos de {ticker}. Revisa el ticker "
+                        f"(ejemplos: NVDA, SPY, SAN.MC para bolsa española)")
+    df = raw.rename(columns=str.lower)[COLUMNS].astype(float).dropna(subset=["open", "high", "low", "close"])
+    # Fecha local del mercado (una sesión de Madrid del día 24 es la vela del 24, no del 23 en UTC)
+    df.index = pd.DatetimeIndex(df.index.tz_localize(None).normalize()).tz_localize("UTC")
+    df.index.name = "time"
+    df = df[~df.index.duplicated(keep="last")].tail(cfg.history + 1)
+    closed, current = split_closed(df, cfg.key, now)
+    return Candles(closed, current, f"Yahoo Finance {ticker} (ajustado por dividendos y splits)")
+
+
+# ---------------------------------------------------------------- tokens de Ondo (NVDAon...)
+
+ONDO_VENUES = [("mexc", "{t}ON/USDT"), ("bingx", "{t}ON/USDT")]
+
+
+def fetch_ondo_token(ticker: str) -> dict | None:
+    """Precio actual del token de Ondo de una acción de EE. UU. (p. ej. NVDA → NVDAon), si cotiza
+    en algún exchange de ONDO_VENUES. Devuelve None si no existe o no se puede consultar."""
+    if not ticker.isalnum():          # Ondo solo tokeniza acciones de EE. UU. (sin sufijo de mercado)
+        return None
+    for name, pattern in ONDO_VENUES:
+        pair = pattern.format(t=ticker.upper())
+        try:
+            ex = _get_exchange(name)
+            if pair not in ex.markets:
+                continue
+            price = ex.fetch_ticker(pair).get("last")
+            if price:
+                return {"token": f"{ticker.upper()}on", "exchange": name, "par": pair, "precio": float(price)}
+        except (ccxt.BaseError, OSError):
+            continue
+    return None

@@ -24,7 +24,8 @@ def main(argv: list[str] | None = None) -> int:
         prog="etapas",
         description="Etapa del ciclo de mercado (Weinstein) de criptoactivos en diario, semanal y mensual.")
     parser.add_argument("simbolos", nargs="*",
-                        help="Criptoactivos, p. ej. BTC ETH SOL. Sin símbolos, se usa la lista")
+                        help="Criptoactivos (BTC ETH SOL) o acciones con prefijo accion: "
+                             "(accion:NVDA accion:SAN.MC). Sin símbolos, se usa la lista")
     parser.add_argument("--lista", default="watchlist.txt", metavar="ARCHIVO",
                         help="Lista de seguimiento, un símbolo por línea (por defecto watchlist.txt)")
     parser.add_argument("--rutina", action="store_true",
@@ -62,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.html is not None:
         for a in assets:
             path = write_html(a, Path(args.html))
-            msg = f"HTML: {path}" if path else f"HTML: no generado para {a.symbol} (sin datos)"
+            msg = f"HTML: {path}" if path else f"HTML: no generado para {a.title} (sin datos)"
             print(msg, file=sys.stderr if args.json else sys.stdout)
     if not args.json:
         print(f"\n{DISCLAIMER}")

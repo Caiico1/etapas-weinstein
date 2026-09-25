@@ -166,8 +166,23 @@ def alignment_summary(asset: AssetResult) -> str:
     return "\n".join(lines)
 
 
+def token_text(asset: AssetResult) -> str:
+    """Línea con el token de Ondo de una acción (vacía para criptomonedas)."""
+    if asset.kind != "accion" or asset.error:
+        return ""
+    t = asset.token
+    if not t:
+        return "Token Ondo: no cotiza en MEXC ni BingX (o no se pudo consultar)."
+    diff = ""
+    if t.get("diferencia") is not None:
+        diff = f" · {t['diferencia']:+.2%} frente a la acción ({fmt_price(asset.last_price)})"
+    return f"Token Ondo {t['token']}: {fmt_price(t['precio'])} en {t['exchange'].upper()}{diff}"
+
+
 def render_text(asset: AssetResult) -> str:
-    out = [f"\n=== {asset.symbol} ==="]
+    out = [f"\n=== {asset.title} ==="]
+    if token_text(asset):
+        out.append(token_text(asset))
     if asset.error:
         out.append(f"ERROR: {asset.error}")
         return "\n".join(out)
@@ -278,10 +293,11 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
     details = "".join(f"<li>{html.escape(detail_line(asset.timeframes[k]).strip())}</li>" for k in ORDER)
     summary = html.escape(alignment_summary(asset)).replace("\n", "<br>")
     back = '<p><a href="index.html">← Todos los activos</a></p>' if index_link else ""
+    token_html = f'<p class="note">{html.escape(token_text(asset))}</p>' if token_text(asset) else ""
     page = f"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Etapas {asset.symbol}</title>
+<title>Etapas {html.escape(asset.title)}</title>
 <style>
  body {{ font-family: system-ui, sans-serif; margin: 24px; color: #111; background: #fff; }}
  table {{ border-collapse: collapse; font-size: 14px; margin: 12px 0; }}
@@ -293,7 +309,8 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
  .summary {{ background: #f8fafc; border-left: 4px solid #7c3aed; padding: 10px 14px; }}
  .disclaimer {{ color: #666; font-size: 13px; margin-top: 24px; }}
 </style></head><body>
-{back}<h1>Etapas de Weinstein · {asset.symbol}</h1>
+{back}<h1>Etapas de Weinstein · {html.escape(asset.title)}</h1>
+{token_html}
 <div class="wrap"><table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table></div>
 <p class="note">{html.escape(RANGE_NOTE)}</p>
 <p class="summary">{summary}</p>
@@ -302,7 +319,7 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
 <p class="disclaimer">{DISCLAIMER}</p>
 </body></html>"""
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"etapas_{asset.symbol}.html"
+    path = out_dir / f"etapas_{asset.file_stem}.html"
     path.write_text(page, encoding="utf-8")
     return path
 
@@ -327,8 +344,8 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
     """Página resumen de todos los activos de la lista, con los cambios desde la última ejecución."""
     rows = []
     for a in assets:
-        link = (f'<a href="etapas_{a.symbol}.html">{a.symbol}</a>' if not a.error
-                else html.escape(a.symbol))
+        name = html.escape(a.symbol) + (' <span class="kind">acción</span>' if a.kind == "accion" else "")
+        link = f'<a href="etapas_{a.file_stem}.html">{name}</a>' if not a.error else name
         if a.error:
             rows.append(f'<tr><td class="sym">{link}</td><td colspan="4" class="err">'
                         f'{html.escape(a.error)}</td></tr>')
@@ -336,8 +353,14 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
         state, sentence = alignment_state(a)
         color = next((c for k, c in _ALIGN_COLORS.items() if state.startswith(k)), "#666")
         cells = "".join(_stage_cell(a.timeframes[k]) for k in ORDER)
+        token = ""
+        if a.kind == "accion":
+            t = a.token
+            token = (f'<br><span class="muted">{html.escape(t["token"])}: {fmt_price(t["precio"])}'
+                     f' ({t["diferencia"]:+.1%})</span>' if t and t.get("diferencia") is not None
+                     else '<br><span class="muted">sin token Ondo</span>')
         rows.append(f'<tr><td class="sym">{link}<br><span class="muted">'
-                    f'{fmt_price(a.timeframes["1d"].price)}</span></td>{cells}'
+                    f'{fmt_price(a.timeframes["1d"].price)}</span>{token}</td>{cells}'
                     f'<td><b style="color:{color}">{html.escape(state)}</b><br>'
                     f'<span class="small">{html.escape(sentence)}</span></td></tr>')
     if changes:
@@ -368,6 +391,8 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
  .muted {{ color: #666; font-size: 12px; }}
  .small {{ font-size: 12px; }}
  .sym {{ font-weight: 700; font-size: 15px; }}
+ .kind {{ font-size: 11px; font-weight: 500; background: #e0f2fe; color: #075985; border-radius: 4px;
+          padding: 0 4px; }}
  .err {{ color: #b91c1c; }}
  .disclaimer {{ color: #666; font-size: 13px; margin-top: 24px; }}
 </style></head><body>

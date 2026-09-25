@@ -7,7 +7,7 @@ import pandas as pd
 
 from .classifier import STAGE_NAMES, classify, levels
 from .config import ORDER, RANGE_QUANTILE, TIMEFRAMES, TimeframeConfig
-from .data import Candles, DataError, fetch_candles
+from .data import Candles, DataError, fetch_candles, fetch_ondo_token, fetch_stock_candles
 from .indicators import expected_range
 
 
@@ -46,6 +46,7 @@ class TimeframeResult:
     est_low: float | None = None      # rango estimado de la vela en curso
     est_high: float | None = None
     est_period: str = ""
+    last_price: float | None = None   # último precio conocido, incluida la vela en curso
     provisional: "TimeframeResult | None" = None
     history: pd.DataFrame | None = field(default=None, repr=False)   # para el HTML
     candles: pd.DataFrame | None = field(default=None, repr=False)
@@ -66,14 +67,46 @@ def _jsonable(v):
     return v
 
 
+STOCK_PREFIXES = ("accion:", "acción:")
+
+
+def parse_symbol(raw: str) -> tuple[str, str]:
+    """'BTC' → ('cripto', 'BTC'); 'accion:NVDA' → ('accion', 'NVDA')."""
+    s = raw.strip()
+    if s.lower().startswith(STOCK_PREFIXES):
+        return "accion", s.split(":", 1)[1].strip().upper()
+    return "cripto", s.upper()
+
+
 @dataclass
 class AssetResult:
-    symbol: str
+    symbol: str                        # ticker sin prefijo: BTC, NVDA, SAN.MC
     timeframes: dict[str, TimeframeResult]
     error: str = ""
+    kind: str = "cripto"               # "cripto" | "accion"
+    token: dict | None = None          # token de Ondo de la acción, si cotiza
+
+    @property
+    def key(self) -> str:
+        """Identificador en la lista y en el historial."""
+        return f"accion:{self.symbol}" if self.kind == "accion" else self.symbol
+
+    @property
+    def title(self) -> str:
+        return f"{self.symbol} (acción)" if self.kind == "accion" else self.symbol
+
+    @property
+    def file_stem(self) -> str:
+        return f"accion_{self.symbol}" if self.kind == "accion" else self.symbol
+
+    @property
+    def last_price(self) -> float | None:
+        daily = self.timeframes.get("1d")
+        return daily.last_price if daily else None
 
     def to_dict(self) -> dict:
-        return {"simbolo": self.symbol, "error": self.error or None,
+        return {"simbolo": self.symbol, "tipo": self.kind, "error": self.error or None,
+                "token_ondo": _jsonable(self.token) if self.token else None,
                 "marcos": {k: v.to_dict() for k, v in self.timeframes.items()}}
 
 
@@ -133,6 +166,7 @@ def analyze_candles(candles: Candles, cfg: TimeframeConfig, provisional: bool = 
     res.notes = candles.notes + notes
     res.source = candles.source
     res.history, res.candles = hist, df
+    res.last_price = _f(candles.current["close"]) if candles.current is not None else res.price
     if res.status == "ok":
         low, high = expected_range(df, hist["atr"], RANGE_QUANTILE, cfg.range_lookback)
         res.est_low, res.est_high, res.est_period = _f(low), _f(high), cfg.period_name
@@ -144,17 +178,25 @@ def analyze_candles(candles: Candles, cfg: TimeframeConfig, provisional: bool = 
 
 
 def analyze_symbol(symbol: str, provisional: bool = False,
-                   fetch: Callable = fetch_candles) -> AssetResult:
+                   fetch: Callable | None = None) -> AssetResult:
+    """Analiza un activo: 'BTC' (cripto, vía exchanges) o 'accion:NVDA' (bolsa, vía Yahoo)."""
+    kind, ticker = parse_symbol(symbol)
+    fetch = fetch or (fetch_stock_candles if kind == "accion" else fetch_candles)
     results = {}
     errors = []
     for key in ORDER:
         cfg = TIMEFRAMES[key]
         try:
-            candles = fetch(symbol, cfg)
+            candles = fetch(ticker, cfg)
         except DataError as e:
             results[key] = TimeframeResult(key, cfg.label, "error", str(e))
             errors.append(str(e))
             continue
         results[key] = analyze_candles(candles, cfg, provisional)
     error = errors[0] if len(errors) == len(ORDER) else ""
-    return AssetResult(symbol.upper(), results, error)
+    asset = AssetResult(ticker, results, error, kind)
+    if kind == "accion" and not error:
+        asset.token = fetch_ondo_token(ticker)
+        if asset.token and asset.last_price:
+            asset.token["diferencia"] = asset.token["precio"] / asset.last_price - 1
+    return asset
