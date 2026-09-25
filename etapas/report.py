@@ -314,12 +314,18 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
     fig = build_figure(asset)
     rows = [table_row(asset.timeframes[k]) for k in ORDER]
     meanings = [meaning(asset.timeframes[k], asset.kind) for k in ORDER]
-    # "Qué significa" va justo después de "Etapa", para que se lea sin desplazar la tabla
-    heads = HEADERS[:2] + ["Qué significa"] + HEADERS[2:]
+    # Orden de lectura: lo importante primero (se ve sin desplazar la tabla), el detalle técnico después
+    first = ["Marco", "Etapa", "Qué significa", "Mín. estimado", "Máx. estimado",
+             "Nivel que confirma", "Nivel que invalida"]
+    heads = first + [h for h in HEADERS if h not in first]
     thead = "".join(f"<th>{html.escape(h)}</th>" for h in heads)
-    cell = lambda c: f"<td>{html.escape(c)}</td>"
-    tbody = "".join("<tr>" + "".join(cell(c) for c in r[:2]) + f'<td class="meaning">{html.escape(m)}</td>'
-                    + "".join(cell(c) for c in r[2:]) + "</tr>" for r, m in zip(rows, meanings))
+    tbody = ""
+    for r, m in zip(rows, meanings):
+        values = dict(zip(HEADERS, r)) | {"Qué significa": m}
+        tbody += "<tr>" + "".join(
+            f'<td class="meaning">{html.escape(values[h])}</td>' if h == "Qué significa"
+            else f'<td class="{"est" if "estimado" in h else ""}">{html.escape(values[h])}</td>'
+            for h in heads) + "</tr>"
     zone = key_zone(asset)
     zone_html = ""
     if zone:
@@ -338,7 +344,8 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
  body {{ font-family: system-ui, sans-serif; margin: 24px; color: #111; background: #fff; }}
  table {{ border-collapse: collapse; font-size: 14px; margin: 12px 0; }}
  th, td {{ border: 1px solid #ddd; padding: 6px 10px; text-align: left; white-space: nowrap; }}
- td.meaning {{ white-space: normal; min-width: 320px; max-width: 460px; font-size: 13px; }}
+ td.meaning {{ white-space: normal; min-width: 280px; max-width: 380px; font-size: 13px; }}
+ td.est {{ background: #f1f5f9; font-weight: 600; }}
  .keyzone {{ background: #fffbeb; border: 1px solid #f59e0b; border-left: 6px solid #f59e0b;
              border-radius: 6px; padding: 10px 14px; margin: 12px 0; }}
  .keyzone ul {{ margin: 6px 0; padding-left: 20px; }}

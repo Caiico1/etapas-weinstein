@@ -119,3 +119,18 @@ def test_chart_level_lines_and_labels_on_log_axis(monkeypatch):
     label = next(a for a in fig.layout.annotations if a.text.startswith("Confirma") and a.yref == "y3")
     assert math.isclose(label.y, math.log10(daily.confirm_level))
     assert all(ax.type == "log" for ax in (fig.layout.yaxis, fig.layout.yaxis2, fig.layout.yaxis3))
+
+
+def test_report_table_shows_key_columns_first(monkeypatch, tmp_path):
+    """Mín./máx. estimado y niveles, justo tras la explicación: visibles sin desplazar la tabla."""
+    import re
+
+    def fake_fetch(ticker, cfg):
+        df, _ = cycle_for(cfg, seed=3)
+        return data.Candles(df, None, "test")
+    monkeypatch.setattr(analysis, "fetch_stock_candles", fake_fetch)
+    monkeypatch.setattr(analysis, "fetch_ondo_token", lambda t: None)
+    page = write_html(analysis.analyze_symbol("accion:TEST"), tmp_path).read_text(encoding="utf-8")
+    heads = re.findall(r"<th>(.*?)</th>", page)
+    assert heads[:7] == ["Marco", "Etapa", "Qué significa", "Mín. estimado", "Máx. estimado",
+                         "Nivel que confirma", "Nivel que invalida"]
