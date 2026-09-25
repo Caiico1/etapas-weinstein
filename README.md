@@ -94,11 +94,11 @@ tarea de Windows, pero en los servidores de GitHub, así que funciona con el PC 
   (`data-api.binance.vision`, mismas velas); si también falla, Kraken `<SÍMBOLO>/USD`. Si fallan
   todas, se muestra el error de cada fuente y el código de salida es 1.
 - Kraken no ofrece velas mensuales: se construyen agregando el diario (Kraken solo da
-  unas 720 velas diarias, así que el mensual suele pasar a SMA12 y se avisa).
+  unas 720 velas diarias, unos 23 meses, suficiente para la SMA10 mensual).
 - **Solo velas cerradas**. La vela en curso se descarta; con `--provisional` se muestra
   aparte, marcada como PROVISIONAL.
 - Historial descargado: 730 días, 400 semanas y 240 meses (≥ 3 × media + ventana previa).
-- Mensual con poco historial → SMA12 con aviso. Si tampoco alcanza → "datos insuficientes".
+- Mensual con poco historial → SMA6 con aviso. Si tampoco alcanza → "datos insuficientes".
   Nunca se inventan datos.
 
 ## Algoritmo (por marco temporal y por vela)
@@ -107,7 +107,7 @@ Parámetros en [`etapas/config.py`](etapas/config.py):
 
 | Parámetro | Diario | Semanal | Mensual |
 |---|---|---|---|
-| Media clave (SMA) | 50 | 30 | 20 (alternativa 12) |
+| Media clave (SMA) | 50 | 30 | 10 (alternativa 6) |
 | Ventana de pendiente *n* | 10 | 5 | 3 |
 | Ventana de pivotes | 5 | 3 | 2 |
 | Ventana de tendencia previa *W* | 60 | 30 | 18 |
@@ -170,6 +170,13 @@ movimientos extremos más frecuentes que los que refleja el pasado reciente.
 
 Todas se descubrieron en las pruebas y se pueden ajustar en `classifier.py`/`config.py`:
 
+- **Mensual con SMA10 en lugar de SMA20** (sep-2026). La SMA20 abarca unas 87 semanas y
+  reaccionaba con más de un año de retraso: en SPY nunca marcó etapa 4 en 2022 y no volvió a
+  etapa 2 hasta 2024; en BTC marcaba etapa 4 durante todo el rebote de 2023. Con SMA10 (≈ 43
+  semanas, más cerca de las 30 semanas de Weinstein), SPY pasa por etapa 4 entre octubre de 2022
+  y febrero de 2023 y vuelve a 2 en agosto de 2023, y BTC vuelve a 2 en agosto de 2023. En la
+  serie sintética acierta algo menos (91-97 % de media frente a 93-100 %).
+
 - **Tendencia previa "con memoria"**: si se mide solo en la ventana inmediata, una base larga
   "olvida" la caída que la precedió y alterna entre 1 y 3.
 - **Umbral de tendencia previa ∝ √W y criterio de persistencia**: con un umbral fijo, la caída
@@ -191,7 +198,7 @@ Todas se descubrieron en las pruebas y se pueden ajustar en `classifier.py`/`con
   - La oscilación del rango tiene un periodo más corto que la media. Si dura lo mismo que la
     media, cada vaivén es una mini tendencia según las propias definiciones de etapa.
   - El ruido de cada marco se escala para que la tendencia sea igual de clara en su escala.
-- `tests/test_edge_cases.py`: historial insuficiente, mensual con SMA12, serie totalmente plana,
+- `tests/test_edge_cases.py`: historial insuficiente, mensual con SMA6, serie totalmente plana,
   volumen cero, pico aislado (en tendencia y al final de una base), separación de la vela en
   curso, fallo de la API en ambos exchanges, símbolo inexistente y fallback a Kraken.
 

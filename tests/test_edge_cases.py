@@ -35,11 +35,11 @@ def test_insufficient_daily_history():
 
 
 def test_monthly_falls_back_to_alternative_ma():
-    df = _trend(22, freq="MS")        # < 20 + 6 pero ≥ 12 + 6
+    df = _trend(14, freq="MS")        # < 10 + 6 pero ≥ 6 + 6
     res = analyze_candles(Candles(df, None, "test"), M)
     assert res.status == "ok"
-    assert res.ma_len == 12
-    assert any("SMA12" in n for n in res.notes)
+    assert res.ma_len == 6
+    assert any("SMA6" in n for n in res.notes)
 
 
 def test_monthly_too_short_even_for_alternative():

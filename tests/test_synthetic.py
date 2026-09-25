@@ -43,7 +43,9 @@ def test_cycle_order(tf, seed):
     stage = classify(df, cfg)["stage"].to_numpy()
     first_base = next(a for label, a, _ in segments(labels) if label == 1)
     runs = [(s, b - a) for s, a, b in segments(stage[first_base + _margin(cfg):])]
-    stable = [s for s, length in runs if length >= _margin(cfg)]
+    # Un tramo estable dura más que el retraso total de la señal: media longitud de la SMA más
+    # la ventana de pendiente. Con SMA10 mensual, el arrastre de la caída previa dura 5 velas.
+    stable = [s for s, length in runs if length > _margin(cfg) + cfg.slope_window]
     merged = [s for i, s in enumerate(stable) if i == 0 or s != stable[i - 1]]
     assert merged == [1, 2, 3, 4, 1], f"{tf} semilla {seed}: secuencia {merged}"
 

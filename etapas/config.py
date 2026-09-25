@@ -34,7 +34,10 @@ TIMEFRAMES: dict[str, TimeframeConfig] = {
     "1w": TimeframeConfig("1w", "Semanal", ma=30, ma_alt=None, slope_window=5,
                           pivot_window=3, prior_window=30, history=400,
                           range_lookback=104, period_name="esta semana"),
-    "1M": TimeframeConfig("1M", "Mensual", ma=20, ma_alt=12, slope_window=3,
+    # Mensual: SMA10 en lugar de la SMA20 original. La SMA20 (≈87 semanas) reaccionaba con más de un
+    # año de retraso: no vio la etapa 4 de SPY en 2022 ni el giro de BTC en 2023. SMA10 ≈ 43 semanas,
+    # más cerca de la media de 30 semanas de Weinstein.
+    "1M": TimeframeConfig("1M", "Mensual", ma=10, ma_alt=6, slope_window=3,
                           pivot_window=2, prior_window=18, history=240,
                           range_lookback=48, period_name="este mes"),
 }
