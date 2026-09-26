@@ -290,16 +290,20 @@ def build_figure(asset: AssetResult):
         for x0, x1, s in _stage_runs(h):
             fig.add_vrect(x0=x0, x1=x1, fillcolor=STAGE_COLORS[s], opacity=0.15,
                           line_width=0, layer="below", row=i, col=1)
-        levels = [(r.confirm_level, f"Confirma {fmt_price(r.confirm_level)}", "#16a34a", "dash", 2.2),
-                  (r.invalid_level, f"Invalida {fmt_price(r.invalid_level)}", "#dc2626", "dash", 2.2),
-                  (r.est_low, f"Mín. extremo {r.est_period} {fmt_price(r.est_low)}", "#475569", "dot", 1.4),
-                  (r.est_high, f"Máx. extremo {r.est_period} {fmt_price(r.est_high)}", "#475569", "dot", 1.4)]
+        # (precio, etiqueta, color, estilo, grosor, lado de la etiqueta). El rango típico lleva la
+        # etiqueta a la izquierda para no pisarse con las demás, que van a la derecha.
+        levels = [(r.confirm_level, f"Confirma {fmt_price(r.confirm_level)}", "#16a34a", "dash", 2.2, 1),
+                  (r.invalid_level, f"Invalida {fmt_price(r.invalid_level)}", "#dc2626", "dash", 2.2, 1),
+                  (r.est_low, f"Mín. extremo {r.est_period} {fmt_price(r.est_low)}", "#475569", "dot", 1.4, 1),
+                  (r.est_high, f"Máx. extremo {r.est_period} {fmt_price(r.est_high)}", "#475569", "dot", 1.4, 1),
+                  (r.typ_low, f"Mín. típico {r.est_period} {fmt_price(r.typ_low)}", "#0284c7", "dot", 1.6, 0),
+                  (r.typ_high, f"Máx. típico {r.est_period} {fmt_price(r.typ_high)}", "#0284c7", "dot", 1.6, 0)]
         axis = "" if i == 1 else str(i)
-        for y, text, color, dash, width in levels:
+        for y, text, color, dash, width, side in levels:
             if y is None or y <= 0:
                 continue
             fig.add_hline(y=y, line_dash=dash, line_color=color, line_width=width, row=i, col=1)
-            fig.add_annotation(text=text, x=1, xref=f"x{axis} domain", xanchor="right",
+            fig.add_annotation(text=text, x=side, xref=f"x{axis} domain", xanchor="right" if side else "left",
                                y=_log_y(y), yref=f"y{axis}", yanchor="bottom", showarrow=False,
                                font=dict(size=11, color=color), bgcolor="rgba(255,255,255,0.8)")
         fig.update_xaxes(rangeslider_visible=False, row=i, col=1)

@@ -134,3 +134,16 @@ def test_report_table_shows_key_columns_first(monkeypatch, tmp_path):
     heads = re.findall(r"<th>(.*?)</th>", page)
     assert heads[:9] == ["Marco", "Etapa", "Qué significa", "Mín. típico", "Máx. típico",
                          "Mín. extremo", "Máx. extremo", "Nivel que confirma", "Nivel que invalida"]
+
+
+def test_chart_shows_typical_and_extreme_ranges(monkeypatch):
+    from etapas.report import build_figure
+
+    def fake_fetch(ticker, cfg):
+        df, _ = cycle_for(cfg, seed=4)
+        return data.Candles(df, None, "test")
+    monkeypatch.setattr(analysis, "fetch_stock_candles", fake_fetch)
+    monkeypatch.setattr(analysis, "fetch_ondo_token", lambda t: None)
+    texts = [a.text for a in build_figure(analysis.analyze_symbol("accion:TEST")).layout.annotations]
+    for name in ("Mín. típico", "Máx. típico", "Mín. extremo", "Máx. extremo"):
+        assert sum(t.startswith(name) for t in texts) == 3        # una por marco temporal
