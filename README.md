@@ -41,7 +41,7 @@ Tests: `python -m pytest`.
 - Si una moneda falla (no existe en Binance ni en Kraken, o hay un error de red), aparece como
   error en el índice y las demás se analizan con normalidad.
 - **Automatización**: la tarea "Etapas Weinstein - rutina diaria" del Programador de tareas de
-  Windows ejecuta `rutina.bat` cada día a las 08:00. Si el PC está apagado a esa hora, se lanza
+  Windows (opcional; ya no se usa) ejecuta `rutina.bat` cada día a las 08:00. Si el PC está apagado a esa hora, se lanza
   al encenderlo; necesita conexión a Internet. Para cambiar la hora o quitarla, usa el
   Programador de tareas. Si mueves la carpeta del proyecto, hay que actualizar la ruta de la tarea.
 
@@ -68,7 +68,9 @@ Finance: `accion:NVDA`, `accion:SPY`, `accion:SAN.MC` (bolsa española con `.MC`
 El flujo [`.github/workflows/rutina.yml`](.github/workflows/rutina.yml) hace lo mismo que la
 tarea de Windows, pero en los servidores de GitHub, así que funciona con el PC apagado:
 
-- Se ejecuta cada día a las 06:00 UTC, cuando se modifica `watchlist.txt` o el código, y cuando
+- Se ejecuta cada día a las 06:07 UTC (08:07 en España en verano), con dos respaldos a las 07:37
+  y 10:07 UTC que solo trabajan si ese día aún no se ha ejecutado, porque GitHub no garantiza las
+  ejecuciones programadas. También se ejecuta cuando se modifica `watchlist.txt` o el código, y cuando
   se pulsa **Actions → Rutina diaria de etapas → Run workflow**.
 - Pasa los tests, ejecuta la rutina y publica `out/` en **GitHub Pages**. El índice queda en la
   raíz de la web.
@@ -77,7 +79,7 @@ tarea de Windows, pero en los servidores de GitHub, así que funciona con el PC 
 - La lista se edita desde la web de GitHub: abre `watchlist.txt`, pulsa el lápiz y luego
   "Commit changes". La web se actualiza en un par de minutos.
 - Si la ejecución falla, GitHub envía un correo a la cuenta.
-- **Avisos por correo**: si hay novedades, la rutina abre una *issue* en el repositorio y te la
+- **Avisos por correo** (como mucho uno al día, en la primera ejecución): si hay novedades, la rutina abre una *issue* en el repositorio y te la
   asigna, y GitHub la envía por correo. Cuenta como novedad un cambio de etapa, una transición
   nueva o un cierre que cruce el nivel que confirma o que invalida. Solo se miran velas nuevas
   cerradas, así que el semanal y el mensual avisan como mucho una vez por vela. Si no hay

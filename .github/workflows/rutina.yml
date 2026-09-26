@@ -1,8 +1,13 @@
 name: Rutina diaria de etapas
 
 on:
+  # Horas en UTC (España: +2 en verano, +1 en invierno). GitHub no garantiza las ejecuciones
+  # programadas y en las horas en punto se saturan, así que se usa un minuto "raro" y dos respaldos
+  # que solo trabajan si ese día todavía no se ha ejecutado la rutina.
   schedule:
-    - cron: "0 6 * * *"        # 06:00 UTC = 08:00 en España en verano (07:00 en invierno)
+    - cron: "7 6 * * *"        # principal: 08:07 en España (verano)
+    - cron: "37 7 * * *"       # respaldo
+    - cron: "7 10 * * *"       # respaldo
   workflow_dispatch:            # botón "Run workflow" para lanzarla a mano
     inputs:
       aviso_prueba:
@@ -24,7 +29,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  comprobar:
+    runs-on: ubuntu-latest
+    outputs:
+      hecho: ${{ steps.hoy.outputs.hecho }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          sparse-checkout: out/historial
+      - id: hoy
+        name: ¿Se ha ejecutado ya hoy?
+        run: |
+          if [ -f "out/historial/$(date -u +%F).json" ]; then
+            echo "hecho=1" >> "$GITHUB_OUTPUT"; echo "Ya hay historial de hoy."
+          fi
+
   rutina:
+    needs: comprobar
+    # Las programadas de respaldo no hacen nada si hoy ya se ejecutó
+    if: github.event_name != 'schedule' || needs.comprobar.outputs.hecho != '1'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -51,8 +75,8 @@ jobs:
           ETAPAS_AVISO_PRUEBA: ${{ inputs.aviso_prueba && '1' || '' }}
         run: python -m etapas --rutina
 
-      - name: Aviso por correo si hay novedades
-        if: hashFiles('out/alertas.md') != ''
+      - name: Aviso por correo si hay novedades (solo la primera ejecución del día)
+        if: hashFiles('out/alertas.md') != '' && (needs.comprobar.outputs.hecho != '1' || inputs.aviso_prueba)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
