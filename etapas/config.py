@@ -70,6 +70,9 @@ WEIGHTS = {
 # Rango estimado de fluctuación: cada extremo usa el cuantil RANGE_QUANTILE de los movimientos
 # pasados (0.9 ⇒ cada extremo se supera ~1 de cada 10 velas; ~80 % de velas dentro del rango)
 RANGE_QUANTILE = 0.9
+# Rango típico: la mediana de esos movimientos (en una vela normal el precio llega hasta ahí;
+# la mitad de las velas se quedan antes y la otra mitad van más lejos)
+RANGE_QUANTILE_TYPICAL = 0.5
 
 # Confianza = puntuación 1ª − puntuación 2ª
 CONF_HIGH = 30

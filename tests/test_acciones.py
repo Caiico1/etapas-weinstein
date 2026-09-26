@@ -122,7 +122,7 @@ def test_chart_level_lines_and_labels_on_log_axis(monkeypatch):
 
 
 def test_report_table_shows_key_columns_first(monkeypatch, tmp_path):
-    """Mín./máx. estimado y niveles, justo tras la explicación: visibles sin desplazar la tabla."""
+    """Rangos típico y extremo y niveles, justo tras la explicación: visibles sin desplazar la tabla."""
     import re
 
     def fake_fetch(ticker, cfg):
@@ -132,5 +132,5 @@ def test_report_table_shows_key_columns_first(monkeypatch, tmp_path):
     monkeypatch.setattr(analysis, "fetch_ondo_token", lambda t: None)
     page = write_html(analysis.analyze_symbol("accion:TEST"), tmp_path).read_text(encoding="utf-8")
     heads = re.findall(r"<th>(.*?)</th>", page)
-    assert heads[:7] == ["Marco", "Etapa", "Qué significa", "Mín. estimado", "Máx. estimado",
-                         "Nivel que confirma", "Nivel que invalida"]
+    assert heads[:9] == ["Marco", "Etapa", "Qué significa", "Mín. típico", "Máx. típico",
+                         "Mín. extremo", "Máx. extremo", "Nivel que confirma", "Nivel que invalida"]

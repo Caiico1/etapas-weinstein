@@ -154,7 +154,15 @@ La línea "Métricas" de la salida muestra todos los valores que justifican cada
   cierra así y cuándo cierra. Aparece solo en el informe de cada producto, no en el índice. Los niveles
   solo cuentan al cierre de la vela.
 
-### Rango estimado de fluctuación (columnas Mín. / Máx. estimado)
+### Rango de fluctuación: típico y extremo (columnas Mín./Máx. típico y Mín./Máx. extremo)
+
+- **Típico**: la mediana de los movimientos pasados. Es hasta dónde suele llegar el precio en una
+  vela normal; la mitad de las velas se quedan antes y la otra mitad van más lejos. En la
+  comprobación fuera de muestra, BTC lo respetó el 48-50 % de las veces en los tres marcos, y ETH
+  mensual algo menos (35-43 %).
+- **Extremo**: el percentil 90, que solo 1 de cada 10 velas supera. Es el que se describe abajo.
+  Antes se llamaba "estimado".
+
 
 Es el rango en el que se espera que se mueva el precio durante la **vela en curso** (hoy, esta
 semana, este mes), contado desde el último cierre. Mide cuánto se mueve el precio, no hacia dónde:

@@ -51,3 +51,4 @@ def test_result_includes_range_around_price():
     res = analyze_candles(Candles(_random_walk(400, 5), None, "test"), D)
     assert res.est_period == "hoy"
     assert 0 < res.est_low < res.price < res.est_high
+    assert res.est_low < res.typ_low < res.price < res.typ_high < res.est_high   # típico ⊂ extremo

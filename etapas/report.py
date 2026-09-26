@@ -13,10 +13,12 @@ from .explain import KEY_ZONE_NOTE, KEY_ZONE_TITLE, key_zone, meaning
 
 STAGE_COLORS = {1: "#2563eb", 2: "#16a34a", 3: "#eab308", 4: "#dc2626"}
 HEADERS = ["Marco", "Etapa", "Confianza", "Transición", "Precio", "Media clave", "Pendiente",
-           "Estructura", "Nivel que confirma", "Nivel que invalida", "Mín. estimado", "Máx. estimado"]
-RANGE_NOTE = ("Mín./máx. estimado: rango en el que se espera que fluctúe el precio durante la vela en "
-              "curso (hoy, esta semana, este mes), medido desde el último cierre con la volatilidad "
-              "actual. En el histórico, ~8 de cada 10 velas quedaron dentro. No indica dirección.")
+           "Estructura", "Nivel que confirma", "Nivel que invalida",
+           "Mín. típico", "Máx. típico", "Mín. extremo", "Máx. extremo"]
+RANGE_NOTE = ("Mín./máx. típico: hasta dónde suele llegar el precio en una vela normal (la mitad de "
+              "las velas va más allá). Mín./máx. extremo: solo 1 de cada 10 velas lo supera. Ambos, "
+              "para la vela en curso (hoy, esta semana, este mes), desde el último cierre y con la "
+              "volatilidad actual. Indican cuánto se mueve, no hacia dónde.")
 
 
 def fmt_price(x) -> str:
@@ -49,6 +51,8 @@ def table_row(r: TimeframeResult) -> list[str]:
         r.structure,
         fmt_price(r.confirm_level),
         fmt_price(r.invalid_level),
+        fmt_price(r.typ_low),
+        fmt_price(r.typ_high),
         fmt_price(r.est_low),
         fmt_price(r.est_high),
     ]
@@ -80,8 +84,12 @@ def detail_line(r: TimeframeResult) -> str:
 def _range_text(r: TimeframeResult) -> str:
     if r.est_low is None or r.est_high is None or not r.price:
         return ""
-    return (f" · rango estimado {r.est_period}: {fmt_price(r.est_low)}–{fmt_price(r.est_high)} "
-            f"({(r.est_low / r.price - 1):+.1%} / {(r.est_high / r.price - 1):+.1%})")
+    typ = ""
+    if r.typ_low is not None and r.typ_high is not None:
+        typ = (f" · rango típico {r.est_period}: {fmt_price(r.typ_low)}–{fmt_price(r.typ_high)} "
+               f"({(r.typ_low / r.price - 1):+.1%} / {(r.typ_high / r.price - 1):+.1%})")
+    return typ + (f" · rango extremo {r.est_period}: {fmt_price(r.est_low)}–{fmt_price(r.est_high)} "
+                  f"({(r.est_low / r.price - 1):+.1%} / {(r.est_high / r.price - 1):+.1%})")
 
 
 def _stage_text(r: TimeframeResult) -> str:
@@ -284,8 +292,8 @@ def build_figure(asset: AssetResult):
                           line_width=0, layer="below", row=i, col=1)
         levels = [(r.confirm_level, f"Confirma {fmt_price(r.confirm_level)}", "#16a34a", "dash", 2.2),
                   (r.invalid_level, f"Invalida {fmt_price(r.invalid_level)}", "#dc2626", "dash", 2.2),
-                  (r.est_low, f"Mín. est. {r.est_period} {fmt_price(r.est_low)}", "#475569", "dot", 1.4),
-                  (r.est_high, f"Máx. est. {r.est_period} {fmt_price(r.est_high)}", "#475569", "dot", 1.4)]
+                  (r.est_low, f"Mín. extremo {r.est_period} {fmt_price(r.est_low)}", "#475569", "dot", 1.4),
+                  (r.est_high, f"Máx. extremo {r.est_period} {fmt_price(r.est_high)}", "#475569", "dot", 1.4)]
         axis = "" if i == 1 else str(i)
         for y, text, color, dash, width in levels:
             if y is None or y <= 0:
@@ -315,7 +323,7 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
     rows = [table_row(asset.timeframes[k]) for k in ORDER]
     meanings = [meaning(asset.timeframes[k], asset.kind) for k in ORDER]
     # Orden de lectura: lo importante primero (se ve sin desplazar la tabla), el detalle técnico después
-    first = ["Marco", "Etapa", "Qué significa", "Mín. estimado", "Máx. estimado",
+    first = ["Marco", "Etapa", "Qué significa", "Mín. típico", "Máx. típico", "Mín. extremo", "Máx. extremo",
              "Nivel que confirma", "Nivel que invalida"]
     heads = first + [h for h in HEADERS if h not in first]
     thead = "".join(f"<th>{html.escape(h)}</th>" for h in heads)
@@ -324,7 +332,8 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
         values = dict(zip(HEADERS, r)) | {"Qué significa": m}
         tbody += "<tr>" + "".join(
             f'<td class="meaning">{html.escape(values[h])}</td>' if h == "Qué significa"
-            else f'<td class="{"est" if "estimado" in h else ""}">{html.escape(values[h])}</td>'
+            else f'<td class="{"typ" if "típico" in h else "est" if "extremo" in h else ""}">'
+                 f'{html.escape(values[h])}</td>'
             for h in heads) + "</tr>"
     zone = key_zone(asset)
     zone_html = ""
@@ -345,7 +354,8 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
  table {{ border-collapse: collapse; font-size: 14px; margin: 12px 0; }}
  th, td {{ border: 1px solid #ddd; padding: 6px 10px; text-align: left; white-space: nowrap; }}
  td.meaning {{ white-space: normal; min-width: 280px; max-width: 380px; font-size: 13px; }}
- td.est {{ background: #f1f5f9; font-weight: 600; }}
+ td.typ {{ background: #e0f2fe; font-weight: 600; }}
+ td.est {{ background: #f1f5f9; }}
  .keyzone {{ background: #fffbeb; border: 1px solid #f59e0b; border-left: 6px solid #f59e0b;
              border-radius: 6px; padding: 10px 14px; margin: 12px 0; }}
  .keyzone ul {{ margin: 6px 0; padding-left: 20px; }}
@@ -386,7 +396,8 @@ def _stage_cell(r: TimeframeResult) -> str:
     return (f'<td><span class="chip" style="background:{STAGE_COLORS[r.stage]}">{r.stage}</span> '
             f'{html.escape(r.stage_name)}{trans}<br><span class="muted">confianza {r.confidence_label} · '
             f'confirma {fmt_price(r.confirm_level)} · invalida {fmt_price(r.invalid_level)}<br>'
-            f'rango {html.escape(r.est_period)}: {fmt_price(r.est_low)} – {fmt_price(r.est_high)}</span></td>')
+            f'rango {html.escape(r.est_period)}: típico {fmt_price(r.typ_low)} – {fmt_price(r.typ_high)}'
+            f' · extremo {fmt_price(r.est_low)} – {fmt_price(r.est_high)}</span></td>')
 
 
 def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str | None,

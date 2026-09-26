@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .classifier import STAGE_NAMES, classify, levels
-from .config import ORDER, RANGE_QUANTILE, TIMEFRAMES, TimeframeConfig
+from .config import ORDER, RANGE_QUANTILE, RANGE_QUANTILE_TYPICAL, TIMEFRAMES, TimeframeConfig
 from .data import Candles, DataError, fetch_candles, fetch_ondo_token, fetch_stock_candles
 from .indicators import expected_range
 
@@ -43,8 +43,10 @@ class TimeframeResult:
     breakout: str = ""
     confirm_level: float | None = None
     invalid_level: float | None = None
-    est_low: float | None = None      # rango estimado de la vela en curso
+    est_low: float | None = None      # rango extremo de la vela en curso (1 de cada 10 lo supera)
     est_high: float | None = None
+    typ_low: float | None = None      # rango típico de la vela en curso (mediana)
+    typ_high: float | None = None
     est_period: str = ""
     last_price: float | None = None   # último precio conocido, incluida la vela en curso
     atr: float | None = None
@@ -173,6 +175,8 @@ def analyze_candles(candles: Candles, cfg: TimeframeConfig, provisional: bool = 
     if res.status == "ok":
         low, high = expected_range(df, hist["atr"], RANGE_QUANTILE, cfg.range_lookback)
         res.est_low, res.est_high, res.est_period = _f(low), _f(high), cfg.period_name
+        low, high = expected_range(df, hist["atr"], RANGE_QUANTILE_TYPICAL, cfg.range_lookback)
+        res.typ_low, res.typ_high = _f(low), _f(high)
     if provisional and candles.current is not None:
         cur = pd.concat([df, candles.current.to_frame().T.astype(float)])
         res.provisional = snapshot(classify(cur, cfg, ma_len), cfg, ma_len)
