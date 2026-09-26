@@ -1,0 +1,317 @@
+{
+  "fecha": "2026-09-26",
+  "activos": {
+    "BTC": {
+      "1M": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-08-01",
+        "cierre": 78581.29,
+        "confirma": 60000.0,
+        "invalida": 82850.0
+      },
+      "1w": {
+        "etapa": 1,
+        "transicion": "",
+        "vela": "2026-09-14",
+        "cierre": 81178.0,
+        "confirma": 82300.0,
+        "invalida": 61824.97
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-25",
+        "cierre": 84099.99,
+        "confirma": 87395.67,
+        "invalida": 75348.894
+      }
+    },
+    "ETH": {
+      "1M": {
+        "etapa": 3,
+        "transicion": "3→4",
+        "vela": "2026-08-01",
+        "cierre": 2467.65,
+        "confirma": 1505.68,
+        "invalida": 2566.53
+      },
+      "1w": {
+        "etapa": 1,
+        "transicion": "",
+        "vela": "2026-09-14",
+        "cierre": 2645.21,
+        "confirma": 2668.0,
+        "invalida": 1750.2
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-25",
+        "cierre": 2691.61,
+        "confirma": 2807.34,
+        "invalida": 2358.88
+      }
+    },
+    "SOL": {
+      "1M": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-08-01",
+        "cierre": 103.06,
+        "confirma": 60.13,
+        "invalida": 98.41
+      },
+      "1w": {
+        "etapa": 1,
+        "transicion": "",
+        "vela": "2026-09-14",
+        "cierre": 111.17,
+        "confirma": 114.32,
+        "invalida": 70.58
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-25",
+        "cierre": 122.15,
+        "confirma": 122.94,
+        "invalida": 96.78399999999999
+      }
+    },
+    "ADA": {
+      "1M": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-08-01",
+        "cierre": 0.1978,
+        "confirma": 0.1382,
+        "invalida": 0.25566
+      },
+      "1w": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-09-14",
+        "cierre": 0.2279,
+        "confirma": 0.1533,
+        "invalida": 0.2584
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-25",
+        "cierre": 0.2588,
+        "confirma": 0.2623,
+        "invalida": 0.20824599999999996
+      }
+    },
+    "accion:NVDA": {
+      "1M": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-08-01",
+        "cierre": 220.53323364257812,
+        "confirma": 236.00056206243724,
+        "invalida": 193.48025817871093
+      },
+      "1w": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-14",
+        "cierre": 222.27000427246094,
+        "confirma": 236.00055049508398,
+        "invalida": 202.97990824381512
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-25",
+        "cierre": 225.07000732421875,
+        "confirma": 234.49759976142684,
+        "invalida": 215.79476501464845
+      }
+    },
+    "accion:TSLA": {
+      "1M": {
+        "etapa": 3,
+        "transicion": "",
+        "vela": "2026-08-01",
+        "cierre": 367.95001220703125,
+        "confirma": 297.3800048828125,
+        "invalida": 453.3999938964844
+      },
+      "1w": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-09-14",
+        "cierre": 364.2699890136719,
+        "confirma": 297.3800048828125,
+        "invalida": 378.6689982096354
+      },
+      "1d": {
+        "etapa": 1,
+        "transicion": "",
+        "vela": "2026-09-25",
+        "cierre": 372.1099853515625,
+        "confirma": 386.8299865722656,
+        "invalida": 345.20001220703125
+      }
+    },
+    "accion:SPY": {
+      "1M": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-08-01",
+        "cierre": 765.1499633789062,
+        "confirma": 777.4394533769142,
+        "invalida": 709.0028137207031
+      },
+      "1w": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-14",
+        "cierre": 761.6900024414062,
+        "confirma": 777.439455060074,
+        "invalida": 727.2939857237523
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-25",
+        "cierre": 771.3499755859375,
+        "confirma": 773.3795487683207,
+        "invalida": 759.9079907226562
+      }
+    },
+    "accion:BE": {
+      "1M": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-08-01",
+        "cierre": 206.3000030517578,
+        "confirma": 351.2799987792969,
+        "invalida": 192.18299942016603
+      },
+      "1w": {
+        "etapa": 2,
+        "transicion": "2→3",
+        "vela": "2026-09-14",
+        "cierre": 265.6300048828125,
+        "confirma": 288.0,
+        "invalida": 225.55833333333334
+      },
+      "1d": {
+        "etapa": 3,
+        "transicion": "",
+        "vela": "2026-09-25",
+        "cierre": 288.70001220703125,
+        "confirma": 197.5,
+        "invalida": 292.7200012207031
+      }
+    },
+    "accion:QQQ": {
+      "1M": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-08-01",
+        "cierre": 716.013916015625,
+        "confirma": 747.8707325000422,
+        "invalida": 657.1478881835938
+      },
+      "1w": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-14",
+        "cierre": 720.6990356445312,
+        "confirma": 733.8153978492489,
+        "invalida": 679.543212890625
+      },
+      "1d": {
+        "etapa": 3,
+        "transicion": "",
+        "vela": "2026-09-25",
+        "cierre": 744.5,
+        "confirma": 699.2713317325664,
+        "invalida": 748.3499755859375
+      }
+    },
+    "accion:IAU": {
+      "1M": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-08-01",
+        "cierre": 83.70999908447266,
+        "confirma": 104.4000015258789,
+        "invalida": 74.44000244140625
+      },
+      "1w": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-09-14",
+        "cierre": 82.2300033569336,
+        "confirma": 74.44000244140625,
+        "invalida": 84.33133341471354
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-25",
+        "cierre": 80.66000366210938,
+        "confirma": 88.0199966430664,
+        "invalida": 79.61000061035156
+      }
+    },
+    "accion:GLD": {
+      "1M": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-08-01",
+        "cierre": 408.4200134277344,
+        "confirma": 509.70001220703125,
+        "invalida": 363.32000732421875
+      },
+      "1w": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-09-14",
+        "cierre": 401.1700134277344,
+        "confirma": 363.32000732421875,
+        "invalida": 411.5503346761068
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-25",
+        "cierre": 393.4100036621094,
+        "confirma": 429.4200134277344,
+        "invalida": 388.3900146484375
+      }
+    },
+    "accion:SLV": {
+      "1M": {
+        "etapa": 3,
+        "transicion": "",
+        "vela": "2026-08-01",
+        "cierre": 60.130001068115234,
+        "confirma": 49.61000061035156,
+        "invalida": 82.37000274658203
+      },
+      "1w": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-09-14",
+        "cierre": 59.93000030517578,
+        "confirma": 49.61000061035156,
+        "invalida": 63.32800025939942
+      },
+      "1d": {
+        "etapa": 1,
+        "transicion": "1→2",
+        "vela": "2026-09-25",
+        "cierre": 58.13999938964844,
+        "confirma": 64.30999755859375,
+        "invalida": 56.279998779296875
+      }
+    }
+  }
+}
