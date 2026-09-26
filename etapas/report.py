@@ -421,10 +421,6 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
         changes_html = f"<h2>Cambios desde {prev_date}</h2><p class='muted'>Ninguno.</p>"
     else:
         changes_html = "<p class='muted'>Primera ejecución: los cambios aparecerán a partir de la próxima.</p>"
-    zone_items = "".join(
-        f"<li><b>{html.escape(a.title)}</b> · {html.escape(z)}</li>" for a in assets for z in key_zone(a))
-    zone_html = (f'<div class="keyzone"><b>⚠ {html.escape(KEY_ZONE_TITLE)}</b><ul>{zone_items}</ul>'
-                 f'<p>{html.escape(KEY_ZONE_NOTE)}</p></div>') if zone_items else ""
     warn_html = ("<h2>Avisos</h2><ul>" + "".join(f"<li>{html.escape(w)}</li>" for w in warnings)
                  + "</ul>") if warnings else ""
     legend = " ".join(f'<span class="chip" style="background:{c}">{s}</span> {STAGE_NAMES[s]}'
@@ -437,11 +433,6 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
  body {{ font-family: system-ui, sans-serif; margin: 24px; color: #111; background: #fff; }}
  table {{ border-collapse: collapse; font-size: 14px; margin: 12px 0; }}
  th, td {{ border: 1px solid #ddd; padding: 8px 10px; text-align: left; vertical-align: top; }}
- .keyzone {{ background: #fffbeb; border: 1px solid #f59e0b; border-left: 6px solid #f59e0b;
-             border-radius: 6px; padding: 10px 14px; margin: 12px 0; }}
- .keyzone ul {{ margin: 6px 0; padding-left: 20px; }}
- .keyzone li {{ margin: 4px 0; font-size: 14px; }}
- .keyzone p {{ color: #78350f; font-size: 12px; margin: 4px 0 0; }}
  th {{ background: #f4f4f5; }}
  .wrap {{ overflow-x: auto; }}
  .chip {{ display: inline-block; min-width: 18px; text-align: center; color: #fff; border-radius: 4px;
@@ -457,7 +448,6 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
 </style></head><body>
 <h1>Etapas de Weinstein · resumen</h1>
 <p class="muted">Actualizado {now:%Y-%m-%d %H:%M} UTC · solo velas cerradas · {legend}</p>
-{zone_html}
 {changes_html}
 <div class="wrap"><table>
 <thead><tr><th>Activo</th><th>Mensual (contexto)</th><th>Semanal (tendencia)</th>

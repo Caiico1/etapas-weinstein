@@ -48,3 +48,16 @@ def test_key_zone_crossed_near_and_far():
 def test_next_close_dates():
     assert "miércoles 30/09" in next_close(_r(tf="1M", candle_time="2026-08-01"), "cripto")
     assert "viernes 25/09" in next_close(_r(tf="1w", candle_time="2026-09-14"), "accion")
+
+
+def test_index_has_no_key_zone_section(tmp_path):
+    """La zona clave va solo en el informe de cada producto, no en la página resumen."""
+    import pandas as pd
+
+    from etapas.report import write_index
+    weekly = _r(stage=1, confirm=110, invalid=80, atr=8)
+    daily = _r(tf="1d", stage=2, price=100, confirm=150, invalid=60, atr=3, candle_time="2026-09-24")
+    asset = _asset({"1w": weekly, "1d": daily}, last_price=112)
+    assert key_zone(asset)                                   # el producto sí tiene zona clave
+    page = write_index([asset], [], None, [], tmp_path, pd.Timestamp("2026-09-26", tz="UTC"))
+    assert "zona clave" not in page.read_text(encoding="utf-8")

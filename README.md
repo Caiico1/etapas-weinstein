@@ -149,7 +149,7 @@ La línea "Métricas" de la salida muestra todos los valores que justifican cada
   media y su dirección, rango, estructura y tendencia previa). Código en `etapas/explain.py`.
 - **Zona clave**: un recuadro destacado cuando el precio actual ya ha cruzado un nivel que
   confirma o que invalida, o está a menos de un cuarto de ATR de uno. Indica qué pasaría si la vela
-  cierra así y cuándo cierra. Aparece en cada informe y, resumido, arriba del índice. Los niveles
+  cierra así y cuándo cierra. Aparece solo en el informe de cada producto, no en el índice. Los niveles
   solo cuentan al cierre de la vela.
 
 ### Rango estimado de fluctuación (columnas Mín. / Máx. estimado)
