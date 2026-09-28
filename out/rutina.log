@@ -31,3 +31,10 @@
     SOL Diario: cierra por encima del nivel que confirma de la etapa 2 (119.99 → cierre 122.15)
     accion:BE Diario: cierra por encima del nivel que invalida de la etapa 3 (288.00 → cierre 288.70)
 2026-09-27 11:55 UTC · 12/12 activos analizados · 0 cambios desde 2026-09-26
+2026-09-28 10:13 UTC · 12/12 activos analizados · 6 cambios desde 2026-09-27
+    ADA Semanal: entra en transición 4→1
+    BTC Semanal: cierra por encima del nivel que confirma de la etapa 1 (82,300 → cierre 84,472)
+    ETH Semanal: cierra por encima del nivel que confirma de la etapa 1 (2,668 → cierre 2,689)
+    SOL Semanal: cierra por encima del nivel que confirma de la etapa 1 (114.32 → cierre 121.99)
+    accion:BE Semanal: cierra por encima del nivel que confirma de la etapa 2 (288.00 → cierre 288.70)
+    accion:QQQ Semanal: cierra por encima del nivel que confirma de la etapa 2 (733.82 → cierre 744.50)
