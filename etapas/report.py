@@ -9,6 +9,7 @@ import pandas as pd
 from .analysis import AssetResult, TimeframeResult
 from .classifier import STAGE_NAMES
 from .config import DISCLAIMER, ORDER
+from .contexto import MarketContext, fomc_notes, headlines_for, next_fomc
 from .explain import KEY_ZONE_NOTE, KEY_ZONE_TITLE, key_zone, meaning
 
 STAGE_COLORS = {1: "#2563eb", 2: "#16a34a", 3: "#eab308", 4: "#dc2626"}
@@ -341,7 +342,56 @@ def build_figure(asset: AssetResult):
     return fig
 
 
-def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> Path | None:
+def context_html(asset: AssetResult, ctx: MarketContext | None) -> str:
+    """Sección «Contexto de mercado»: titulares, sentimiento y Reserva Federal. No toca la etapa."""
+    if ctx is None:
+        return ""
+    parts = ['<div class="context"><h2>Contexto de mercado</h2>'
+             '<p class="muted">Información complementaria: no modifica la etapa ni los niveles, que '
+             'salen solo del análisis técnico. Una noticia no explica por sí sola un movimiento y a '
+             'menudo llega después de que el precio se haya movido.</p>']
+    notes = fomc_notes(ctx, asset)
+    if notes:
+        parts.append('<div class="keyzone">' + "".join(f"<p>📅 {html.escape(n)}</p>" for n in notes) + "</div>")
+    heads = headlines_for(ctx, asset.symbol, asset.kind)
+    parts.append(f"<h3>Titulares recientes (últimos 7 días)</h3>")
+    if heads:
+        parts.append("<ul>" + "".join(
+            f'<li><span class="muted">{h.when:%d/%m %H:%M} · {html.escape(h.source)}</span> '
+            f'<a href="{html.escape(h.link)}" target="_blank" rel="noopener">{html.escape(h.title)}</a></li>'
+            for h in heads) + "</ul>")
+    elif ctx.sources_ok:
+        parts.append(f"<p>No hay titulares sobre {html.escape(asset.symbol)} en las fuentes consultadas "
+                     f"esta semana.</p>")
+    if ctx.sources_failed:
+        parts.append(f'<p class="muted">Fuentes no disponibles hoy: {", ".join(ctx.sources_failed)}.</p>')
+    parts.append(f'<p class="muted">Fuentes: {", ".join(ctx.sources_ok) or "ninguna disponible"} '
+                 f'(en inglés). Filtradas por nombre o ticker; puede colarse alguna noticia que solo lo '
+                 f'menciona de pasada.</p>')
+    parts.append("<h3>Sentimiento del mercado cripto</h3>")
+    if ctx.fng:
+        f = ctx.fng
+        parts.append(f"<p>Índice de miedo y codicia: <b>{f['hoy']} ({f['clase']})</b>; hace 7 días, "
+                     f"{f['hace7']} ({f['clase7']}). Escala de 0 (miedo extremo) a 100 (codicia "
+                     f"extrema). Mide el ánimo general del mercado cripto, no el de cada moneda. Los "
+                     f"extremos suelen coincidir con excesos, pero no marcan el momento de un giro.</p>")
+    else:
+        parts.append("<p>No disponible hoy.</p>")
+    parts.append("<h3>Reserva Federal (EE. UU.)</h3>")
+    nxt = next_fomc(ctx)
+    if nxt:
+        a, b = nxt
+        days = (b - ctx.today).days
+        parts.append(f"<p>Próxima reunión: <b>{a:%d/%m}–{b:%d/%m/%Y}</b> (decisión en {days} días). "
+                     f"Sus decisiones sobre los tipos de interés mueven los mercados, cripto incluido.</p>")
+    else:
+        parts.append("<p>Calendario no disponible hoy.</p>")
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False,
+               context: MarketContext | None = None) -> Path | None:
     if asset.error or all(r.history is None for r in asset.timeframes.values()):
         return None
     fig = build_figure(asset)
@@ -406,6 +456,9 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
  .wrap {{ overflow-x: auto; }}
  li {{ font-size: 13px; margin: 4px 0; }}
  .note {{ color: #555; font-size: 12px; margin: 0 0 12px; }}
+ .context {{ border-top: 2px solid #e5e7eb; margin-top: 18px; }}
+ .context h2 {{ font-size: 20px; margin-bottom: 4px; }} .context h3 {{ font-size: 15px; margin: 14px 0 4px; }}
+ .context li {{ margin: 4px 0; font-size: 14px; }} .muted {{ color: #666; font-size: 12px; }}
  .summary {{ background: #f8fafc; border-left: 4px solid #7c3aed; padding: 10px 14px; }}
  .disclaimer {{ color: #666; font-size: 13px; margin-top: 24px; }}
 </style></head><body>
@@ -418,6 +471,7 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
 <p class="note">{html.escape(RANGE_NOTE)}</p>
 {zone_html}
 <p class="summary">{summary}</p>
+{context_html(asset, context)}
 <details><summary>Métricas que justifican cada etapa</summary><ul>{details}</ul></details>
 {fig.to_html(full_html=False, include_plotlyjs="cdn")}
 <p class="disclaimer">{DISCLAIMER}</p>
@@ -457,7 +511,8 @@ def _stage_cell(r: TimeframeResult) -> str:
 
 
 def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str | None,
-                warnings: list[str], out_dir: Path, now: pd.Timestamp) -> Path:
+                warnings: list[str], out_dir: Path, now: pd.Timestamp,
+                context: MarketContext | None = None) -> Path:
     """Página resumen de todos los activos de la lista, con los cambios desde la última ejecución."""
     rows = []
     for a in assets:
@@ -516,6 +571,7 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
 <h1>Etapas de Weinstein · resumen</h1>
 <p><a href="guia.html">📘 Guía de lectura: qué significa cada dato y cómo interpretarlo</a></p>
 <p class="muted">Actualizado {now:%Y-%m-%d %H:%M} UTC · solo velas cerradas · {legend}</p>
+{_context_strip(context)}
 {changes_html}
 <div class="wrap"><table>
 <thead><tr><th>Activo</th><th>Mensual (contexto)</th><th>Semanal (tendencia)</th>
@@ -529,3 +585,17 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
     path = out_dir / "index.html"
     path.write_text(page, encoding="utf-8")
     return path
+
+
+def _context_strip(ctx: MarketContext | None) -> str:
+    """Franja breve del índice: sentimiento cripto y próxima reunión de la Fed."""
+    if ctx is None:
+        return ""
+    bits = []
+    if ctx.fng:
+        bits.append(f"Sentimiento cripto: <b>{ctx.fng['hoy']} · {html.escape(ctx.fng['clase'])}</b> "
+                    f"(hace 7 días: {ctx.fng['hace7']})")
+    nxt = next_fomc(ctx)
+    if nxt:
+        bits.append(f"Próxima reunión de la Fed: <b>{nxt[0]:%d/%m}–{nxt[1]:%d/%m}</b>")
+    return f'<p class="small">{" · ".join(bits)} · titulares en cada informe</p>' if bits else ""

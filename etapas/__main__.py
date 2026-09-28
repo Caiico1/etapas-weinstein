@@ -11,6 +11,7 @@ from pathlib import Path
 from .analysis import analyze_symbol
 from .config import DISCLAIMER
 from .report import render_json, render_text, write_html
+from .contexto import load_context
 from .rutina import load_watchlist, run as run_routine
 
 
@@ -61,8 +62,9 @@ def main(argv: list[str] | None = None) -> int:
         for a in assets:
             print(render_text(a))
     if args.html is not None:
+        context = load_context()
         for a in assets:
-            path = write_html(a, Path(args.html))
+            path = write_html(a, Path(args.html), context=context)
             msg = f"HTML: {path}" if path else f"HTML: no generado para {a.title} (sin datos)"
             print(msg, file=sys.stderr if args.json else sys.stdout)
     if not args.json:

@@ -144,3 +144,15 @@ def test_routine_writes_linked_guide(tmp_path, monkeypatch):
         assert f'id="{anchor}"' in guide and f'href="#{anchor}"' in guide
     assert 'href="guia.html"' in (out / "index.html").read_text(encoding="utf-8")
     assert 'href="guia.html"' in (out / "etapas_AAA.html").read_text(encoding="utf-8")
+
+
+def test_alert_email_includes_headlines_for_assets_with_news(tmp_path):
+    import datetime as dt
+
+    from etapas.contexto import Headline
+    h = Headline(dt.datetime(2026, 9, 28, 10, tzinfo=dt.timezone.utc), "Bitcoin falls", "https://x/1", "CoinDesk")
+    items = [{"simbolo": "BTC", "marco": "Semanal", "texto": "etapa 1 → 2"}]
+    body = rutina.write_alerts(items, "2026-09-27", tmp_path, "2026-09-28",
+                               {"BTC": [h], "ETH": [h]}).read_text(encoding="utf-8")
+    assert "Titulares recientes" in body and "[Bitcoin falls](https://x/1)" in body
+    assert "**ETH**" not in body                        # ETH no tiene novedades: sin titulares

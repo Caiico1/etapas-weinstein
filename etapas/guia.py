@@ -44,6 +44,7 @@ valores reales de BTC a finales de septiembre de 2026.</p>
 <li><a href="#graficos">Gráficos</a></li>
 <li><a href="#indice">Página resumen, cambios y avisos por correo</a></li>
 <li><a href="#acciones">Acciones, ETF y token de Ondo</a></li>
+<li><a href="#contexto">Contexto de mercado: titulares, sentimiento, Fed</a></li>
 <li><a href="#como">Cómo leer un informe paso a paso</a></li>
 <li><a href="#limites">Limitaciones</a></li>
 </ol>
@@ -258,7 +259,22 @@ ajustados por dividendos). Si existe su versión tokenizada de Ondo (por ejemplo
 informe muestra el precio del token y su diferencia con la acción. El token suele cotizar algo por
 encima porque reinvierte los dividendos.</p>
 
-<h2 id="como">15. Cómo leer un informe paso a paso</h2>
+<h2 id="contexto">15. Contexto de mercado</h2>
+<p>Sección al final de cada informe con información <b>complementaria</b>. <b>No modifica la etapa
+ni los niveles</b>, que siguen saliendo solo de las reglas técnicas.</p>
+<div class="wrap"><table>
+<tr><th>Dato</th><th>Qué es</th><th>Cómo interpretarlo</th></tr>
+<tr><td>Titulares recientes</td><td>Hasta 5 noticias de los últimos 7 días que mencionan el valor, de CoinDesk, Cointelegraph, Decrypt y The Block (en inglés), con enlace.</td>
+<td>Ayudan a entender qué está pasando. Una noticia no explica por sí sola un movimiento y a menudo llega después de él. Puede colarse alguna que solo lo menciona de pasada.</td></tr>
+<tr><td>Índice de miedo y codicia</td><td>De 0 (miedo extremo) a 100 (codicia extrema), hoy y hace 7 días (alternative.me).</td>
+<td>Es el ánimo general del mercado cripto, no el de cada moneda. Los extremos suelen coincidir con excesos, pero no marcan el momento de un giro.</td></tr>
+<tr><td>Reserva Federal</td><td>Próxima reunión del FOMC, según el calendario oficial.</td>
+<td>Sus decisiones sobre los tipos de interés mueven los mercados. Si la decisión cae dentro de una vela en curso, aparece un aviso 📅: el precio puede salirse del rango típico.</td></tr>
+</table></div>
+<p>En los <b>correos de aviso</b> se añaden los 2 o 3 titulares más recientes de los valores con
+novedades. Si una fuente falla, se indica y el resto del informe se genera igual.</p>
+
+<h2 id="como">16. Cómo leer un informe paso a paso</h2>
 <ol>
 <li><b>Semanal primero</b>: ¿en qué etapa está la tendencia principal?</li>
 <li><b>Mensual después</b>: ¿el contexto de fondo acompaña o va en contra?</li>
@@ -268,16 +284,17 @@ encima porque reinvierte los dividendos.</p>
 <li><b>Zona clave</b>: ¿hay algún nivel a punto de decidirse?</li>
 <li><b>Rangos</b>: ¿cuánto es normal que se mueva en el periodo?</li>
 <li><b>Si cerrara hoy</b>: ¿se está gestando algún cambio que aún no es oficial?</li>
+<li><b>Contexto</b>: ¿hay noticias o eventos, como una reunión de la Fed, que ayuden a entender el movimiento?</li>
 </ol>
 <div class="box">Ejemplo, BTC a finales de septiembre de 2026: mensual 4 (fondo bajista), semanal 1
 (base tras la caída) y diario 2 (rebote), EN CONFLICTO. La señal que resolvería el conflicto al alza
 es un cierre semanal por encima del nivel que confirma del semanal. Mientras no ocurra, es un rebote
 dentro de un fondo bajista.</div>
 
-<h2 id="limites">16. Limitaciones</h2>
+<h2 id="limites">17. Limitaciones</h2>
 <ul>
 <li>Las medias <b>van con retraso</b>: los cambios de etapa se confirman tarde, sobre todo en el mensual.</li>
-<li>Es un <b>análisis técnico automático</b> con reglas fijas. No tiene en cuenta noticias, fundamentales ni tu situación personal.</li>
+<li>Es un <b>análisis técnico automático</b> con reglas fijas. Las noticias se muestran como contexto, pero no intervienen en el cálculo. No tiene en cuenta fundamentales ni tu situación personal.</li>
 <li>Los rangos estiman <b>cuánto</b> se mueve el precio, no <b>hacia dónde</b>, y en los periodos de mucha volatilidad el precio se sale de ellos más a menudo.</li>
 <li>Las ejecuciones automáticas de GitHub pueden retrasarse horas. Mira la fecha de «Actualizado».</li>
 </ul>

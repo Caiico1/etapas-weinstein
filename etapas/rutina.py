@@ -8,6 +8,7 @@ import pandas as pd
 
 from .analysis import AssetResult, analyze_symbol, parse_symbol
 from .config import DISCLAIMER, ORDER, TIMEFRAMES
+from .contexto import MarketContext, headlines_for, load_context
 from .guia import write_guide
 from .report import fmt_price, write_html, write_index
 
@@ -109,7 +110,8 @@ def level_alerts(prev: dict, curr: dict) -> list[dict]:
     return alerts
 
 
-def write_alerts(items: list[dict], prev_date: str | None, out_dir: Path, today: str) -> Path | None:
+def write_alerts(items: list[dict], prev_date: str | None, out_dir: Path, today: str,
+                 headlines: dict | None = None) -> Path | None:
     """Escribe out/alertas.md y out/alertas_titulo.txt si hay novedades (los usa GitHub Actions
     para abrir una issue, que GitHub envía por correo). Si no hay novedades, no escribe nada."""
     for name in ("alertas.md", "alertas_titulo.txt"):
@@ -121,6 +123,13 @@ def write_alerts(items: list[dict], prev_date: str | None, out_dir: Path, today:
     lines = [f"**{n}** en la rutina del {today}"
              + (f" (comparado con {prev_date})" if prev_date else "") + ":", ""]
     lines += [f"- **{c['simbolo']}**{' ' + c['marco'] if c['marco'] else ''}: {c['texto']}" for c in items]
+    news = [(sym, hs) for sym, hs in (headlines or {}).items()
+            if hs and any(c["simbolo"] == sym for c in items)]
+    if news:
+        lines += ["", "**Titulares recientes** (contexto, no señales):"]
+        for sym, hs in news:
+            lines += [f"- **{sym}**: " + " · ".join(f"[{h.title}]({h.link}) ({h.source}, {h.when:%d/%m})"
+                                                    for h in hs[:3])]
     if web:
         lines += ["", f"Informes completos: {web}"]
     lines += ["", f"_{DISCLAIMER}_"]
@@ -143,6 +152,7 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None) -> int:
         print(f"La lista {watchlist} está vacía.")
         return 1
 
+    context = load_context(now)
     assets = []
     for sym in symbols:
         print(f"Analizando {sym}...", flush=True)
@@ -151,7 +161,7 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None) -> int:
         if asset.error:
             log.append(f"{asset.key}: {asset.error}")
         else:
-            write_html(asset, out_dir, index_link=True)
+            write_html(asset, out_dir, index_link=True, context=context)
 
     hist_dir = out_dir / "historial"
     hist_dir.mkdir(parents=True, exist_ok=True)
@@ -168,9 +178,10 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None) -> int:
 
     write_guide(out_dir)
     index = write_index(assets, [c for c in changes if c.get("tipo") != "prueba"], prev_date, log,
-                        out_dir, now)
+                        out_dir, now, context)
     # Añadir o quitar valores de la lista se ve en la web, pero no genera correo
-    write_alerts([c for c in changes if c.get("tipo") != "lista"], prev_date, out_dir, today)
+    headlines = {a.key: headlines_for(context, a.symbol, a.kind) for a in assets if not a.error}
+    write_alerts([c for c in changes if c.get("tipo") != "lista"], prev_date, out_dir, today, headlines)
 
     ok = sum(1 for a in assets if not a.error)
     summary = (f"{now:%Y-%m-%d %H:%M} UTC · {ok}/{len(assets)} activos analizados · "

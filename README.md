@@ -146,6 +146,18 @@ Parámetros en [`etapas/config.py`](etapas/config.py):
 
 La línea "Métricas" de la salida muestra todos los valores que justifican cada etapa.
 
+### Contexto de mercado (no modifica la etapa)
+
+Al final de cada informe (`etapas/contexto.py`), sin claves ni coste:
+- **Titulares** de CoinDesk, Cointelegraph, Decrypt y The Block (RSS): hasta 5 de los últimos 7
+  días. Se filtran por nombre (sin distinguir mayúsculas) o por ticker (solo en mayúsculas).
+- **Índice de miedo y codicia** cripto (alternative.me), de hoy y de hace 7 días.
+- **Reuniones de la Reserva Federal**, leídas de su calendario oficial, con un aviso si la
+  decisión cae dentro de una vela en curso.
+- En el índice, una franja con el sentimiento y la próxima reunión. En los correos, 2 o 3
+  titulares por valor con novedades.
+- Si una fuente falla, se indica y el resto se genera igual. Los tests no acceden a la red.
+
 ### Precio actual, cierre de referencia y "Si cerrara hoy"
 
 - **Precio actual**: el último precio conocido. Es el mismo para los tres marcos y aparece arriba
