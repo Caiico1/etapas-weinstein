@@ -30,11 +30,11 @@ concurrency:
 
 jobs:
   comprobar:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       hecho: ${{ steps.hoy.outputs.hecho }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
           sparse-checkout: out/historial
@@ -49,16 +49,16 @@ jobs:
     needs: comprobar
     # Las programadas de respaldo no hacen nada si hoy ya se ejecutó
     if: github.event_name != 'schedule' || needs.comprobar.outputs.hecho != '1'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main             # siempre la última versión (también al reejecutar una ejecución antigua)
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -102,11 +102,11 @@ jobs:
             git push
           fi
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: out
 
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
