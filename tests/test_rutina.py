@@ -131,3 +131,16 @@ def test_list_changes_not_emailed(tmp_path, monkeypatch):
     assert rutina.run(lista, out, now=pd.Timestamp("2026-09-25 06:00", tz="UTC")) == 0
     assert "retirado de la lista" in (out / "index.html").read_text(encoding="utf-8")
     assert not (out / "alertas.md").exists()
+
+
+def test_routine_writes_linked_guide(tmp_path, monkeypatch):
+    monkeypatch.setattr(rutina, "analyze_symbol", _fake_analyze)
+    lista = tmp_path / "w.txt"
+    lista.write_text("AAA\n", encoding="utf-8")
+    out = tmp_path / "out"
+    assert rutina.run(lista, out) == 0
+    guide = (out / "guia.html").read_text(encoding="utf-8")
+    for anchor in ("etapas", "precios", "niveles", "rangos", "tecnicos", "metricas", "zona", "alineacion"):
+        assert f'id="{anchor}"' in guide and f'href="#{anchor}"' in guide
+    assert 'href="guia.html"' in (out / "index.html").read_text(encoding="utf-8")
+    assert 'href="guia.html"' in (out / "etapas_AAA.html").read_text(encoding="utf-8")

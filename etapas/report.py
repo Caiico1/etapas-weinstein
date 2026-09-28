@@ -377,7 +377,8 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
                      f'<p>{html.escape(KEY_ZONE_NOTE)}</p></div>')
     details = "".join(f"<li>{html.escape(detail_line(asset.timeframes[k]).strip())}</li>" for k in ORDER)
     summary = html.escape(alignment_summary(asset)).replace("\n", "<br>")
-    back = '<p><a href="index.html">← Todos los activos</a></p>' if index_link else ""
+    back = ('<p><a href="index.html">← Todos los activos</a> · '
+            '<a href="guia.html">Guía: qué significa cada dato</a></p>') if index_link else ""
     token_html = f'<p class="note">{html.escape(token_text(asset))}</p>' if token_text(asset) else ""
     page = f"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
@@ -513,6 +514,7 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
  .disclaimer {{ color: #666; font-size: 13px; margin-top: 24px; }}
 </style></head><body>
 <h1>Etapas de Weinstein · resumen</h1>
+<p><a href="guia.html">📘 Guía de lectura: qué significa cada dato y cómo interpretarlo</a></p>
 <p class="muted">Actualizado {now:%Y-%m-%d %H:%M} UTC · solo velas cerradas · {legend}</p>
 {changes_html}
 <div class="wrap"><table>

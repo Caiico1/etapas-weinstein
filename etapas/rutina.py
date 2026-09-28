@@ -8,6 +8,7 @@ import pandas as pd
 
 from .analysis import AssetResult, analyze_symbol, parse_symbol
 from .config import DISCLAIMER, ORDER, TIMEFRAMES
+from .guia import write_guide
 from .report import fmt_price, write_html, write_index
 
 _CRYPTO = re.compile(r"^[A-Z0-9]{1,15}$")
@@ -165,6 +166,7 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None) -> int:
     (hist_dir / f"{today}.json").write_text(
         json.dumps({"fecha": today, "activos": curr}, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    write_guide(out_dir)
     index = write_index(assets, [c for c in changes if c.get("tipo") != "prueba"], prev_date, log,
                         out_dir, now)
     # Añadir o quitar valores de la lista se ve en la web, pero no genera correo
