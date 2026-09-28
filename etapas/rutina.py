@@ -6,10 +6,13 @@ from pathlib import Path
 
 import pandas as pd
 
+from . import agentes
 from .analysis import AssetResult, analyze_symbol, parse_symbol
 from .config import DISCLAIMER, ORDER, TIMEFRAMES
 from .contexto import MarketContext, headlines_for, load_context
 from .guia import write_guide
+from .liquidez import analyze_liquidity
+from .posiciones import check as check_position, load_positions
 from .report import fmt_price, write_html, write_index
 
 _CRYPTO = re.compile(r"^[A-Z0-9]{1,15}$")
@@ -56,6 +59,15 @@ def load_previous(hist_dir: Path, today: str) -> tuple[str, dict] | None:
         return None
     data = json.loads(files[-1].read_text(encoding="utf-8"))
     return files[-1].stem, data["activos"]
+
+
+def load_previous_positions(hist_dir: Path, today: str) -> dict:
+    """Estado de las posiciones en la última instantánea anterior a hoy que las incluya."""
+    for f in sorted((p for p in hist_dir.glob("*.json") if p.stem < today), reverse=True):
+        data = json.loads(f.read_text(encoding="utf-8"))
+        if "posiciones" in data:
+            return data["posiciones"]
+    return {}
 
 
 def diff(prev: dict, curr: dict) -> list[dict]:
@@ -139,7 +151,49 @@ def write_alerts(items: list[dict], prev_date: str | None, out_dir: Path, today:
     return out_dir / "alertas.md"
 
 
-def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None) -> int:
+def add_liquidity(asset: AssetResult, log: list[str]) -> None:
+    """Calcula la liquidez concentrada de un criptoactivo. Un fallo nunca detiene la rutina."""
+    if asset.error or asset.kind != "cripto":
+        return
+    try:
+        asset.liquidity = analyze_liquidity(asset)
+    except Exception as e:  # la liquidez es un añadido: la etapa y el informe siguen igual
+        log.append(f"{asset.key}: no se pudo calcular la liquidez ({type(e).__name__}: {str(e)[:120]})")
+    if asset.liquidity is not None:
+        for prof in asset.liquidity.profiles:
+            for q in prof.quotes:
+                if q.error and q.fee_day is None and "on-chain" in q.error:
+                    log.append(f"{asset.key} {q.pool.label}: {q.error}")
+                    break
+
+
+def position_status(path: Path, assets: list[AssetResult], log: list[str]) -> list[dict]:
+    """Estado de cada posición de posiciones.txt con el precio actual de su activo."""
+    positions, warnings = load_positions(path)
+    log.extend(warnings)
+    prices = {a.symbol: a.last_price for a in assets if not a.error and a.kind == "cripto"}
+    out = []
+    for pos in positions:
+        if pos.symbol not in prices:
+            log.append(f"posiciones.txt: {pos.symbol} no está en la lista de seguimiento; añádelo para vigilarlo")
+        out.append(check_position(pos, prices.get(pos.symbol)))
+    return out
+
+
+def position_alerts(prev: dict, items: list[dict]) -> list[dict]:
+    """Avisa cuando una posición cambia de estado (entra en zona de aviso, sale o vuelve)."""
+    alerts = []
+    for i in items:
+        key = f"{i['simbolo']} {i['min']:g}-{i['max']:g}"
+        old = prev.get(key)
+        if i["estado"] != old and (i["aviso"] or old is not None):
+            alerts.append({"simbolo": i["simbolo"], "marco": "posición", "tipo": "posicion",
+                           "texto": f"rango {i['min']:g}–{i['max']:g}: {i['texto']}"})
+    return alerts
+
+
+def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None,
+        positions_file: Path | None = None, ia: bool = False) -> int:
     now = now or pd.Timestamp.now(tz="UTC")
     today = now.strftime("%Y-%m-%d")
     log = []
@@ -161,6 +215,7 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None) -> int:
         if asset.error:
             log.append(f"{asset.key}: {asset.error}")
         else:
+            add_liquidity(asset, log)
             write_html(asset, out_dir, index_link=True, context=context)
 
     hist_dir = out_dir / "historial"
@@ -173,12 +228,29 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None) -> int:
         changes.append({"simbolo": "PRUEBA", "marco": "", "tipo": "prueba",
                         "texto": "aviso de prueba: si te llega este correo, los avisos funcionan"})
     prev_date = previous[0] if previous else None
+
+    positions = position_status(positions_file or watchlist.parent / "posiciones.txt", assets, log)
+    prev_pos = load_previous_positions(hist_dir, today)
+    changes += position_alerts(prev_pos, positions)
+    pos_state = {f"{i['simbolo']} {i['min']:g}-{i['max']:g}": i["estado"] for i in positions}
     (hist_dir / f"{today}.json").write_text(
-        json.dumps({"fecha": today, "activos": curr}, ensure_ascii=False, indent=2), encoding="utf-8")
+        json.dumps({"fecha": today, "activos": curr, "posiciones": pos_state}, ensure_ascii=False, indent=2),
+        encoding="utf-8")
+
+    # Agentes: dictamen por activo, listo para una IA (gratis: pegar en claude.ai; con --ia: API)
+    for a in assets:
+        if a.error:
+            continue
+        d = agentes.dictamen(a, a.liquidity, context, positions)
+        agentes.write_prompt(d, out_dir)
+        if ia:
+            path, msg = agentes.ask_claude(d, out_dir)
+            if path is None:
+                log.append(f"{a.key}: IA no disponible: {msg}")
 
     write_guide(out_dir)
     index = write_index(assets, [c for c in changes if c.get("tipo") != "prueba"], prev_date, log,
-                        out_dir, now, context)
+                        out_dir, now, context, positions)
     # Añadir o quitar valores de la lista se ve en la web, pero no genera correo
     headlines = {a.key: headlines_for(context, a.symbol, a.kind) for a in assets if not a.error}
     write_alerts([c for c in changes if c.get("tipo") != "lista"], prev_date, out_dir, today, headlines)

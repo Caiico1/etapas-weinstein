@@ -1,4 +1,4 @@
-# etapas — Detector de etapas de Weinstein para criptoactivos y acciones
+# etapas — Etapas de Weinstein y rangos de liquidez concentrada (Uniswap / Orca)
 
 Determina en qué etapa del ciclo de mercado (Stan Weinstein) está un criptoactivo en
 **diario, semanal y mensual**, con reglas explícitas y puntuaciones que se pueden auditar.
@@ -62,6 +62,99 @@ Finance: `accion:NVDA`, `accion:SPY`, `accion:SAN.MC` (bolsa española con `.MC`
   historial (no alcanza para el mensual), su vela diaria se distorsiona los fines de semana (la
   bolsa está cerrada y el token apenas se mueve) y su liquidez es baja (~200 k$/día). Como el
   token sigue a la acción, las etapas y niveles de la acción valen para el token.
+
+## Liquidez concentrada (Uniswap v3 / Orca)
+
+Para cada criptomoneda, el informe añade tres perfiles de rango para aportar liquidez, con los
+**números exactos** de precio mínimo y máximo que hay que escribir en Uniswap u Orca:
+
+| Perfil | Etapa y volatilidad de | Horizonte | Para qué |
+|---|---|---|---|
+| Diaria | diario | 1 día | rango estrecho: más comisiones por dólar, revisión diaria |
+| Semanal | semanal | 7 días | equilibrio entre comisiones y margen |
+| Mensual | mensual | 1 mes | rango amplio y pasivo que tolera la volatilidad |
+
+Código: `etapas/liquidez.py` (cálculo), `etapas/pools.py` (pools y datos on-chain),
+`etapas/report_liquidez.py` (presentación), `etapas/posiciones.py` y `etapas/agentes.py`.
+
+**Rango.** Es el mismo método validado que el rango extremo, centrado en el precio actual: cada
+borde es el percentil 90 (`LP_QUANTILE`) de lo que se alejaron el máximo y el mínimo de las velas
+pasadas, en ATR, multiplicado por el ATR actual. Comprobación fuera de muestra (sep-2026), velas
+en las que el precio se quedó dentro todo el periodo:
+
+| | Diario | Semanal | Mensual |
+|---|---|---|---|
+| BTC | 81 % (±3,6 %) | 81 % (±15 %) | 76 % (±40 %) |
+| ETH | 79 % (±5,4 %) | 82 % (±20 %) | 76 % (±52 %) |
+| SOL | 78 % (±5,9 %) | 79 % (±31 %) | 78 % (±57 %) |
+| ADA | 80 % (±6,6 %) | 82 % (±32 %) | 88 % (±104 %, n = 60) |
+
+**Ajuste a ticks.** Uniswap y Orca solo admiten precios 1,0001^tick con el tick múltiplo del
+*tick spacing* del pool. El rango se ajusta **hacia fuera** (nunca se estrecha), teniendo en
+cuenta el orden de los tokens y sus decimales. El resultado es el rango que hay que introducir.
+
+**Idoneidad según la etapa** (del marco del perfil):
+
+| Etapa | Idoneidad | Por qué |
+|---|---|---|
+| 1 y 3 | favorable | el precio oscila en un rango: es donde la liquidez concentrada rinde más |
+| 2 | precaución | si sale por arriba, acabas 100 % en USDC y ganas menos que manteniendo el activo |
+| 4 | desfavorable | si sale por abajo, acabas 100 % en un activo que sigue cayendo |
+
+En una transición "X→Y" se toma el punto medio del riesgo de X y de Y, redondeando hacia el
+lado prudente. Una etapa favorable con el marco superior en etapa 4 baja a precaución.
+
+**Por pool** (fórmulas del whitepaper de Uniswap v3):
+- *Depósito*: qué parte va en el activo y qué parte en la moneda estable.
+- *Si toca el mín./máx.*: el resultado frente a mantener lo depositado (pérdida impermanente).
+- *Comisiones/día para 1.000 $*: tu parte de la liquidez activa (L / (L_pool + L)) × volumen de 24 h
+  × comisión del pool × (1 − parte del protocolo). La parte del protocolo se lee on-chain: Uniswap
+  tiene activada su comisión de protocolo en estos pools (1/4 de las comisiones; 1/6 en WETH/USDC
+  0,30 % de Base) y Orca se queda un 13 %. Supone que el volumen y la liquidez siguen como en las
+  últimas 24 h y que el precio sigue dentro del rango. No incluye el gas.
+- *Pérdida en el borde = días*: días de comisiones que compensan la pérdida si el precio acaba en
+  el borde más desfavorable.
+
+**Pools de referencia** (verificados on-chain en sep-2026; `tests/test_pools_red.py` los vuelve a
+comprobar con `ETAPAS_TEST_RED=1`):
+
+| Activo | Pools |
+|---|---|
+| BTC | Uniswap v3 cbBTC/USDC 0,05 % (Base), WBTC/USDC 0,05 % (Arbitrum), WBTC/USDT 0,05 % (Ethereum) |
+| ETH | Uniswap v3 WETH/USDC 0,05 % y 0,30 % (Base), 0,05 % (Arbitrum) y USDC/WETH 0,05 % (Ethereum) |
+| SOL | Orca SOL/USDC 0,04 % (Solana). En Uniswap solo hay un pool WETH/SOL de ~1 M$ |
+| ADA | ninguno: no está en Uniswap ni en Orca, y Minswap (Cardano) no usa liquidez concentrada |
+
+Para añadir un pool, se añade una línea en `POOLS` de `etapas/pools.py` y se comprueba con el
+test de red. Datos gratuitos, sin claves: nodos RPC públicos de publicnode.com y de Solana para
+el estado del pool (precio, liquidez activa, comisión de protocolo), y la API de GeckoTerminal
+(una petición por red) para el volumen y el TVL. Si alguna fuente falla, el rango sigue
+apareciendo y solo falta la estimación de comisiones. El precio de cada pool se compara con el de
+Binance, y si difiere más de un 2 % no se estima nada.
+
+### Posiciones abiertas (`posiciones.txt`)
+
+Una línea por posición: `ETH 2410 2930 semanal Base`. El índice muestra si cada una está dentro,
+cerca de un borde (a menos del 10 % de su anchura, `LP_EDGE_WARN`) o fuera. La rutina avisa por
+correo **cuando cambia de estado**, no cada día: el estado se guarda en el historial. Editar
+`posiciones.txt` en GitHub relanza la rutina. **Ojo**: si el repositorio es público, las
+posiciones también lo son, tanto en el archivo como en la web publicada.
+
+### Agentes e IA
+
+La rutina funciona como un equipo de agentes con reglas fijas: etapas, rangos, riesgo, contexto y
+vigilante de posiciones, más un coordinador que junta sus informes en un dictamen
+(`etapas/agentes.py`). Todo se calcula con reglas explícitas, sin coste. El dictamen se guarda
+en `out/ia/<SÍMBOLO>.md` con instrucciones para una IA:
+
+- **Gratis**: pega ese archivo en claude.ai y pide la explicación.
+- **Con la API de Anthropic** (de pago, opcional): `pip install anthropic`, define
+  `ANTHROPIC_API_KEY` y ejecuta `python -m etapas --rutina --ia`. En GitHub: Settings → Secrets and
+  variables → Actions, crea el *secret* `ANTHROPIC_API_KEY` y la variable `ETAPAS_IA` = `1`. La respuesta queda en `out/ia/<SÍMBOLO>_claude.md`. El
+  modelo solo explica: todos los números salen de los agentes.
+
+Opciones de la línea de comandos: `--posiciones ARCHIVO`, `--ia` y `--sin-liquidez` (no consulta
+los pools).
 
 ## Versión en la nube (GitHub)
 

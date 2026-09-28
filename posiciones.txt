@@ -1,0 +1,9 @@
+# Mis posiciones de liquidez concentrada abiertas (Uniswap, Orca...)
+# Una por línea: SÍMBOLO  PRECIO_MÍNIMO  PRECIO_MÁXIMO  [nota libre: perfil, pool, fecha...]
+# El símbolo tiene que estar en watchlist.txt. La rutina avisa por correo cuando una posición
+# se acerca a un borde (menos del 10 % de su anchura), sale del rango o vuelve a entrar.
+# Para dejar de vigilar una, bórrala o ponle # delante.
+#
+# Ejemplos:
+# ETH  2410  2930   semanal · Base WETH/USDC 0,05 %
+# SOL  105.2 131.1  semanal · Orca SOL/USDC

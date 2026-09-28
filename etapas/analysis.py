@@ -89,6 +89,7 @@ class AssetResult:
     error: str = ""
     kind: str = "cripto"               # "cripto" | "accion"
     token: dict | None = None          # token de Ondo de la acción, si cotiza
+    liquidity: object = None           # liquidez.LiquidityResult (solo criptomonedas)
 
     @property
     def key(self) -> str:
@@ -111,7 +112,8 @@ class AssetResult:
     def to_dict(self) -> dict:
         return {"simbolo": self.symbol, "tipo": self.kind, "error": self.error or None,
                 "token_ondo": _jsonable(self.token) if self.token else None,
-                "marcos": {k: v.to_dict() for k, v in self.timeframes.items()}}
+                "marcos": {k: v.to_dict() for k, v in self.timeframes.items()},
+                "liquidez": self.liquidity.to_dict() if self.liquidity is not None else None}
 
 
 def choose_ma(n_bars: int, cfg: TimeframeConfig) -> tuple[int | None, list[str]]:

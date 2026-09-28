@@ -16,7 +16,7 @@ on:
         default: false
   push:
     branches: [main]
-    paths: ["watchlist.txt", "etapas/**"]   # al cambiar la lista o el código, se actualiza
+    paths: ["watchlist.txt", "posiciones.txt", "etapas/**"]   # al cambiar las listas o el código, se actualiza
 
 permissions:
   contents: write               # guardar el historial en el repositorio
@@ -66,6 +66,10 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
+      - name: IA opcional (solo si la variable ETAPAS_IA vale 1)
+        if: vars.ETAPAS_IA == '1'
+        run: pip install anthropic
+
       - name: Tests
         run: python -m pytest -q
 
@@ -73,6 +77,8 @@ jobs:
         env:
           ETAPAS_WEB_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
           ETAPAS_AVISO_PRUEBA: ${{ inputs.aviso_prueba && '1' || '' }}
+          ETAPAS_IA: ${{ vars.ETAPAS_IA }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -m etapas --rutina
 
       - name: Aviso por correo si hay novedades (solo la primera ejecución del día)

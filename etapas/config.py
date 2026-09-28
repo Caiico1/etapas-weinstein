@@ -84,3 +84,18 @@ CONF_MEDIUM = 15
 SOURCES = [("binance", "{sym}/USDT"), ("binance_data", "{sym}/USDT"), ("kraken", "{sym}/USD")]
 
 DISCLAIMER = "Análisis técnico automatizado, no es recomendación de inversión."
+
+# ---------------------------------------------------------------- liquidez concentrada (Uniswap/Orca)
+
+# Perfiles: (marco cuya etapa y volatilidad se usan, nombre, horizonte = una vela de ese marco)
+LP_PROFILES = [("1d", "Diaria", "1 día"), ("1w", "Semanal", "7 días"), ("1M", "Mensual", "1 mes")]
+# Cada borde del rango es el cuantil LP_QUANTILE de los movimientos pasados: con 0,9 cada borde se
+# supera ~1 de cada 10 velas y el precio se mantiene dentro toda la vela ~80 % de las veces
+# (comprobado fuera de muestra, ver README).
+LP_QUANTILE = 0.9
+# Capital de referencia para estimar comisiones (en dólares)
+LP_CAPITAL_REF = 1000
+# Si el precio de un pool se aleja más que esto del de mercado, no se estiman comisiones
+LP_MAX_POOL_DEVIATION = 0.02
+# Posiciones abiertas: aviso si el precio está a menos de esta fracción de la anchura de un borde
+LP_EDGE_WARN = 0.10

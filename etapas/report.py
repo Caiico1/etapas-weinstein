@@ -11,6 +11,7 @@ from .classifier import STAGE_NAMES
 from .config import DISCLAIMER, ORDER
 from .contexto import MarketContext, fomc_notes, headlines_for, next_fomc
 from .explain import KEY_ZONE_NOTE, KEY_ZONE_TITLE, key_zone, meaning
+from .report_liquidez import LIQ_CSS, index_cell, liquidity_html, liquidity_text, positions_html
 
 STAGE_COLORS = {1: "#2563eb", 2: "#16a34a", 3: "#eab308", 4: "#dc2626"}
 HEADERS = ["Marco", "Etapa", "Si cerrara hoy", "Confianza", "Transición", "Cierre de referencia",
@@ -249,6 +250,8 @@ def render_text(asset: AssetResult) -> str:
         out.append(f"Fuente: {', '.join(sources)} · solo velas cerradas")
     out.append("")
     out.append(alignment_summary(asset))
+    if asset.liquidity is not None:
+        out.append(liquidity_text(asset.liquidity))
     return "\n".join(out)
 
 
@@ -461,6 +464,7 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False,
  .context li {{ margin: 4px 0; font-size: 14px; }} .muted {{ color: #666; font-size: 12px; }}
  .summary {{ background: #f8fafc; border-left: 4px solid #7c3aed; padding: 10px 14px; }}
  .disclaimer {{ color: #666; font-size: 13px; margin-top: 24px; }}
+{LIQ_CSS}
 </style></head><body>
 {back}<h1>Etapas de Weinstein · {html.escape(asset.title)}</h1>
 <p class="now">Precio actual: <b>{fmt_price(asset.last_price)}</b>
@@ -471,6 +475,7 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False,
 <p class="note">{html.escape(RANGE_NOTE)}</p>
 {zone_html}
 <p class="summary">{summary}</p>
+{liquidity_html(asset.liquidity)}
 {context_html(asset, context)}
 <details><summary>Métricas que justifican cada etapa</summary><ul>{details}</ul></details>
 {fig.to_html(full_html=False, include_plotlyjs="cdn")}
@@ -512,14 +517,14 @@ def _stage_cell(r: TimeframeResult) -> str:
 
 def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str | None,
                 warnings: list[str], out_dir: Path, now: pd.Timestamp,
-                context: MarketContext | None = None) -> Path:
+                context: MarketContext | None = None, positions: list[dict] | None = None) -> Path:
     """Página resumen de todos los activos de la lista, con los cambios desde la última ejecución."""
     rows = []
     for a in assets:
         name = html.escape(a.symbol) + (' <span class="kind">acción</span>' if a.kind == "accion" else "")
         link = f'<a href="etapas_{a.file_stem}.html">{name}</a>' if not a.error else name
         if a.error:
-            rows.append(f'<tr><td class="sym">{link}</td><td colspan="4" class="err">'
+            rows.append(f'<tr><td class="sym">{link}</td><td colspan="5" class="err">'
                         f'{html.escape(a.error)}</td></tr>')
             continue
         state, sentence = alignment_state(a)
@@ -534,7 +539,7 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
         rows.append(f'<tr><td class="sym">{link}<br><span class="muted">'
                     f'actual {fmt_price(a.last_price)}</span>{token}</td>{cells}'
                     f'<td><b style="color:{color}">{html.escape(state)}</b><br>'
-                    f'<span class="small">{html.escape(sentence)}</span></td></tr>')
+                    f'<span class="small">{html.escape(sentence)}</span></td>{index_cell(a.liquidity)}</tr>')
     if changes:
         items = "".join(f"<li><b>{html.escape(c['simbolo'])}</b> {html.escape(c['marco'])}: "
                         f"{html.escape(c['texto'])}</li>" for c in changes)
@@ -567,15 +572,17 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
           padding: 0 4px; }}
  .err {{ color: #b91c1c; }}
  .disclaimer {{ color: #666; font-size: 13px; margin-top: 24px; }}
+{LIQ_CSS}
 </style></head><body>
 <h1>Etapas de Weinstein · resumen</h1>
 <p><a href="guia.html">📘 Guía de lectura: qué significa cada dato y cómo interpretarlo</a></p>
 <p class="muted">Actualizado {now:%Y-%m-%d %H:%M} UTC · solo velas cerradas · {legend}</p>
 {_context_strip(context)}
 {changes_html}
+{positions_html(positions or [])}
 <div class="wrap"><table>
 <thead><tr><th>Activo</th><th>Mensual (contexto)</th><th>Semanal (tendencia)</th>
-<th>Diario (entrada)</th><th>Alineación</th></tr></thead>
+<th>Diario (entrada)</th><th>Alineación</th><th>Liquidez: idoneidad y rango</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table></div>
 <p class="muted">{html.escape(RANGE_NOTE)}</p>
 {warn_html}

@@ -45,6 +45,7 @@ valores reales de BTC a finales de septiembre de 2026.</p>
 <li><a href="#indice">Página resumen, cambios y avisos por correo</a></li>
 <li><a href="#acciones">Acciones, ETF y token de Ondo</a></li>
 <li><a href="#contexto">Contexto de mercado: titulares, sentimiento, Fed</a></li>
+<li><a href="#liquidez">Liquidez concentrada: rangos para Uniswap y Orca</a></li>
 <li><a href="#como">Cómo leer un informe paso a paso</a></li>
 <li><a href="#limites">Limitaciones</a></li>
 </ol>
@@ -274,7 +275,54 @@ ni los niveles</b>, que siguen saliendo solo de las reglas técnicas.</p>
 <p>En los <b>correos de aviso</b> se añaden los 2 o 3 titulares más recientes de los valores con
 novedades. Si una fuente falla, se indica y el resto del informe se genera igual.</p>
 
-<h2 id="como">16. Cómo leer un informe paso a paso</h2>
+<h2 id="liquidez">16. Liquidez concentrada: rangos para Uniswap y Orca</h2>
+<p>En Uniswap v3 (y en Orca, que funciona igual) aportas liquidez solo entre un <b>precio mínimo</b> y un
+<b>precio máximo</b>. Mientras el precio está dentro, cobras una parte de las comisiones de cada operación,
+y cuanto más estrecho es el rango, mayor es esa parte. Si el precio sale, dejas de cobrar y la posición queda
+entera en uno de los dos tokens: <b>por arriba</b>, todo en USDC (has ido vendiendo el activo mientras subía);
+<b>por abajo</b>, todo en el activo (lo has ido comprando mientras caía).</p>
+<h3>Los tres perfiles</h3>
+<ul>
+<li><b>Diaria</b>: usa la etapa y la volatilidad del diario. Es el rango más estrecho, con más comisiones por
+dólar, y hay que revisarlo cada día.</li>
+<li><b>Semanal</b>: usa el semanal. Es un equilibrio entre comisiones y margen.</li>
+<li><b>Mensual</b>: usa el mensual. Es un rango amplio para una gestión pasiva: aguanta mucha volatilidad, pero
+cobra menos por dólar.</li>
+</ul>
+<h3>Cómo se calcula el rango</h3>
+<p>Es el mismo método que el <a href="#rangos">rango extremo</a>, centrado en el precio actual: cada borde es
+hasta dónde llegó el precio en el 90 % de las velas pasadas de ese marco, con la volatilidad actual. En la
+comprobación fuera de muestra (sep-2026), el precio se quedó dentro durante toda la vela entre el 76 % y el
+82 % de las veces en BTC, ETH y SOL, en los tres marcos. Después, el rango se <b>ajusta a los ticks</b> de cada
+pool: Uniswap solo admite ciertos precios, y el ajuste se hace siempre hacia fuera, de modo que el rango nunca
+se estrecha. Esos son los números que hay que escribir en Uniswap u Orca.</p>
+<h3>Idoneidad según la etapa</h3>
+<ul>
+<li><b>Favorable</b>: etapas 1 y 3. El precio oscila en un rango, que es donde este tipo de liquidez rinde más.</li>
+<li><b>Precaución</b>: etapa 2, transiciones y etapas laterales cuando el marco superior es bajista. En etapa 2,
+si sube con fuerza, acabas todo en USDC y ganas menos que manteniendo el activo.</li>
+<li><b>Desfavorable</b>: etapa 4. Si cae, acabas todo en el activo mientras sigue cayendo.</li>
+</ul>
+<h3>Resto de columnas</h3>
+<ul>
+<li><b>Depósito</b>: qué parte del dinero va en el activo y qué parte en USDC al abrir.</li>
+<li><b>Si toca el mín. / máx.</b>: el resultado frente a haber guardado lo depositado si el precio llega a
+ese borde, sin contar comisiones (la «pérdida impermanente»).</li>
+<li><b>Comisiones/día y APR</b>: una estimación para 1.000 $ con el volumen y la liquidez activa del pool en
+las últimas 24 h, ya descontada la parte que se queda el protocolo (Uniswap se queda entre 1/6 y 1/4 de las comisiones en
+estos pools y Orca, un 13 %). Solo se cobran mientras el precio está dentro, y varían con el volumen.</li>
+<li><b>Pérdida en el borde = días</b>: cuántos días de comisiones hacen falta para compensar la pérdida si el
+precio acaba en el borde más desfavorable. Si ese número es mayor que el horizonte del perfil, las comisiones
+no bastan para compensar un movimiento hasta el borde.</li>
+</ul>
+<h3>Mis posiciones</h3>
+<p>En <code>posiciones.txt</code> se escribe una línea por posición abierta: <code>ETH 2410 2930 semanal Base</code>.
+El índice muestra si cada una está dentro, cerca de un borde (a menos del 10 % de su anchura), o fuera. La
+rutina avisa por correo cuando cambia de estado.</p>
+<div class="box">SOL no tiene pools con liquidez suficiente en Uniswap, así que se usa Orca (Solana). ADA no
+tiene pools de liquidez concentrada relevantes: sus rangos solo sirven como referencia de volatilidad.</div>
+
+<h2 id="como">17. Cómo leer un informe paso a paso</h2>
 <ol>
 <li><b>Semanal primero</b>: ¿en qué etapa está la tendencia principal?</li>
 <li><b>Mensual después</b>: ¿el contexto de fondo acompaña o va en contra?</li>
@@ -291,7 +339,7 @@ novedades. Si una fuente falla, se indica y el resto del informe se genera igual
 es un cierre semanal por encima del nivel que confirma del semanal. Mientras no ocurra, es un rebote
 dentro de un fondo bajista.</div>
 
-<h2 id="limites">17. Limitaciones</h2>
+<h2 id="limites">18. Limitaciones</h2>
 <ul>
 <li>Las medias <b>van con retraso</b>: los cambios de etapa se confirman tarde, sobre todo en el mensual.</li>
 <li>Es un <b>análisis técnico automático</b> con reglas fijas. Las noticias se muestran como contexto, pero no intervienen en el cálculo. No tiene en cuenta fundamentales ni tu situación personal.</li>

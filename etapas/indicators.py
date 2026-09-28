@@ -91,20 +91,22 @@ def structure_label(hh, hl) -> str:
 
 
 def expected_range(df: pd.DataFrame, atr_series: pd.Series, quantile: float, lookback: int,
-                   min_samples: int = 20) -> tuple[float, float]:
+                   min_samples: int = 20, center: float | None = None) -> tuple[float, float]:
     """Rango estimado (mínimo, máximo) de la próxima vela a partir del último cierre.
 
     Para cada vela del pasado se mide cuánto se alejó su máximo y su mínimo del cierre
     anterior, en unidades del ATR de ese momento. El rango es el último cierre ± el cuantil
     `quantile` de esas distancias × el ATR actual. Así se adapta a la volatilidad actual y a
     la forma real de los movimientos del activo (colas, asimetría entre subidas y bajadas).
+    Con `center`, el rango se mide desde ese precio en lugar del último cierre.
     """
     prev_close = df["close"].shift(1)
     prev_atr = atr_series.shift(1)
     up = ((df["high"] - prev_close) / prev_atr).clip(lower=0)
     down = ((prev_close - df["low"]) / prev_atr).clip(lower=0)
     sample = pd.DataFrame({"up": up, "down": down}).dropna().tail(lookback)
-    last_atr, last_close = atr_series.iloc[-1], df["close"].iloc[-1]
+    last_atr = atr_series.iloc[-1]
+    last_close = df["close"].iloc[-1] if center is None else center
     if len(sample) < min_samples or pd.isna(last_atr):
         return np.nan, np.nan
     low = last_close - sample["down"].quantile(quantile) * last_atr
