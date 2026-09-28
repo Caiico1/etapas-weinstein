@@ -213,3 +213,17 @@ def test_fallback_to_kraken_and_resample_monthly(exchanges):
     assert any("fallo en binance" in n for n in daily.notes)
     assert any("construidas a partir del diario" in n for n in monthly.notes)
     assert monthly.candles is None or monthly.candles.index[-1] < pd.Timestamp("2026-09-01", tz="UTC")
+
+
+def test_reference_label_and_provisional_reading():
+    from etapas.report import ref_label, table_row
+    df = _trend(400, seed=5)
+    current = df.iloc[-1]
+    res = analyze_candles(Candles(df.iloc[:-1], current, "test"), D, provisional=True)
+    assert res.provisional is not None and res.provisional.status == "ok"
+    assert res.last_price == current["close"]
+    row = dict(zip(__import__("etapas.report", fromlist=["HEADERS"]).HEADERS, table_row(res)))
+    assert row["Cierre de referencia"].endswith(f"({ref_label(res)})")
+    assert row["Si cerrara hoy"].startswith(str(res.provisional.stage))
+    monthly = analyze_candles(Candles(_trend(40, freq="MS").iloc[:-1], None, "test"), TIMEFRAMES["1M"])
+    assert ref_label(monthly).startswith("cierre de ")

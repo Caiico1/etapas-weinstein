@@ -184,7 +184,7 @@ def analyze_candles(candles: Candles, cfg: TimeframeConfig, provisional: bool = 
     return res
 
 
-def analyze_symbol(symbol: str, provisional: bool = False,
+def analyze_symbol(symbol: str, provisional: bool = True,
                    fetch: Callable | None = None) -> AssetResult:
     """Analiza un activo: 'BTC' (cripto, vía exchanges) o 'accion:NVDA' (bolsa, vía Yahoo)."""
     kind, ticker = parse_symbol(symbol)

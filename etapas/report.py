@@ -12,7 +12,8 @@ from .config import DISCLAIMER, ORDER
 from .explain import KEY_ZONE_NOTE, KEY_ZONE_TITLE, key_zone, meaning
 
 STAGE_COLORS = {1: "#2563eb", 2: "#16a34a", 3: "#eab308", 4: "#dc2626"}
-HEADERS = ["Marco", "Etapa", "Confianza", "Transición", "Precio", "Media clave", "Pendiente",
+HEADERS = ["Marco", "Etapa", "Si cerrara hoy", "Confianza", "Transición", "Cierre de referencia",
+           "Media clave", "Pendiente",
            "Estructura", "Nivel que confirma", "Nivel que invalida",
            "Mín. típico", "Máx. típico", "Mín. extremo", "Máx. extremo"]
 RANGE_NOTE = ("Mín./máx. típico: hasta dónde suele llegar el precio en una vela normal (la mitad de "
@@ -37,15 +38,37 @@ def fmt_pct(x, sign: bool = True) -> str:
     return f"{x:+.1%}" if sign else f"{x:.0%}"
 
 
+_MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
+           "octubre", "noviembre", "diciembre"]
+
+
+def ref_label(r: TimeframeResult) -> str:
+    """De qué vela cerrada sale el cierre de referencia: 'cierre de agosto', 'semana del 21/09'..."""
+    d = pd.Timestamp(r.candle_time)
+    if r.timeframe == "1M":
+        return f"cierre de {_MONTHS[d.month - 1]}"
+    if r.timeframe == "1w":
+        return f"semana del {d:%d/%m}"
+    return f"cierre del {d:%d/%m}"
+
+
+def provisional_text(r: TimeframeResult) -> str:
+    p = r.provisional
+    if p is None or p.status != "ok":
+        return "—"
+    return f"{p.stage} · {p.stage_name}" + (f" ({p.transition})" if p.transition else "")
+
+
 def table_row(r: TimeframeResult) -> list[str]:
     if r.status != "ok":
         return [r.label, r.message if r.status == "insuficiente" else "error"] + [""] * (len(HEADERS) - 2)
     return [
         r.label,
         f"{r.stage} · {r.stage_name}",
+        provisional_text(r),
         f"{r.confidence_label} ({r.confidence:.0f})",
         r.transition or "—",
-        fmt_price(r.price),
+        f"{fmt_price(r.price)} ({ref_label(r)})",
         f"SMA{r.ma_len} {fmt_price(r.ma)}",
         f"{fmt_pct(r.slope)} {r.slope_label}",
         r.structure,
@@ -190,7 +213,7 @@ def token_text(asset: AssetResult) -> str:
 
 
 def render_text(asset: AssetResult) -> str:
-    out = [f"\n=== {asset.title} ==="]
+    out = [f"\n=== {asset.title} ===", f"Precio actual: {fmt_price(asset.last_price)}"]
     if token_text(asset):
         out.append(token_text(asset))
     if asset.error:
@@ -200,8 +223,6 @@ def render_text(asset: AssetResult) -> str:
     for k in ORDER:
         r = asset.timeframes[k]
         rows.append(table_row(r))
-        if r.provisional:
-            rows.append(table_row(r.provisional))
     out.append(render_table(rows))
     out.append(RANGE_NOTE)
     out.append("")
@@ -327,18 +348,27 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
     rows = [table_row(asset.timeframes[k]) for k in ORDER]
     meanings = [meaning(asset.timeframes[k], asset.kind) for k in ORDER]
     # Orden de lectura: lo importante primero (se ve sin desplazar la tabla), el detalle técnico después
-    first = ["Marco", "Etapa", "Qué significa", "Mín. típico", "Máx. típico", "Mín. extremo", "Máx. extremo",
-             "Nivel que confirma", "Nivel que invalida"]
+    first = ["Marco", "Etapa", "Si cerrara hoy", "Qué significa", "Mín. típico", "Máx. típico",
+             "Mín. extremo", "Máx. extremo", "Nivel que confirma", "Nivel que invalida"]
     heads = first + [h for h in HEADERS if h not in first]
     thead = "".join(f"<th>{html.escape(h)}</th>" for h in heads)
     tbody = ""
-    for r, m in zip(rows, meanings):
+    for k, r, m in zip(ORDER, rows, meanings):
+        tf = asset.timeframes[k]
         values = dict(zip(HEADERS, r)) | {"Qué significa": m}
-        tbody += "<tr>" + "".join(
-            f'<td class="meaning">{html.escape(values[h])}</td>' if h == "Qué significa"
-            else f'<td class="{"typ" if "típico" in h else "est" if "extremo" in h else ""}">'
-                 f'{html.escape(values[h])}</td>'
-            for h in heads) + "</tr>"
+        cells = []
+        for h in heads:
+            if h == "Qué significa":
+                cells.append(f'<td class="meaning">{html.escape(values[h])}</td>')
+            elif h == "Etapa" and tf.status == "ok":
+                cells.append(f"<td>{stage_chip(tf.stage, tf.stage_name, tf.transition)}</td>")
+            elif h == "Si cerrara hoy" and tf.provisional is not None and tf.provisional.status == "ok":
+                p = tf.provisional
+                cells.append(f'<td class="prov">{stage_chip(p.stage, p.stage_name, p.transition)}</td>')
+            else:
+                cls = "typ" if "típico" in h else "est" if "extremo" in h else ""
+                cells.append(f'<td class="{cls}">{html.escape(values[h])}</td>')
+        tbody += "<tr>" + "".join(cells) + "</tr>"
     zone = key_zone(asset)
     zone_html = ""
     if zone:
@@ -359,6 +389,12 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
  th, td {{ border: 1px solid #ddd; padding: 6px 10px; text-align: left; white-space: nowrap; }}
  td.meaning {{ white-space: normal; min-width: 280px; max-width: 380px; font-size: 13px; }}
  td.typ {{ background: #e0f2fe; font-weight: 600; }}
+ td.prov {{ opacity: 0.8; font-style: italic; }}
+ .chip {{ display: inline-block; min-width: 18px; text-align: center; color: #fff; border-radius: 4px;
+          font-weight: 600; padding: 0 5px; margin-right: 4px; font-style: normal; }}
+ .trans {{ background: #ede9fe; color: #5b21b6; border-radius: 4px; padding: 0 4px; font-size: 12px; }}
+ .now {{ font-size: 18px; margin: 4px 0 10px; }}
+ .now small {{ color: #666; font-size: 12px; }}
  td.est {{ background: #f1f5f9; }}
  .keyzone {{ background: #fffbeb; border: 1px solid #f59e0b; border-left: 6px solid #f59e0b;
              border-radius: 6px; padding: 10px 14px; margin: 12px 0; }}
@@ -373,6 +409,9 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
  .disclaimer {{ color: #666; font-size: 13px; margin-top: 24px; }}
 </style></head><body>
 {back}<h1>Etapas de Weinstein · {html.escape(asset.title)}</h1>
+<p class="now">Precio actual: <b>{fmt_price(asset.last_price)}</b>
+<small>· {pd.Timestamp.now(tz="UTC"):%d/%m/%Y %H:%M} UTC · la etapa oficial usa solo velas cerradas
+(columna «Cierre de referencia»); «Si cerrara hoy» es provisional</small></p>
 {token_html}
 <div class="wrap"><table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table></div>
 <p class="note">{html.escape(RANGE_NOTE)}</p>
@@ -393,12 +432,24 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False) -> P
 _ALIGN_COLORS = {"ALINEADOS": "#16a34a", "PARCIALMENTE": "#ca8a04", "EN CONFLICTO": "#dc2626"}
 
 
+def stage_chip(stage: int, name: str, transition: str = "", small: bool = False) -> str:
+    """Etiqueta de color de la etapa (1 azul, 2 verde, 3 amarillo, 4 rojo)."""
+    size = ' style="font-size:12px"' if small else ""
+    trans = f' <span class="trans">{html.escape(transition)}</span>' if transition else ""
+    return (f'<span{size}><span class="chip" style="background:{STAGE_COLORS[stage]}">{stage}</span>'
+            f'{html.escape(name)}{trans}</span>')
+
+
 def _stage_cell(r: TimeframeResult) -> str:
     if r.status != "ok":
         return f'<td class="muted">{html.escape(r.message if r.status == "insuficiente" else "error")}</td>'
-    trans = f' <span class="trans">{r.transition}</span>' if r.transition else ""
-    return (f'<td><span class="chip" style="background:{STAGE_COLORS[r.stage]}">{r.stage}</span> '
-            f'{html.escape(r.stage_name)}{trans}<br><span class="muted">confianza {r.confidence_label} · '
+    prov = ""
+    if r.provisional is not None and r.provisional.status == "ok":
+        p = r.provisional
+        prov = f'<br><span class="muted">si cerrara hoy:</span> {stage_chip(p.stage, p.stage_name, p.transition, small=True)}'
+    return (f'<td>{stage_chip(r.stage, r.stage_name, r.transition)}{prov}'
+            f'<br><span class="muted">cierre de referencia {fmt_price(r.price)} ({ref_label(r)}) · '
+            f'confianza {r.confidence_label} · '
             f'confirma {fmt_price(r.confirm_level)} · invalida {fmt_price(r.invalid_level)}<br>'
             f'rango {html.escape(r.est_period)}: típico {fmt_price(r.typ_low)} – {fmt_price(r.typ_high)}'
             f' · extremo {fmt_price(r.est_low)} – {fmt_price(r.est_high)}</span></td>')
@@ -425,7 +476,7 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
                      f' ({t["diferencia"]:+.1%})</span>' if t and t.get("diferencia") is not None
                      else '<br><span class="muted">sin token Ondo</span>')
         rows.append(f'<tr><td class="sym">{link}<br><span class="muted">'
-                    f'{fmt_price(a.timeframes["1d"].price)}</span>{token}</td>{cells}'
+                    f'actual {fmt_price(a.last_price)}</span>{token}</td>{cells}'
                     f'<td><b style="color:{color}">{html.escape(state)}</b><br>'
                     f'<span class="small">{html.escape(sentence)}</span></td></tr>')
     if changes:

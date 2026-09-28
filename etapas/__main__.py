@@ -34,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="Genera etapas_<SÍMBOLO>.html con gráficos en DIR (por defecto, el actual)")
     parser.add_argument("--json", action="store_true", help="Salida estructurada en JSON")
     parser.add_argument("--provisional", action="store_true",
-                        help="Añade una lectura provisional con la vela en curso")
+                        help="(Ya incluido siempre: columna 'Si cerrara hoy')")
     args = parser.parse_args(argv)
 
     if args.rutina:
@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         if not symbols:
             parser.error(f"la lista {lista} está vacía")
 
-    assets = [analyze_symbol(s, provisional=args.provisional) for s in symbols]
+    assets = [analyze_symbol(s) for s in symbols]
 
     if args.json:
         print(render_json(assets))

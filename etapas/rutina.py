@@ -61,7 +61,7 @@ def diff(prev: dict, curr: dict) -> list[dict]:
     changes = []
     for sym, tfs in curr.items():
         if sym not in prev:
-            changes.append({"simbolo": sym, "marco": "", "texto": "añadido a la lista"})
+            changes.append({"simbolo": sym, "marco": "", "tipo": "lista", "texto": "añadido a la lista"})
             continue
         for k in ORDER:
             new, old = tfs.get(k), prev[sym].get(k)
@@ -76,7 +76,7 @@ def diff(prev: dict, curr: dict) -> list[dict]:
                                 "texto": f"entra en transición {new['transicion']}"})
     for sym in prev:
         if sym not in curr:
-            changes.append({"simbolo": sym, "marco": "", "texto": "retirado de la lista"})
+            changes.append({"simbolo": sym, "marco": "", "tipo": "lista", "texto": "retirado de la lista"})
     return changes
 
 
@@ -167,7 +167,8 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None) -> int:
 
     index = write_index(assets, [c for c in changes if c.get("tipo") != "prueba"], prev_date, log,
                         out_dir, now)
-    write_alerts(changes, prev_date, out_dir, today)
+    # Añadir o quitar valores de la lista se ve en la web, pero no genera correo
+    write_alerts([c for c in changes if c.get("tipo") != "lista"], prev_date, out_dir, today)
 
     ok = sum(1 for a in assets if not a.error)
     summary = (f"{now:%Y-%m-%d %H:%M} UTC · {ok}/{len(assets)} activos analizados · "

@@ -79,7 +79,8 @@ tarea de Windows, pero en los servidores de GitHub, así que funciona con el PC 
 - La lista se edita desde la web de GitHub: abre `watchlist.txt`, pulsa el lápiz y luego
   "Commit changes". La web se actualiza en un par de minutos.
 - Si la ejecución falla, GitHub envía un correo a la cuenta.
-- **Avisos por correo** (como mucho uno al día, en la primera ejecución): si hay novedades, la rutina abre una *issue* en el repositorio y te la
+- **Avisos por correo** (como mucho uno al día, en la primera ejecución; añadir o quitar valores
+  de la lista no genera aviso): si hay novedades, la rutina abre una *issue* en el repositorio y te la
   asigna, y GitHub la envía por correo. Cuenta como novedad un cambio de etapa, una transición
   nueva o un cierre que cruce el nivel que confirma o que invalida. Solo se miran velas nuevas
   cerradas, así que el semanal y el mensual avisan como mucho una vez por vela. Si no hay
@@ -144,6 +145,17 @@ Parámetros en [`etapas/config.py`](etapas/config.py):
 | 4 | Último mínimo pivote (o mínimo reciente) | Resistencia más cercana por encima: último máximo pivote o media |
 
 La línea "Métricas" de la salida muestra todos los valores que justifican cada etapa.
+
+### Precio actual, cierre de referencia y "Si cerrara hoy"
+
+- **Precio actual**: el último precio conocido. Es el mismo para los tres marcos y aparece arriba
+  de cada informe y en el índice.
+- **Cierre de referencia**: la etapa oficial de cada marco se calcula solo con velas cerradas
+  (el cierre de ayer, de la semana pasada o del mes pasado), para que no cambie con los vaivenes
+  de una vela a medio formar ni genere avisos falsos. Por eso cada marco indica de qué cierre sale.
+- **Si cerrara hoy**: la etapa que saldría incluyendo la vela en curso. Es provisional y se
+  muestra en cursiva. Da una lectura temprana sin tocar la oficial.
+- La etapa se muestra con su color: 1 azul, 2 verde, 3 amarillo y 4 rojo.
 
 ### "Qué significa" y "Lo más importante: zona clave"
 

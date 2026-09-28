@@ -11,11 +11,13 @@ BTC
 ETH
 SOL
 ADA
-accion:NVDA
-accion:TSLA
-accion:SPY
-accion:BE     # Bloom Energy
-accion:QQQ    # ETF Nasdaq 100
-accion:IAU    # ETF oro (iShares)
-accion:GLD    # ETF oro (SPDR)
-accion:SLV    # ETF plata
+
+# Acciones y ETF desactivados (quita el # para volver a analizarlos)
+# accion:NVDA
+# accion:TSLA
+# accion:SPY
+# accion:BE     # Bloom Energy
+# accion:QQQ    # ETF Nasdaq 100
+# accion:IAU    # ETF oro (iShares)
+# accion:GLD    # ETF oro (SPDR)
+# accion:SLV    # ETF plata

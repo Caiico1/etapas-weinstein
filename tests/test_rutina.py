@@ -116,3 +116,18 @@ def test_routine_test_alert(tmp_path, monkeypatch):
     assert rutina.run(lista, tmp_path / "out") == 0
     assert "aviso de prueba" in (tmp_path / "out" / "alertas.md").read_text(encoding="utf-8")
     assert "aviso de prueba" not in (tmp_path / "out" / "index.html").read_text(encoding="utf-8")
+
+
+def test_list_changes_not_emailed(tmp_path, monkeypatch):
+    """Añadir o quitar valores sale en la web, pero no genera correo."""
+    monkeypatch.setattr(rutina, "analyze_symbol", _fake_analyze)
+    out = tmp_path / "out"
+    hist = out / "historial"
+    hist.mkdir(parents=True)
+    (hist / "2026-09-24.json").write_text(json.dumps(
+        {"fecha": "2026-09-24", "activos": {"ZZZ": {}}}), encoding="utf-8")   # ZZZ retirado, AAA añadido
+    lista = tmp_path / "w.txt"
+    lista.write_text("AAA\n", encoding="utf-8")
+    assert rutina.run(lista, out, now=pd.Timestamp("2026-09-25 06:00", tz="UTC")) == 0
+    assert "retirado de la lista" in (out / "index.html").read_text(encoding="utf-8")
+    assert not (out / "alertas.md").exists()

@@ -132,8 +132,11 @@ def test_report_table_shows_key_columns_first(monkeypatch, tmp_path):
     monkeypatch.setattr(analysis, "fetch_ondo_token", lambda t: None)
     page = write_html(analysis.analyze_symbol("accion:TEST"), tmp_path).read_text(encoding="utf-8")
     heads = re.findall(r"<th>(.*?)</th>", page)
-    assert heads[:9] == ["Marco", "Etapa", "Qué significa", "Mín. típico", "Máx. típico",
-                         "Mín. extremo", "Máx. extremo", "Nivel que confirma", "Nivel que invalida"]
+    assert heads[:10] == ["Marco", "Etapa", "Si cerrara hoy", "Qué significa", "Mín. típico",
+                          "Máx. típico", "Mín. extremo", "Máx. extremo", "Nivel que confirma",
+                          "Nivel que invalida"]
+    assert "Cierre de referencia" in heads and "Precio actual" in page
+    assert page.count('class="chip"') >= 3                  # etapa con su color en cada marco
 
 
 def test_chart_shows_typical_and_extreme_ranges(monkeypatch):
