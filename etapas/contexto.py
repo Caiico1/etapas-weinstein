@@ -22,7 +22,11 @@ FEEDS = {
     "Decrypt": "https://decrypt.co/feed",
     "The Block": "https://www.theblock.co/rss.xml",
 }
-FNG_URL = "https://api.alternative.me/fng/?limit=8"
+# Un valor por día (el primero es el de hoy). 61 días para poder mirar hasta hace 2 meses.
+FNG_URL = "https://api.alternative.me/fng/?limit=61"
+# Comparaciones del índice de miedo y codicia: (días atrás, clave)
+FNG_LAGS = [(7, "hace7"), (30, "hace30"), (60, "hace60")]
+FNG_LAG_LABELS = {"hace7": "hace 7 días", "hace30": "hace 1 mes", "hace60": "hace 2 meses"}
 FOMC_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
 
 # Nombres que identifican cada criptomoneda en un titular (sin distinguir mayúsculas). El ticker se
@@ -51,7 +55,7 @@ class MarketContext:
     headlines: list[Headline] = field(default_factory=list)
     sources_ok: list[str] = field(default_factory=list)
     sources_failed: list[str] = field(default_factory=list)
-    fng: dict | None = None                     # {"hoy", "clase", "hace7", "clase7"}
+    fng: dict | None = None                     # {"hoy", "clase", "hace7", "clase7", "hace30", ...}
     fomc: list[tuple[dt.date, dt.date]] | None = None
     today: dt.date = field(default_factory=lambda: dt.datetime.now(dt.timezone.utc).date())
 
@@ -86,13 +90,34 @@ def parse_rss(xml: str, source: str) -> list[Headline]:
 
 
 def parse_fng(payload: str) -> dict | None:
+    """Valor de hoy y de hace 7, 30 y 60 días. Cada valor se busca por su fecha (no por su posición
+    en la lista, por si a la API le falta algún día); si esa fecha no está, se usa el día anterior
+    más cercano, hasta 2 días antes. Si no hay ninguno, esa comparación queda en None."""
     data = json.loads(payload).get("data") or []
     if not data:
         return None
+    clase = lambda d: _FNG_ES.get(d["value_classification"], d["value_classification"])
     today = data[0]
-    week = data[7] if len(data) > 7 else data[-1]
-    return {"hoy": int(today["value"]), "clase": _FNG_ES.get(today["value_classification"], today["value_classification"]),
-            "hace7": int(week["value"]), "clase7": _FNG_ES.get(week["value_classification"], week["value_classification"])}
+    out = {"hoy": int(today["value"]), "clase": clase(today)}
+    if all("timestamp" in d for d in data):
+        by_day = {dt.datetime.fromtimestamp(int(d["timestamp"]), dt.timezone.utc).date(): d for d in data}
+        day0 = max(by_day)
+        for days, key in FNG_LAGS:
+            target = day0 - dt.timedelta(days=days)
+            d = next((by_day[target - dt.timedelta(days=k)] for k in range(3)
+                      if target - dt.timedelta(days=k) in by_day), None)
+            out[key], out["clase" + key[4:]] = (int(d["value"]), clase(d)) if d else (None, None)
+    else:                                   # sin fechas: posición en la lista (un valor por día)
+        for days, key in FNG_LAGS:
+            d = data[days] if len(data) > days else None
+            out[key], out["clase" + key[4:]] = (int(d["value"]), clase(d)) if d else (None, None)
+    return out
+
+
+def fng_history(fng: dict) -> list[tuple[str, int, str]]:
+    """[(«hace 7 días», valor, clase), ...] con las comparaciones disponibles."""
+    return [(FNG_LAG_LABELS[key], fng[key], fng["clase" + key[4:]])
+            for _, key in FNG_LAGS if fng.get(key) is not None]
 
 
 def parse_fomc(page: str) -> list[tuple[dt.date, dt.date]]:

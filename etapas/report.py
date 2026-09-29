@@ -9,7 +9,7 @@ import pandas as pd
 from .analysis import AssetResult, TimeframeResult
 from .classifier import STAGE_NAMES
 from .config import DISCLAIMER, ORDER
-from .contexto import MarketContext, fomc_notes, headlines_for, next_fomc
+from .contexto import MarketContext, fng_history, fomc_notes, headlines_for, next_fomc
 from .explain import KEY_ZONE_NOTE, KEY_ZONE_TITLE, key_zone, meaning
 from .report_liquidez import LIQ_CSS, index_cell, liquidity_html, liquidity_text, positions_html
 
@@ -374,8 +374,9 @@ def context_html(asset: AssetResult, ctx: MarketContext | None) -> str:
     parts.append("<h3>Sentimiento del mercado cripto</h3>")
     if ctx.fng:
         f = ctx.fng
-        parts.append(f"<p>Índice de miedo y codicia: <b>{f['hoy']} ({f['clase']})</b>; hace 7 días, "
-                     f"{f['hace7']} ({f['clase7']}). Escala de 0 (miedo extremo) a 100 (codicia "
+        past = "; ".join(f"{label}, {v} ({c})" for label, v, c in fng_history(f))
+        parts.append(f"<p>Índice de miedo y codicia: <b>{f['hoy']} ({f['clase']})</b>"
+                     f"{'; ' + past if past else ''}. Escala de 0 (miedo extremo) a 100 (codicia "
                      f"extrema). Mide el ánimo general del mercado cripto, no el de cada moneda. Los "
                      f"extremos suelen coincidir con excesos, pero no marcan el momento de un giro.</p>")
     else:
@@ -600,8 +601,9 @@ def _context_strip(ctx: MarketContext | None) -> str:
         return ""
     bits = []
     if ctx.fng:
-        bits.append(f"Sentimiento cripto: <b>{ctx.fng['hoy']} · {html.escape(ctx.fng['clase'])}</b> "
-                    f"(hace 7 días: {ctx.fng['hace7']})")
+        past = "".join(f'<span title="{html.escape(c)}">({label}: {v})</span>'
+                       for label, v, c in fng_history(ctx.fng))
+        bits.append(f"Sentimiento cripto: <b>{ctx.fng['hoy']} · {html.escape(ctx.fng['clase'])}</b> {past}")
     nxt = next_fomc(ctx)
     if nxt:
         bits.append(f"Próxima reunión de la Fed: <b>{nxt[0]:%d/%m}–{nxt[1]:%d/%m}</b>")

@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .analysis import AssetResult
 from .config import DISCLAIMER, ORDER
-from .contexto import MarketContext, headlines_for, next_fomc
+from .contexto import MarketContext, fng_history, headlines_for, next_fomc
 from .liquidez import LiquidityResult
 
 IA_MODEL = "claude-opus-5"
@@ -59,8 +59,8 @@ def dictamen(asset: AssetResult, liq: LiquidityResult | None, ctx: MarketContext
     contexto = {}
     if ctx is not None:
         if ctx.fng:
-            contexto["miedo_codicia"] = {"hoy": ctx.fng["hoy"], "clase": ctx.fng["clase"],
-                                         "hace_7_dias": ctx.fng["hace7"]}
+            contexto["miedo_codicia"] = {"hoy": ctx.fng["hoy"], "clase": ctx.fng["clase"]} | {
+                label.replace(" ", "_"): {"valor": v, "clase": c} for label, v, c in fng_history(ctx.fng)}
         nxt = next_fomc(ctx)
         if nxt:
             contexto["proxima_fed"] = f"{nxt[0]:%Y-%m-%d} a {nxt[1]:%Y-%m-%d}"

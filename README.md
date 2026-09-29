@@ -244,7 +244,7 @@ La línea "Métricas" de la salida muestra todos los valores que justifican cada
 Al final de cada informe (`etapas/contexto.py`), sin claves ni coste:
 - **Titulares** de CoinDesk, Cointelegraph, Decrypt y The Block (RSS): hasta 5 de los últimos 7
   días. Se filtran por nombre (sin distinguir mayúsculas) o por ticker (solo en mayúsculas).
-- **Índice de miedo y codicia** cripto (alternative.me), de hoy y de hace 7 días.
+- **Índice de miedo y codicia** cripto (alternative.me): hoy y hace 7 días, 1 mes y 2 meses. Cada valor se busca por su fecha; si falta ese día, se usa el anterior más cercano (hasta 2 días antes).
 - **Reuniones de la Reserva Federal**, leídas de su calendario oficial, con un aviso si la
   decisión cae dentro de una vela en curso.
 - En el índice, una franja con el sentimiento y la próxima reunión. En los correos, 2 o 3

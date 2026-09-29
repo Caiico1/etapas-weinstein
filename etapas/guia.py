@@ -267,7 +267,7 @@ ni los niveles</b>, que siguen saliendo solo de las reglas técnicas.</p>
 <tr><th>Dato</th><th>Qué es</th><th>Cómo interpretarlo</th></tr>
 <tr><td>Titulares recientes</td><td>Hasta 5 noticias de los últimos 7 días que mencionan el valor, de CoinDesk, Cointelegraph, Decrypt y The Block (en inglés), con enlace.</td>
 <td>Ayudan a entender qué está pasando. Una noticia no explica por sí sola un movimiento y a menudo llega después de él. Puede colarse alguna que solo lo menciona de pasada.</td></tr>
-<tr><td>Índice de miedo y codicia</td><td>De 0 (miedo extremo) a 100 (codicia extrema), hoy y hace 7 días (alternative.me).</td>
+<tr><td>Índice de miedo y codicia</td><td>De 0 (miedo extremo) a 100 (codicia extrema): hoy y hace 7 días, 1 mes y 2 meses (alternative.me). La evolución indica si el ánimo del mercado está girando.</td>
 <td>Es el ánimo general del mercado cripto, no el de cada moneda. Los extremos suelen coincidir con excesos, pero no marcan el momento de un giro.</td></tr>
 <tr><td>Reserva Federal</td><td>Próxima reunión del FOMC, según el calendario oficial.</td>
 <td>Sus decisiones sobre los tipos de interés mueven los mercados. Si la decisión cae dentro de una vela en curso, aparece un aviso 📅: el precio puede salirse del rango típico.</td></tr>

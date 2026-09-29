@@ -49,7 +49,8 @@ def test_load_context_parses_all_sources_and_survives_failures():
     ctx = _ctx()
     assert "Decrypt" in ctx.sources_failed and "Cointelegraph" in ctx.sources_ok
     assert len(ctx.headlines) == 4                      # deduplicados entre fuentes
-    assert ctx.fng == {"hoy": 74, "clase": "codicia", "hace7": 40, "clase7": "miedo"}
+    assert ctx.fng == {"hoy": 74, "clase": "codicia", "hace7": 40, "clase7": "miedo",
+                       "hace30": None, "clase30": None, "hace60": None, "clase60": None}
     assert (dt.date(2026, 10, 31), dt.date(2026, 11, 1)) in ctx.fomc   # reunión entre dos meses
     assert next_fomc(ctx) == (dt.date(2026, 10, 27), dt.date(2026, 10, 28))
 
@@ -89,3 +90,30 @@ def test_context_section_in_report():
     assert "Bitcoin falls" in page and "74 (codicia)" in page and "27/10" in page
     assert "Decrypt" in page                            # avisa de la fuente caída
     assert context_html(_asset(), None) == ""
+
+
+def test_fng_history_by_date_with_missing_day():
+    """Hoy, hace 7, 30 y 60 días por fecha; si falta un día se usa el anterior más cercano."""
+    day0 = dt.datetime(2026, 9, 29, tzinfo=dt.timezone.utc)
+    values = {0: (73, "Greed"), 7: (78, "Extreme Greed"), 31: (69, "Greed"), 60: (25, "Extreme Fear")}
+    data = [{"value": str(values.get(k, (50, "Neutral"))[0]),
+             "value_classification": values.get(k, (50, "Neutral"))[1],
+             "timestamp": str(int((day0 - dt.timedelta(days=k)).timestamp()))}
+            for k in range(61) if k != 30]                 # falta el día de hace 30
+    fng = contexto.parse_fng(json.dumps({"data": data}))
+    assert (fng["hoy"], fng["hace7"], fng["hace30"], fng["hace60"]) == (73, 78, 69, 25)
+    assert fng["clase7"] == "codicia extrema" and fng["clase60"] == "miedo extremo"
+    assert contexto.fng_history(fng) == [("hace 7 días", 78, "codicia extrema"), ("hace 1 mes", 69, "codicia"),
+                                         ("hace 2 meses", 25, "miedo extremo")]
+    short = contexto.parse_fng(json.dumps({"data": data[:8]}))   # solo una semana de datos
+    assert short["hace7"] == 78 and short["hace30"] is None and contexto.fng_history(short)[-1][0] == "hace 7 días"
+
+
+def test_index_strip_shows_fng_history():
+    from etapas.report import _context_strip
+    ctx = contexto.MarketContext(fng={"hoy": 73, "clase": "codicia", "hace7": 78, "clase7": "codicia extrema",
+                                      "hace30": 69, "clase30": "codicia", "hace60": 25, "clase60": "miedo extremo"})
+    strip = _context_strip(ctx)
+    assert "<b>73 · codicia</b>" in strip
+    assert "(hace 7 días: 78)</span>" in strip and "(hace 1 mes: 69)</span>" in strip
+    assert "(hace 2 meses: 25)</span>" in strip
