@@ -219,14 +219,19 @@ Parámetros en [`etapas/config.py`](etapas/config.py):
 3. **Estructura**: pivotes de máximos y mínimos confirmados (sin mirar al futuro). Se comparan
    los dos últimos: HH/HL, LH/LL o mixta. Un cierre que rompe el último pivote cuenta al momento.
 4. **Tendencia previa**: la última vela en la que la media tuvo una tendencia significativa, por
-   magnitud (`|MA_t/MA_{t−W} − 1| > 0,8 × ATR% × √W`) o por persistencia (2*n* velas seguidas
-   con pendiente). Con la media plana, decide entre la etapa 1 (venía de caer) y la 3 (venía de subir).
+   magnitud (`|MA_t/MA_{t−W} − 1| > 0,8 × ATR% × √W`), por persistencia (2*n* velas seguidas
+   con pendiente) o por giro (la media lleva 2*n* velas en contra de la tendencia anterior y ha
+   devuelto al menos la mitad de ella, en escala logarítmica). Con la media plana, decide entre
+   la etapa 1 (venía de caer) y la 3 (venía de subir).
 5. **Rango**: máximo y mínimo de las últimas N velas. Son los niveles de ruptura y de pérdida.
 6. **Volumen**: una ruptura del rango con más de 1,5 × el volumen medio (20) suma puntos.
 7. **Puntuación** (0–100 por etapa): pendiente 30 %, posición 25 %, estructura 25 %,
    tendencia previa 15 %, volumen 5 %. Se promedia en las últimas *n* velas para que la etapa
    no cambie por una sola vela. **Confianza** = 1ª − 2ª puntuación: alta > 30, media 15–30, baja < 15.
 8. **Transición**: si la 2ª etapa es la siguiente del ciclo y la confianza no es alta → "X→Y".
+   **Aviso temprano**: en etapa 1, si la media lleva al menos *n* velas seguidas subiendo, el
+   precio cierra por encima de ella y lo ha hecho en al menos el 60 % de las últimas N velas → "1→2"
+   (y al revés en etapa 3 → "3→4"). La etapa oficial no cambia hasta que se rompe el rango.
 
 **Niveles**
 
@@ -305,6 +310,25 @@ movimientos extremos más frecuentes que los que refleja el pasado reciente.
 ### Reglas añadidas al diseño original (y por qué)
 
 Todas se descubrieron en las pruebas y se pueden ajustar en `classifier.py`/`config.py`:
+
+- **Giro de la tendencia previa** (`PRIOR_RETRACE`, sep-2026). En el mensual cripto, el criterio de
+  magnitud exige que la media se mueva un 70-220 % en 18 meses, algo imposible en una caída (no
+  pasa del −100 %). Tras la caída de 2025-26, la herramienta seguía «recordando» la subida anterior
+  (SOL: +112 %) y habría llamado distribución (3) a la base siguiente (1). Con el giro, la tendencia
+  previa pasa a bajista cuando la media lleva 2*n* velas en contra y ha devuelto la mitad de la
+  subida. Cambios en el histórico: BTC abr-sep 2023, SOL sep-nov 2023 y ADA 2023-24 en mensual, y
+  SPY sep-2022 a may-2023 en semanal, pasan de «3» a «1» (fueron bases tras un mercado bajista).
+  Precisión en la serie sintética (20 semillas) igual que antes: 94,2 / 95,5 / 93,2 % de media en
+  diario, semanal y mensual. Con un umbral más laxo (6 velas seguidas o devolver el 25-33 %), los
+  techos sintéticos se leían como bases (peor tramo: 13 %), así que se descartó.
+- **Aviso temprano 1→2 y 3→4** (`EARLY_SIDE`, sep-2026). Antes, la transición solo se marcaba si
+  la etapa siguiente era la 2ª puntuación. En BTC semanal (sep-2026), con el precio un 18 % sobre
+  una media que ya subía, la 2ª era la etapa 4 y no había aviso. Comprobación en BTC, ETH, SOL, ADA,
+  SPY, QQQ y GLD: cambios reales a etapa 2 sin aviso previo: 4 de 28 antes, 0 de 38 ahora (hay más porque las bases
+  corregidas acaban en etapa 2); precisión del aviso 1→2
+  del 100 % en semanal y mensual (76 % en diario, antes 82 %). En el 3→4 semanal la precisión baja
+  del 76 % al 65 %, pero los techos sin aviso pasan de 4/21 a 1/19 y el aviso llega con el doble
+  de antelación (6 semanas).
 
 - **Mensual con SMA10 en lugar de SMA20** (sep-2026). La SMA20 abarca unas 87 semanas y
   reaccionaba con más de un año de retraso: en SPY nunca marcó etapa 4 en 2022 y no volvió a

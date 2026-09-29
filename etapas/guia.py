@@ -78,7 +78,9 @@ es una lectura técnica objetiva.</div>
 el precio: si viene de caer es una base (1), si viene de subir es un techo (3).</p>
 <p><b>Transición «X→Y»</b> (etiqueta morada, por ejemplo <code>4→1</code>): la etapa oficial es X,
 pero las señales ya apuntan a la siguiente etapa del ciclo, Y. Es un aviso temprano, no un cambio
-confirmado.</p>
+confirmado. Por ejemplo, «1→2» aparece cuando la media ya lleva varias velas subiendo y el precio
+cierra por encima de ella, aunque todavía no haya roto el techo de la base: la etapa 2 solo se confirma
+con esa ruptura (el «nivel que confirma»).</p>
 
 <h2 id="marcos">3. Los 3 marcos temporales</h2>
 <div class="wrap"><table>

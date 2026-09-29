@@ -21,6 +21,8 @@ TREND_GATE = 1.0       # atenuación de posición/estructura para 2 y 4 con medi
 PERSIST_MIN = 1.0      # velas seguidas (× ventana de pendiente) para que la persistencia cuente
 FAR_ATR = 3.0          # distancia a la media (en ATR) a partir de la cual no hay rango
 SCORE_SMOOTHING = 1.0  # suavizado de la puntuación, en fracción de la ventana de pendiente
+EARLY_SIDE = 0.6       # aviso temprano 1→2 / 3→4: fracción mínima de cierres del lado de la media
+PRIOR_RETRACE = 0.5    # giro de la tendencia previa: parte de ella que la media ha devuelto
 
 
 def _clip01(x):
@@ -39,16 +41,24 @@ def _run_length(ma: pd.Series) -> pd.Series:
     return pd.Series(run, index=ma.index)
 
 
-def _prior_trend(ma: np.ndarray, atr_pct: np.ndarray, z: np.ndarray, cfg: TimeframeConfig):
+def _prior_trend(ma: np.ndarray, atr_pct: np.ndarray, z: np.ndarray, cfg: TimeframeConfig,
+                 ma_run: np.ndarray):
     """Última tendencia significativa de la media antes de la vela actual.
 
-    Una vela es parte de una tendencia significativa si se cumple cualquiera de estas dos
+    Una vela es parte de una tendencia significativa si se cumple cualquiera de estas tres
     condiciones:
       A) Magnitud: la media cambió en la ventana previa (MA_t / MA_{t−W} − 1) más de
          PRIOR_SIGNIFICANCE × ATR% × √W. El ruido aleatorio crece con la raíz de la ventana,
          así que el mismo umbral sirve para diario, semanal y mensual.
       B) Persistencia: la media lleva al menos PRIOR_RUN × ventana de pendiente velas seguidas
          con pendiente no plana en la misma dirección.
+      C) Giro: la media lleva PRIOR_RUN × ventana de pendiente velas seguidas moviéndose en contra
+         de la tendencia previa y ya ha devuelto al menos PRIOR_RETRACE de ella (en escala
+         logarítmica, desde su extremo). Hace falta en el mensual cripto, donde A es inalcanzable
+         para una caída (el umbral llega al 70-220 % y una caída no pasa del −100 %) y B exige
+         meses seguidos de pendiente muy fuerte: sin C, tras una caída de años la herramienta
+         seguía «recordando» la subida anterior y llamaba distribución (3) a la base (1)
+         siguiente (BTC 2023, SOL 2023, SPY semanal 2022-23).
     El "ancla" es la última vela que cumple A o B: el final de la última tendencia real, justo
     antes de que empezara el aplanamiento. Mientras la media siga plana, el ancla no se mueve,
     así que una base larga sigue "recordando" la caída que la precedió.
@@ -77,6 +87,10 @@ def _prior_trend(ma: np.ndarray, atr_pct: np.ndarray, z: np.ndarray, cfg: Timefr
                 anchor, anchor_move, anchor_dir = t, move, float(np.sign(move))
             elif run_len >= min_run:
                 anchor, anchor_move, anchor_dir = t, move, float(sign)
+            elif anchor >= 0 and abs(ma_run[t]) >= min_run and np.sign(ma_run[t]) == -anchor_dir:
+                extreme = np.nanmax(ma[anchor:t + 1]) if anchor_dir > 0 else np.nanmin(ma[anchor:t + 1])
+                if abs(np.log(ma[t] / extreme)) >= PRIOR_RETRACE * abs(np.log1p(anchor_move)):
+                    anchor, anchor_move, anchor_dir = t, ma[t] / extreme - 1, float(np.sign(ma_run[t]))
         if anchor >= 0:
             prior[t], direction[t] = anchor_move, anchor_dir
         anchors[t] = anchor
@@ -110,7 +124,7 @@ def classify(df: pd.DataFrame, cfg: TimeframeConfig, ma_len: int | None = None) 
 
     # 4. Tendencia previa
     prior, anchors, direction = _prior_trend(out["ma"].to_numpy(), out["atr_pct"].to_numpy(),
-                                             z.to_numpy(), cfg)
+                                             z.to_numpy(), cfg, out["ma_run"].to_numpy())
     out["prior_chg"] = prior
     out["prior_anchor"] = anchors
     # p_up: 1 si la tendencia previa fue alcista, 0 si bajista, 0.5 si no hay ninguna
@@ -216,6 +230,15 @@ def classify(df: pd.DataFrame, cfg: TimeframeConfig, ma_len: int | None = None) 
         f"{s}→{s2}" if s and NEXT_STAGE[s] == s2 and c < CONF_HIGH else ""
         for s, s2, c in zip(out["stage"], out["second"], out["confidence"].fillna(0))
     ]
+    # Aviso temprano: en una base (1) o un techo (3), la media lleva al menos una ventana de
+    # pendiente girando hacia la etapa siguiente y el precio cierra de ese lado de la media (y lo
+    # ha hecho en al menos EARLY_SIDE de las últimas N velas). La etapa oficial no cambia hasta
+    # que se rompa el rango: solo se marca la transición.
+    run, above, side = out["ma_run"], close > out["ma"], out["pct_above"]
+    early_up = (out["stage"] == 1) & (run >= n) & above & (side >= EARLY_SIDE)
+    early_dn = (out["stage"] == 3) & (run <= -n) & ~above & out["ma"].notna() & (side <= 1 - EARLY_SIDE)
+    out.loc[early_up, "transition"] = "1→2"
+    out.loc[early_dn, "transition"] = "3→4"
     out["slope_label"] = np.where(z.abs() < 1, "plana", np.where(z > 0, "positiva", "negativa"))
     out["close"] = close
     return out
