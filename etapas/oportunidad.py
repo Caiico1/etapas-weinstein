@@ -27,7 +27,7 @@ import pandas as pd
 from . import pools as P
 from .analysis import AssetResult, TimeframeResult, analyze_symbol
 from .config import DISCLAIMER, LP_QUANTILE, TIMEFRAMES
-from .data import STABLES, DataError, fetch_candles, fetch_pair_candles
+from .data import STABLES, DataError, canonical_pair, fetch_candles, fetch_pair_candles
 from .descubrir import discover, supported_symbols
 from .indicators import expected_range
 from .liquidez import PoolQuote, composition, divergence, lp_range, quote_pool, verdict
@@ -192,6 +192,11 @@ def analyze(pair: str, capital: float = 5000.0) -> Report:
         base, quote, notes = parse_pair(pair)
     except ValueError as e:
         return Report(pair, "", capital, None, None, None, error=str(e))
+    cb, cq = canonical_pair(base, quote)
+    if (cb, cq) != (base, quote):
+        notes.append(f"Se analiza como {cb}/{cq}, la orientación en que cotiza el par: es el mismo pool y "
+                     f"el mismo rango. En la propuesta tienes también los precios en {base}/{quote}.")
+        base, quote = cb, cq
     rep = Report(base, quote, capital, None, None, None, warnings=list(notes))
     asset = analyze_symbol(base, fetch=lambda t, cfg: fetch_pair_candles(base, quote, cfg))
     if asset.error or not asset.last_price:
@@ -320,6 +325,8 @@ def render(rep: Report) -> str:
     out = [f"# Liquidez concentrada · {b}/{q} · capital {rep.capital:,.0f} $", "",
            f"Precio actual: **{_p(rep.price)} {q}**" + ("" if q in STABLES else f" (1 {q} = {_p(rep.quote_usd)} $)"),
            ""]
+    out += [f"> {n}" for n in rep.warnings if n.startswith(("Se analiza como", "Par expresado"))] + (
+        [""] if any(n.startswith(("Se analiza como", "Par expresado")) for n in rep.warnings) else [])
     if rep.proposals:
         for i, o in enumerate(rep.proposals, 1):
             out += _proposal(rep, o, i)
@@ -376,7 +383,9 @@ def _proposal(rep: Report, o: Opportunity, i: int) -> list[str]:
         f"{P._pct(pool.fee)}. Dirección `{pool.address}` ([ver en GeckoTerminal]({pool.url})).",
         f"- **Rango a introducir** (ya ajustado a los ticks del pool): mínimo **{_p(qt.low)}** y máximo "
         f"**{_p(qt.high)}** {q} por {b} ({qt.low / qt.pool_price - 1:+.1%} / {qt.high / qt.pool_price - 1:+.1%} "
-        f"desde el precio del pool, {_p(qt.pool_price)}). Ticks {qt.tick_lower} / {qt.tick_upper}.",
+        f"desde el precio del pool, {_p(qt.pool_price)}). Ticks {qt.tick_lower} / {qt.tick_upper}."
+        + ("" if q in STABLES else f" Si el DEX muestra el precio al revés ({b} por {q}): mínimo "
+           f"**{_p(1 / qt.high)}** y máximo **{_p(1 / qt.low)}**."),
         f"- **Depósito para {rep.capital:,.0f} $**: {_p(o.base_amount)} {base_tok} "
         f"({_pct(qt.asset_share, False)}) y {_p(o.quote_amount)} {quote_tok} ({_pct(1 - qt.asset_share, False)}).",
         f"- **Etapa**: {_stage_line(rep, o.cycle)} → {level}. " + " ".join([reasons[0].split(". ", 1)[-1]] + reasons[1:]),

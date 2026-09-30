@@ -143,6 +143,26 @@ def invert_candles(df: pd.DataFrame) -> pd.DataFrame:
                          "close": 1 / df["close"], "volume": df["volume"]}, index=df.index)
 
 
+def canonical_pair(base: str, quote: str) -> tuple[str, str]:
+    """Orientación en la que cotiza el par en la primera fuente disponible (ETH/BTC, no BTC/ETH).
+    El método del rango mide los movimientos en precio, no en proporción, así que analizar siempre
+    en la misma orientación garantiza que ETH/BTC y BTC/ETH den el mismo rango para el mismo pool.
+    Con una moneda estable, el activo va siempre primero."""
+    base, quote = base.upper(), quote.upper()
+    if quote in STABLES:
+        return base, quote
+    for name, _ in SOURCES:
+        try:
+            ex = _get_exchange(name)
+        except (ccxt.BaseError, OSError):
+            continue
+        if f"{base}/{quote}" in ex.markets:
+            return base, quote
+        if f"{quote}/{base}" in ex.markets:
+            return quote, base
+    return base, quote
+
+
 def fetch_pair_candles(base: str, quote: str, cfg: TimeframeConfig,
                        now: pd.Timestamp | None = None) -> Candles:
     """Velas del precio de `base` en `quote`. Con una moneda estable, las del activo en dólares

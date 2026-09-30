@@ -182,6 +182,11 @@ volumen diario: con 5.000 $ en un pool pequeño, la estimación depende demasiad
 **Cálculo, por ciclo (diario, semanal, mensual) y pool**:
 
 1. Etapa del **par** (ETH/BTC se analiza como precio de ETH en BTC) e idoneidad (etapa 4 = descartado).
+   Entre dos activos volátiles no hay moneda «de cuenta»: salir del rango por arriba o por abajo
+   cuesta lo mismo frente a mantener ambos, así que las etapas 2 y 4 valen «precaución». Además,
+   esos pares se analizan siempre en la orientación en que cotizan (ETH/BTC aunque se pida BTC/ETH),
+   porque el método del rango mide en precio: así el mismo pool da siempre el mismo rango, que la
+   propuesta muestra también invertido.
 2. Rango del método validado, ajustado a los ticks del pool. El ciclo diario no se propone en Ethereum.
 3. **Histórico del método en el par** (365 días, 104 semanas o 48 meses, sin ver el futuro): fracción
    de ciclos en que el precio no salió del rango y resultado frente a mantener los tokens. Ese

@@ -155,3 +155,30 @@ def test_choose_prefers_another_cycle():
 def test_invalid_pair_is_reported():
     rep = op.analyze("USDC/USDT")
     assert rep.error and "No se puede analizar" in op.render(rep)
+
+
+# ---------------------------------------------------------------- simetría ETH/BTC ↔ BTC/ETH
+
+def test_verdict_symmetric_without_stable():
+    """Entre dos volátiles, subir o bajar cuesta lo mismo: etapas 2 y 4 dan la misma idoneidad.
+    Con una estable, la etapa 4 sigue siendo desfavorable (se acaba en el activo que cae)."""
+    from etapas.analysis import TimeframeResult
+    from etapas.liquidez import verdict
+
+    def tf(stage):
+        return TimeframeResult("1d", "Diario", "ok", stage=stage, stage_name="x", confidence_label="alta")
+    assert verdict(tf(2), None, "ETH", "BTC")[0] == verdict(tf(4), None, "ETH", "BTC")[0] == "precaución"
+    assert verdict(tf(4), None, "ETH", "USDC")[0] == "desfavorable"
+    assert verdict(tf(1), tf(2), "ETH", "BTC")[0] == "precaución"      # marco superior en tendencia
+    assert verdict(tf(1), tf(2), "ETH", "USDC")[0] == "favorable"
+
+
+def test_inverted_pair_is_analyzed_in_canonical_orientation(fake_world, monkeypatch):
+    monkeypatch.setattr(op, "canonical_pair", lambda b, q: ("ETH", "BTC"))
+    monkeypatch.setattr(op, "_quote_usd", lambda q: 84000.0)
+    seen = []
+    monkeypatch.setattr(op, "discover", lambda b, q: (seen.append((b, q)) or [], []))
+    rep = op.analyze("BTC/ETH", 5000)
+    assert (rep.base, rep.quote) == ("ETH", "BTC") and seen == [("ETH", "BTC")]
+    assert any(w.startswith("Se analiza como ETH/BTC") for w in rep.warnings)
+    assert "> Se analiza como ETH/BTC" in op.render(rep)
