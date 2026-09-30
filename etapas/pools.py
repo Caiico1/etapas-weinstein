@@ -142,6 +142,18 @@ def _human(pool: Pool, raw: float) -> float:
     return p if pool.base_is_token0 else 1 / p
 
 
+_B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def b58encode(raw: bytes) -> str:
+    """Base58 (direcciones de Solana)."""
+    n, out = int.from_bytes(raw, "big"), ""
+    while n:
+        n, r = divmod(n, 58)
+        out = _B58[r] + out
+    return "1" * (len(raw) - len(raw.lstrip(b"\0"))) + out
+
+
 def _chain_state(pool: Pool) -> PoolState:
     try:
         return _orca_state(pool) if pool.chain == "solana" else _evm_state(pool)
@@ -149,27 +161,44 @@ def _chain_state(pool: Pool) -> PoolState:
         return PoolState(error=f"no se pudo leer el pool on-chain ({type(e).__name__})")
 
 
-def _market_data(pools: list[Pool], wait: float = 12.0) -> dict[str, tuple[float, float]]:
-    """{dirección: (volumen 24 h, TVL)} desde GeckoTerminal: una petición por red (su límite
-    gratuito es de pocas peticiones por minuto; si responde 429 se espera y se reintenta)."""
+GT_MIN_INTERVAL = 2.5      # segundos entre peticiones a GeckoTerminal (límite gratuito)
+GT_RETRY_WAIT = 15.0       # espera tras un 429 (demasiadas peticiones)
+_gt_last = [0.0]
+
+
+def gt_json(url: str, retries: int = 3) -> dict:
+    """GET a la API pública de GeckoTerminal con ritmo limitado y reintentos si responde 429.
+    Lanza la excepción si no lo consigue."""
+    for attempt in range(retries):
+        pause = GT_MIN_INTERVAL - (time.monotonic() - _gt_last[0])
+        if pause > 0:
+            time.sleep(pause)
+        try:
+            return _http_json(url)
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == retries - 1:
+                raise
+            time.sleep(GT_RETRY_WAIT)
+        finally:
+            _gt_last[0] = time.monotonic()
+    raise OSError("GeckoTerminal no respondió")
+
+
+def _market_data(pools: list[Pool]) -> dict[str, tuple[float, float]]:
+    """{dirección: (volumen 24 h, TVL)} desde GeckoTerminal: una petición por red y cada 30 pools."""
     out: dict[str, tuple[float, float]] = {}
     by_net: dict[str, list[str]] = {}
     for p in pools:
         by_net.setdefault(_GT_NETWORK[p.chain], []).append(p.address)
     for net, addrs in by_net.items():
-        url = f"https://api.geckoterminal.com/api/v2/networks/{net}/pools/multi/{','.join(addrs)}"
-        for attempt in range(3):
+        for i in range(0, len(addrs), 30):
+            url = f"https://api.geckoterminal.com/api/v2/networks/{net}/pools/multi/{','.join(addrs[i:i + 30])}"
             try:
-                for item in _http_json(url)["data"]:
+                for item in gt_json(url)["data"]:
                     a = item["attributes"]
                     out[a["address"].lower()] = (float(a["volume_usd"]["h24"]), float(a["reserve_in_usd"]))
-                break
-            except urllib.error.HTTPError as e:
-                if e.code != 429 or attempt == 2:
-                    break
-                time.sleep(wait)
             except (OSError, ValueError, KeyError, TypeError):
-                break
+                continue
     return out
 
 
@@ -184,3 +213,20 @@ def fetch_states(pools: list[Pool]) -> dict[str, PoolState]:
         elif not states[p.id].error:
             states[p.id].error = "sin volumen de GeckoTerminal: no se estiman comisiones"
     return states
+
+
+def median_volume(pool: Pool, days: int = 30) -> float | None:
+    """Mediana del volumen diario (dólares) de los últimos `days` días completos, de GeckoTerminal.
+    Más estable que el de 24 h: un día anómalo no cambia la estimación. None si no hay datos."""
+    url = (f"https://api.geckoterminal.com/api/v2/networks/{_GT_NETWORK[pool.chain]}/pools/"
+           f"{pool.address}/ohlcv/day?limit={days + 1}&currency=usd")
+    try:
+        rows = gt_json(url)["data"]["attributes"]["ohlcv_list"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    vols = sorted(float(r[5]) for r in rows[1:days + 1])        # la primera es el día en curso
+    if len(vols) < min(days, 7):
+        return None
+    mid = len(vols) // 2
+    return vols[mid] if len(vols) % 2 else (vols[mid - 1] + vols[mid]) / 2
+

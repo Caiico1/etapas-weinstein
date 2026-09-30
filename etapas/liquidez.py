@@ -87,9 +87,18 @@ def liquidity_for_capital(p: float, a: float, b: float, capital: float) -> float
 
 LEVELS = ["favorable", "precaución", "desfavorable"]
 _STAGE_LEVEL = {1: 0, 3: 0, 2: 1, 4: 2}
+# Entre dos activos volátiles (ETH/BTC) no hay una moneda «de cuenta»: salir por arriba o por abajo
+# cuesta lo mismo frente a mantener los dos, así que las etapas 2 y 4 pesan igual. Así ETH/BTC y
+# BTC/ETH (el mismo pool visto al revés) reciben la misma idoneidad.
+_STAGE_LEVEL_CROSS = {1: 0, 3: 0, 2: 1, 4: 1}
+_STABLES = {"USDC", "USDT", "USD", "DAI"}
 
 
 def stage_effect(stage: int, base: str, quote: str) -> str:
+    if stage in (2, 4) and quote not in _STABLES:
+        return (f"Tendencia de {base} frente a {quote}: si el precio sale por arriba, la posición queda "
+                f"100 % en {quote}; si sale por abajo, 100 % en {base}. En los dos casos deja de cobrar "
+                f"comisiones y pierde frente a mantener ambos.")
     if stage in (1, 3):
         return ("Etapa lateral: el precio tiende a oscilar dentro de un rango, que es el escenario "
                 "en el que la liquidez concentrada cobra más comisiones sin salirse.")
@@ -106,19 +115,21 @@ def verdict(r: TimeframeResult, higher: TimeframeResult | None, base: str,
     """Idoneidad de abrir un rango en este marco: (nivel, motivos)."""
     if r.status != "ok":
         return "sin datos", [f"No hay etapa en el marco {r.label.lower()}: {r.message}"]
-    level = _STAGE_LEVEL[r.stage]
+    table = _STAGE_LEVEL if quote in _STABLES else _STAGE_LEVEL_CROSS
+    level = table[r.stage]
     reasons = [f"Etapa {r.stage} ({r.stage_name}) en {r.label.lower()}. "
                + stage_effect(r.stage, base, quote)]
     if r.transition:
         target = int(r.transition[-1])
-        new = math.ceil((level + _STAGE_LEVEL[target]) / 2)
+        new = math.ceil((level + table[target]) / 2)
         reasons.append(f"En transición {r.transition}: se promedia el riesgo de la etapa actual y el "
                        f"de la etapa {target}.")
         level = new
-    if higher is not None and higher.status == "ok" and higher.stage == 4 and level == 0:
+    trending_up = {4} if quote in _STABLES else {2, 4}
+    if higher is not None and higher.status == "ok" and higher.stage in trending_up and level == 0:
         level = 1
-        reasons.append(f"El marco superior ({higher.label.lower()}) es bajista: una ruptura por abajo "
-                       f"es más probable.")
+        side = "bajista: una ruptura por abajo" if higher.stage == 4 else "alcista: una ruptura por arriba"
+        reasons.append(f"El marco superior ({higher.label.lower()}) es {side} es más probable.")
     if r.confidence_label == "baja":
         reasons.append("La confianza en la etapa es baja: la lectura puede cambiar pronto.")
     return LEVELS[level], reasons
@@ -220,8 +231,12 @@ def lp_range(r: TimeframeResult, center: float) -> tuple[float, float] | None:
 
 
 def quote_pool(pool: Pool, state: PoolState | None, low: float, high: float, market: float,
-               capital: float) -> PoolQuote:
-    """Rango ajustado a los ticks del pool y estimación de comisiones con su estado actual."""
+               capital: float, quote_usd: float = 1.0, volume: float | None = None) -> PoolQuote:
+    """Rango ajustado a los ticks del pool y estimación de comisiones con su estado actual.
+
+    `capital` en dólares; `quote_usd` = precio en dólares de la moneda en la que se cotiza el par
+    (1 para una estable, el precio de BTC para ETH/BTC...). `volume` = volumen diario en dólares
+    que se usa para las comisiones (por defecto, el de las últimas 24 h)."""
     lo, hi, tl, tu = snap_range(pool, low, high)
     q = PoolQuote(pool, lo, hi, tl, tu)
     if state is None or state.price is None:
@@ -237,12 +252,13 @@ def quote_pool(pool: Pool, state: PoolState | None, low: float, high: float, mar
         q.error = "el precio del pool queda fuera del rango"
         return q
     q.asset_share = composition(p, lo, hi)
-    if state.volume_24h is None or not state.liquidity:
+    volume = state.volume_24h if volume is None else volume
+    if volume is None or not state.liquidity:
         q.error = state.error or "sin volumen o liquidez del pool: no se estiman comisiones"
         return q
-    mine = liquidity_for_capital(p, lo, hi, capital) * 10 ** ((pool.dec0 + pool.dec1) / 2)
+    mine = liquidity_for_capital(p, lo, hi, capital / quote_usd) * 10 ** ((pool.dec0 + pool.dec1) / 2)
     share = mine / (state.liquidity + mine)
-    q.fee_day = share * state.volume_24h * pool.fee * (1 - state.protocol_cut)
+    q.fee_day = share * volume * pool.fee * (1 - state.protocol_cut)
     q.fee_apr = q.fee_day * 365 / capital
     worst = min(divergence(p, lo, lo, hi), divergence(p, hi, lo, hi))
     if q.fee_day > 0:

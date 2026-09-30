@@ -97,6 +97,23 @@ def _resample(daily: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     return out
 
 
+def _download(name: str, ex: ccxt.Exchange, pair: str, cfg: TimeframeConfig) -> tuple[pd.DataFrame, list[str]]:
+    """Velas de `pair` en el marco de `cfg` (si el exchange no tiene ese marco, se agregan del diario)."""
+    notes = []
+    if cfg.key in ex.timeframes:
+        rows = _fetch_rows(ex, pair, cfg.key, cfg.history + 2)
+        df = _to_frame(rows) if rows else pd.DataFrame(columns=COLUMNS)
+    else:
+        days = cfg.history * (31 if cfg.key == "1M" else 7)
+        rows = _fetch_rows(ex, pair, "1d", days)
+        df = _resample(_to_frame(rows), cfg.key) if rows else pd.DataFrame(columns=COLUMNS)
+        notes.append(f"{name} no ofrece velas {cfg.key}: construidas a partir del diario "
+                     f"({len(rows)} velas diarias disponibles)")
+    if df.empty:
+        raise DataError("la fuente no devolvió velas")
+    return df, notes
+
+
 def fetch_candles(symbol: str, cfg: TimeframeConfig, now: pd.Timestamp | None = None) -> Candles:
     """Descarga velas reales. Lanza DataError si todas las fuentes fallan."""
     now = now or pd.Timestamp.now(tz="UTC")
@@ -107,18 +124,7 @@ def fetch_candles(symbol: str, cfg: TimeframeConfig, now: pd.Timestamp | None = 
             ex = _get_exchange(name)
             if pair not in ex.markets:
                 raise DataError(f"el par {pair} no existe")
-            notes = []
-            if cfg.key in ex.timeframes:
-                rows = _fetch_rows(ex, pair, cfg.key, cfg.history + 2)
-                df = _to_frame(rows) if rows else pd.DataFrame(columns=COLUMNS)
-            else:
-                days = cfg.history * (31 if cfg.key == "1M" else 7)
-                rows = _fetch_rows(ex, pair, "1d", days)
-                df = _resample(_to_frame(rows), cfg.key) if rows else pd.DataFrame(columns=COLUMNS)
-                notes.append(f"{name} no ofrece velas {cfg.key}: construidas a partir del diario "
-                             f"({len(rows)} velas diarias disponibles)")
-            if df.empty:
-                raise DataError("la fuente no devolvió velas")
+            df, notes = _download(name, ex, pair, cfg)
             closed, current = split_closed(df, cfg.key, now)
             if name != SOURCES[0][0]:
                 notes.append(f"Datos de {name} {pair} (fallo en {SOURCES[0][0]})")
@@ -126,6 +132,63 @@ def fetch_candles(symbol: str, cfg: TimeframeConfig, now: pd.Timestamp | None = 
         except (ccxt.BaseError, DataError, OSError) as e:
             errors.append(f"{name} {pair}: {type(e).__name__}: {str(e)[:160]}")
     raise DataError("No se pudieron descargar datos. " + " | ".join(errors))
+
+
+STABLES = {"USDC", "USDT", "USD", "DAI"}
+
+
+def invert_candles(df: pd.DataFrame) -> pd.DataFrame:
+    """Velas de quote/base a partir de base/quote: el máximo pasa a ser 1/mínimo y viceversa."""
+    return pd.DataFrame({"open": 1 / df["open"], "high": 1 / df["low"], "low": 1 / df["high"],
+                         "close": 1 / df["close"], "volume": df["volume"]}, index=df.index)
+
+
+def canonical_pair(base: str, quote: str) -> tuple[str, str]:
+    """Orientación en la que cotiza el par en la primera fuente disponible (ETH/BTC, no BTC/ETH).
+    El método del rango mide los movimientos en precio, no en proporción, así que analizar siempre
+    en la misma orientación garantiza que ETH/BTC y BTC/ETH den el mismo rango para el mismo pool.
+    Con una moneda estable, el activo va siempre primero."""
+    base, quote = base.upper(), quote.upper()
+    if quote in STABLES:
+        return base, quote
+    for name, _ in SOURCES:
+        try:
+            ex = _get_exchange(name)
+        except (ccxt.BaseError, OSError):
+            continue
+        if f"{base}/{quote}" in ex.markets:
+            return base, quote
+        if f"{quote}/{base}" in ex.markets:
+            return quote, base
+    return base, quote
+
+
+def fetch_pair_candles(base: str, quote: str, cfg: TimeframeConfig,
+                       now: pd.Timestamp | None = None) -> Candles:
+    """Velas del precio de `base` en `quote`. Con una moneda estable, las del activo en dólares
+    (fetch_candles). Con dos activos volátiles, el par directo del exchange (ETH/BTC) o el inverso
+    invertido (BTC/ETH a partir de ETH/BTC). Lanza DataError si ninguna fuente lo tiene."""
+    base, quote = base.upper(), quote.upper()
+    if quote in STABLES:
+        return fetch_candles(base, cfg, now)
+    now = now or pd.Timestamp.now(tz="UTC")
+    errors = []
+    for name, _ in SOURCES:
+        try:
+            ex = _get_exchange(name)
+            options = [(f"{base}/{quote}", False), (f"{quote}/{base}", True)]
+            pair, inverted = next(((p, inv) for p, inv in options if p in ex.markets), (None, None))
+            if pair is None:
+                raise DataError(f"no existe {base}/{quote} ni {quote}/{base}")
+            df, notes = _download(name, ex, pair, cfg)
+            if inverted:
+                df = invert_candles(df)
+                notes.append(f"Precio de {base}/{quote} calculado invirtiendo {pair}")
+            closed, current = split_closed(df, cfg.key, now)
+            return Candles(closed, current, f"{name} {pair}" + (" (invertido)" if inverted else ""), notes)
+        except (ccxt.BaseError, DataError, OSError) as e:
+            errors.append(f"{name}: {type(e).__name__}: {str(e)[:160]}")
+    raise DataError(f"No se pudieron descargar datos de {base}/{quote}. " + " | ".join(errors))
 
 
 # ---------------------------------------------------------------- acciones (Yahoo Finance)

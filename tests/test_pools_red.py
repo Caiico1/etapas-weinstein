@@ -74,3 +74,31 @@ def test_pool_prices_match_binance(asset):
         assert abs(st.price / ref - 1) < 0.01, (p.id, st.price, ref)
         assert st.liquidity and st.liquidity > 0
         assert 0 <= st.protocol_cut < 0.5
+
+
+def _decimals_evm(chain, addr):
+    return int(_eth_call(chain, addr, "0x313ce567"), 16)
+
+
+def test_token_registry_on_chain():
+    """Cada token del registro existe en su red con esos decimales (Solana: cuenta de mint SPL)."""
+    from etapas.descubrir import TOKENS
+    for chain, reg in TOKENS.items():
+        for toks in reg.values():
+            for sym, addr, dec in toks:
+                if chain == "solana":
+                    info = pools_mod._rpc("solana", "getAccountInfo", [addr, {"encoding": "base64"}])["value"]
+                    assert base64.b64decode(info["data"][0])[44] == dec, (chain, sym)
+                else:
+                    assert _decimals_evm(chain, addr) == dec, (chain, sym)
+
+
+def test_discovery_finds_known_pools():
+    from etapas.descubrir import discover
+    found, warnings = discover("ETH", "USDC")
+    assert not warnings
+    addrs = {p.address.lower() for p in found}
+    assert "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640" in addrs      # Ethereum 0,05 %
+    assert "0xd0b53d9277642d899df5c87a3966a349a798f224" in addrs      # Base 0,05 %
+    sol, _ = discover("SOL", "USDC")
+    assert "Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE" in {p.address for p in sol}

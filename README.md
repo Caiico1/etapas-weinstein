@@ -156,6 +156,63 @@ en `out/ia/<SÍMBOLO>.md` con instrucciones para una IA:
 Opciones de la línea de comandos: `--posiciones ARCHIVO`, `--ia` y `--sin-liquidez` (no consulta
 los pools).
 
+## Habilidad /pool: la mejor oportunidad para un par
+
+En Claude Code, dentro de este proyecto: **`/pool ETH/USDC`** (o «¿qué pool y qué rango para
+ETH/BTC con 5.000 $?»). La habilidad (`.claude/skills/pool/SKILL.md`) ejecuta:
+
+```bash
+python -m etapas.oportunidad ETH/USDC --capital 5000        # añade --json para datos estructurados
+```
+
+y devuelve hasta **dos propuestas** (de ciclos distintos si es posible), cada una con el pool
+(red, DEX, comisión y dirección), el **mínimo y el máximo** ajustados a los ticks del pool, el
+**depósito** de cada token para el capital y la estimación neta. Si nada compensa, lo dice. Tarda
+de 1 a 3 minutos. Código: `etapas/oportunidad.py`, `etapas/descubrir.py`.
+
+**Pares**: activo/estable (ETH, BTC, SOL, LINK, UNI, AAVE, ARB con USDC o USDT; `USD` = ambas) y
+activo/activo (ETH/BTC, SOL/ETH...). Acepta `WETH`, `WBTC`, `cbBTC` y la estable delante.
+
+**Pools**: solo tokens con dirección verificada on-chain (`TOKENS` en `descubrir.py`), así que un
+token falso con el mismo símbolo nunca entra. Uniswap v3 en Ethereum, Base y Arbitrum (se le
+pregunta a la fábrica oficial por cada token y comisión) y Orca en Solana (candidatos de
+GeckoTerminal comprobados on-chain). Se descartan los pools con menos de 1 M$ de TVL o 50 k$ de
+volumen diario: con 5.000 $ en un pool pequeño, la estimación depende demasiado de ti mismo.
+
+**Cálculo, por ciclo (diario, semanal, mensual) y pool**:
+
+1. Etapa del **par** (ETH/BTC se analiza como precio de ETH en BTC) e idoneidad (etapa 4 = descartado).
+   Entre dos activos volátiles no hay moneda «de cuenta»: salir del rango por arriba o por abajo
+   cuesta lo mismo frente a mantener ambos, así que las etapas 2 y 4 valen «precaución». Además,
+   esos pares se analizan siempre en la orientación en que cotizan (ETH/BTC aunque se pida BTC/ETH),
+   porque el método del rango mide en precio: así el mismo pool da siempre el mismo rango, que la
+   propuesta muestra también invertido.
+2. Rango del método validado, ajustado a los ticks del pool. El ciclo diario no se propone en Ethereum.
+3. **Histórico del método en el par** (365 días, 104 semanas o 48 meses, sin ver el futuro): fracción
+   de ciclos en que el precio no salió del rango y resultado frente a mantener los tokens. Ese
+   resultado se mide por unidad de anchura del rango y se reescala a la anchura de hoy, porque el
+   método ensancha el rango con la volatilidad. Medido por anchura, varía entre mitades del
+   histórico un 1-11 % (ETH, SOL diario, ETH/BTC), frente al 15-51 % de la media sin reescalar.
+4. **Comisiones** = tu liquidez / (liquidez activa del pool + la tuya) × mediana del volumen diario
+   de 30 días × comisión × (1 − parte del protocolo). **Validada con las comisiones reales**: en los
+   7 días hasta el 29/09/2026, lo que cobró cada unidad de liquidez según `feeGrowthGlobal`
+   (on-chain) frente a la fórmula con el volumen de ese día: 0,996 (Ethereum USDC/WETH 0,05 %),
+   1,011 (Base WETH/USDC 0,05 %) y 1,011 (Base WETH/USDC 0,30 %).
+5. **Gas** de un reajuste por ciclo: 900.000 unidades de gas al precio actual de cada red (más 0,05 $
+   de margen en Base y Arbitrum), o 0,001 SOL en Solana.
+6. **Neto por ciclo** = comisiones × fracción de ciclos dentro + resultado esperado frente a mantener
+   × capital − gas. **Margen de seguridad**: solo se propone lo que sigue siendo positivo con una
+   pérdida frente a mantener un 25 % peor (`SAFETY_LOSS`).
+
+**Qué esperar.** Con estos datos, la liquidez concentrada suele cobrar en comisiones algo parecido
+a lo que pierde frente a mantener los tokens. Los estudios sobre Uniswap v3 encuentran lo mismo:
+buena parte de las posiciones pierde frente a mantener: en «Impermanent Loss in Uniswap v3»
+(Loesch et al., 2021, arXiv:2111.09192), los pools analizados generaron 199,3 M$ de comisiones y
+260,1 M$ de pérdida impermanente, y el 49,5 % de los proveedores tuvo rentabilidad negativa. Por
+eso la habilidad a menudo responde
+«mejor esperar», y cuando propone algo es porque el volumen del pool compensa con margen.
+Tests: `tests/test_oportunidad.py` (sin red) y `tests/test_pools_red.py` (con `ETAPAS_TEST_RED=1`).
+
 ## Versión en la nube (GitHub)
 
 El flujo [`.github/workflows/rutina.yml`](.github/workflows/rutina.yml) hace lo mismo que la
