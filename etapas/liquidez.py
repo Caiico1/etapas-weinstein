@@ -220,8 +220,12 @@ def lp_range(r: TimeframeResult, center: float) -> tuple[float, float] | None:
 
 
 def quote_pool(pool: Pool, state: PoolState | None, low: float, high: float, market: float,
-               capital: float) -> PoolQuote:
-    """Rango ajustado a los ticks del pool y estimación de comisiones con su estado actual."""
+               capital: float, quote_usd: float = 1.0, volume: float | None = None) -> PoolQuote:
+    """Rango ajustado a los ticks del pool y estimación de comisiones con su estado actual.
+
+    `capital` en dólares; `quote_usd` = precio en dólares de la moneda en la que se cotiza el par
+    (1 para una estable, el precio de BTC para ETH/BTC...). `volume` = volumen diario en dólares
+    que se usa para las comisiones (por defecto, el de las últimas 24 h)."""
     lo, hi, tl, tu = snap_range(pool, low, high)
     q = PoolQuote(pool, lo, hi, tl, tu)
     if state is None or state.price is None:
@@ -237,12 +241,13 @@ def quote_pool(pool: Pool, state: PoolState | None, low: float, high: float, mar
         q.error = "el precio del pool queda fuera del rango"
         return q
     q.asset_share = composition(p, lo, hi)
-    if state.volume_24h is None or not state.liquidity:
+    volume = state.volume_24h if volume is None else volume
+    if volume is None or not state.liquidity:
         q.error = state.error or "sin volumen o liquidez del pool: no se estiman comisiones"
         return q
-    mine = liquidity_for_capital(p, lo, hi, capital) * 10 ** ((pool.dec0 + pool.dec1) / 2)
+    mine = liquidity_for_capital(p, lo, hi, capital / quote_usd) * 10 ** ((pool.dec0 + pool.dec1) / 2)
     share = mine / (state.liquidity + mine)
-    q.fee_day = share * state.volume_24h * pool.fee * (1 - state.protocol_cut)
+    q.fee_day = share * volume * pool.fee * (1 - state.protocol_cut)
     q.fee_apr = q.fee_day * 365 / capital
     worst = min(divergence(p, lo, lo, hi), divergence(p, hi, lo, hi))
     if q.fee_day > 0:
