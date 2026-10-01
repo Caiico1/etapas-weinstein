@@ -1,0 +1,110 @@
+{
+  "fecha": "2026-10-01",
+  "activos": {
+    "BTC": {
+      "1M": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-09-01",
+        "cierre": 83623.6,
+        "confirma": 57800.19,
+        "invalida": 82850.0
+      },
+      "1w": {
+        "etapa": 1,
+        "transicion": "1→2",
+        "vela": "2026-09-21",
+        "cierre": 84472.0,
+        "confirma": 87395.67,
+        "invalida": 62275.0
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-30",
+        "cierre": 83623.6,
+        "confirma": 87395.67,
+        "invalida": 77295.5936
+      }
+    },
+    "ETH": {
+      "1M": {
+        "etapa": 4,
+        "transicion": "4→1",
+        "vela": "2026-09-01",
+        "cierre": 2686.01,
+        "confirma": 1505.68,
+        "invalida": 4956.78
+      },
+      "1w": {
+        "etapa": 1,
+        "transicion": "1→2",
+        "vela": "2026-09-21",
+        "cierre": 2688.65,
+        "confirma": 2807.34,
+        "invalida": 1822.06
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-30",
+        "cierre": 2686.01,
+        "confirma": 2807.34,
+        "invalida": 2436.3812
+      }
+    },
+    "SOL": {
+      "1M": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-09-01",
+        "cierre": 118.12,
+        "confirma": 60.13,
+        "invalida": 98.41
+      },
+      "1w": {
+        "etapa": 1,
+        "transicion": "1→2",
+        "vela": "2026-09-21",
+        "cierre": 121.99,
+        "confirma": 124.95,
+        "invalida": 70.58
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-30",
+        "cierre": 118.12,
+        "confirma": 124.95,
+        "invalida": 101.2106
+      }
+    },
+    "ADA": {
+      "1M": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-09-01",
+        "cierre": 0.2466,
+        "confirma": 0.1382,
+        "invalida": 1.0193
+      },
+      "1w": {
+        "etapa": 4,
+        "transicion": "4→1",
+        "vela": "2026-09-21",
+        "cierre": 0.2551,
+        "confirma": 0.1533,
+        "invalida": 0.2584
+      },
+      "1d": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-09-30",
+        "cierre": 0.2466,
+        "confirma": 0.2654,
+        "invalida": 0.21373800000000004
+      }
+    }
+  },
+  "posiciones": {}
+}
