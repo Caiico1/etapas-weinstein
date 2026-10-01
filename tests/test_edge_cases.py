@@ -138,7 +138,9 @@ class _FakeExchange:
         return self.markets
 
     def milliseconds(self):
-        return int(pd.Timestamp("2026-09-25", tz="UTC").timestamp() * 1000)
+        # Fecha real: la herramienta decide qué velas están cerradas con la fecha real, así que los
+        # datos simulados deben llegar hasta hoy (con una fecha fija, el test caducaba cada mes).
+        return int(pd.Timestamp.now(tz="UTC").timestamp() * 1000)
 
     def fetch_ohlcv(self, symbol, timeframe, since=None, limit=None):
         step = 86_400_000 if timeframe == "1d" else 7 * 86_400_000
@@ -212,7 +214,8 @@ def test_fallback_to_kraken_and_resample_monthly(exchanges):
     assert "kraken" in daily.source
     assert any("fallo en binance" in n for n in daily.notes)
     assert any("construidas a partir del diario" in n for n in monthly.notes)
-    assert monthly.candles is None or monthly.candles.index[-1] < pd.Timestamp("2026-09-01", tz="UTC")
+    month_start = pd.Timestamp.now(tz="UTC").normalize().replace(day=1)
+    assert monthly.candles.index[-1] < month_start          # el mes en curso no cuenta como cerrado
 
 
 def test_reference_label_and_provisional_reading():
