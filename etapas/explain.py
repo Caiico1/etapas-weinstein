@@ -55,6 +55,16 @@ def meaning(r: TimeframeResult, kind: str = "cripto") -> str:
         text = f"La caída previa{prior} se ha frenado: el precio se mueve de lado {rango}"
         if struct.endswith("HL"):
             text += " sin marcar nuevos mínimos"
+    elif r.stage == 2 and r.by_break:
+        text = (f"Ruptura alcista: el precio ({_p(r.price)}) cerró por encima del techo de su rango "
+                f"anterior ({_p(r.break_level)}) y se mantiene sobre {media}, {_ma_dir(r, units)}")
+        if struct == "HH/HL":
+            text += ", con máximos y mínimos crecientes"
+    elif r.stage == 4 and r.by_break:
+        text = (f"Ruptura bajista: el precio ({_p(r.price)}) cerró por debajo del suelo de su rango "
+                f"anterior ({_p(r.break_level)}) y sigue bajo {media}, {_ma_dir(r, units)}")
+        if struct == "LH/LL":
+            text += ", con máximos y mínimos decrecientes"
     elif r.stage == 2:
         pos = "por encima de" if above else "algo por debajo de"
         text = f"Tendencia alcista: el precio ({_p(r.price)}) está {pos} {media}, {_ma_dir(r, units)}"

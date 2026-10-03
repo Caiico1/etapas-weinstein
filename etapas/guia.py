@@ -127,13 +127,13 @@ fila semanal, dónde cierra la semana; en la mensual, dónde cierra el mes. Un c
 puede deshacerse antes del cierre.</p>
 <div class="wrap"><table>
 <tr><th>Etapa</th><th>Nivel que confirma</th><th>Nivel que invalida</th></tr>
-<tr><td><span class="chip" style="background:#2563eb">1</span> Base</td><td><b>Techo del rango.</b> Si cierra por encima, la base se rompe al alza y empieza la etapa 2.</td><td><b>Suelo del rango.</b> Si lo pierde, la base falla y la caída puede continuar.</td></tr>
-<tr><td><span class="chip" style="background:#16a34a">2</span> Alcista</td><td><b>Último máximo.</b> Si lo supera, la subida continúa.</td><td><b>Soporte más cercano</b> (último mínimo creciente o la media). Si lo pierde, la tendencia se debilita.</td></tr>
-<tr><td><span class="chip" style="background:#eab308">3</span> Distribución</td><td><b>Suelo del rango.</b> Si lo pierde, el techo se confirma y empieza la etapa 4.</td><td><b>Techo del rango.</b> Si lo supera, no era un techo y vuelve la etapa 2.</td></tr>
-<tr><td><span class="chip" style="background:#dc2626">4</span> Bajista</td><td><b>Último mínimo.</b> Si lo pierde, la caída continúa.</td><td><b>Resistencia más cercana</b> (último máximo o la media). Si la supera, la caída se frena.</td></tr>
+<tr><td><span class="chip" style="background:#2563eb">1</span> Base</td><td><b>Techo del rango más medio rango.</b> Es el cierre que cuenta como ruptura clara: si cierra por encima, la base se rompe al alza y empieza la etapa 2. Superar el techo por poco no basta, porque dentro de un rango eso pasa a menudo.</td><td><b>Suelo del rango.</b> Si lo pierde, la base falla y la caída puede continuar.</td></tr>
+<tr><td><span class="chip" style="background:#16a34a">2</span> Alcista</td><td><b>Último máximo.</b> Si lo supera, la subida continúa.</td><td><b>Soporte más cercano</b> (último mínimo creciente, la media o el techo de la base que se rompió). Si lo pierde, la tendencia se debilita.</td></tr>
+<tr><td><span class="chip" style="background:#eab308">3</span> Distribución</td><td><b>Suelo del rango menos medio rango.</b> Si cierra por debajo, el techo se confirma y empieza la etapa 4.</td><td><b>Techo del rango.</b> Si lo supera, no era un techo y vuelve la etapa 2.</td></tr>
+<tr><td><span class="chip" style="background:#dc2626">4</span> Bajista</td><td><b>Último mínimo.</b> Si lo pierde, la caída continúa.</td><td><b>Resistencia más cercana</b> (último máximo o la media). Si la supera, la caída se frena. Si el precio ya está por encima de todas, se muestra «—».</td></tr>
 </table></div>
 <div class="warn">En las etapas 3 y 4, «confirmar» significa confirmar la <b>debilidad</b>: el nivel que confirma está por debajo del precio y el que invalida, por encima.</div>
-<p><b>Ejemplo:</b> BTC semanal en etapa 1, con el nivel que confirma en 82.300. Un cierre semanal por encima rompería la base y pasaría a etapa 2.</p>
+<p><b>Ejemplo:</b> BTC semanal, agosto de 2026. La base iba de 57.800 a 67.300 y la semana del 17/08 cerró en 77.734, muy por encima del techo: ruptura. Dos semanas después, con la media de 30 semanas ya girando al alza, pasó a etapa 2. La explicación del informe lo indica: «Ruptura alcista: cerró por encima del techo de su rango anterior».</p>
 
 <h2 id="rangos">7. Rango típico y rango extremo</h2>
 <p>Estiman <b>cuánto puede moverse</b> el precio durante la vela en curso (hoy, esta semana, este mes),

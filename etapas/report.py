@@ -72,7 +72,8 @@ def table_row(r: TimeframeResult) -> list[str]:
         r.transition or "—",
         f"{fmt_price(r.price)} ({ref_label(r)})",
         f"SMA{r.ma_len} {fmt_price(r.ma)}",
-        f"{fmt_pct(r.slope)} {r.slope_label}",
+        f"{fmt_pct(r.slope)} {r.slope_label}"
+        + (f" (umbral ±{r.slope_threshold:.1%})" if r.slope_label == "plana" and r.slope_threshold else ""),
         r.structure,
         fmt_price(r.confirm_level),
         fmt_price(r.invalid_level),

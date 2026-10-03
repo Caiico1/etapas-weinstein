@@ -29,7 +29,7 @@ class TimeframeConfig:
 
 TIMEFRAMES: dict[str, TimeframeConfig] = {
     "1d": TimeframeConfig("1d", "Diario", ma=50, ma_alt=None, slope_window=10,
-                          pivot_window=5, prior_window=60, history=730,
+                          pivot_window=5, prior_window=60, history=1095,
                           range_lookback=250, period_name="hoy"),
     "1w": TimeframeConfig("1w", "Semanal", ma=30, ma_alt=None, slope_window=5,
                           pivot_window=3, prior_window=30, history=400,

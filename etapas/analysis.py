@@ -51,6 +51,8 @@ class TimeframeResult:
     last_price: float | None = None   # último precio conocido, incluida la vela en curso
     atr: float | None = None
     ma_run: int = 0                   # velas seguidas que la media sube (+) o baja (−)
+    by_break: bool = False            # la etapa 2 o 4 sale de la regla de ruptura del rango
+    break_level: float | None = None  # techo (o suelo) del rango que se rompió
     provisional: "TimeframeResult | None" = None
     history: pd.DataFrame | None = field(default=None, repr=False)   # para el HTML
     candles: pd.DataFrame | None = field(default=None, repr=False)
@@ -156,6 +158,8 @@ def snapshot(hist: pd.DataFrame, cfg: TimeframeConfig, ma_len: int) -> Timeframe
         range_top=_f(row["range_top"]), range_bottom=_f(row["range_bottom"]),
         volume_ratio=_f(row["vol_ratio"]), breakout=row["breakout"],
         atr=_f(row["atr"]), ma_run=int(row["ma_run"]),
+        by_break=bool(row["by_break"]),
+        break_level=_f(row["break_up"] if stage == 2 else row["break_dn"]) if row["by_break"] else None,
         confirm_level=_f(confirm), invalid_level=_f(invalid),
     )
 

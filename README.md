@@ -250,7 +250,10 @@ tarea de Windows, pero en los servidores de GitHub, así que funciona con el PC 
   unas 720 velas diarias, unos 23 meses, suficiente para la SMA10 mensual).
 - **Solo velas cerradas**. La vela en curso se descarta; con `--provisional` se muestra
   aparte, marcada como PROVISIONAL.
-- Historial descargado: 730 días, 400 semanas y 240 meses (≥ 3 × media + ventana previa).
+- Historial descargado: 1.095 días, 400 semanas y 240 meses (≥ 3 × media + ventana previa). Se
+  cuenta en velas, no en fechas, porque cada marco calcula con sus propias velas. Descargar más
+  no cambia las etapas (comprobado en diario con 3 y con 7 años: 0 diferencias); los 3 años del
+  diario son para que el gráfico tenga contexto.
 - Mensual con poco historial → SMA6 con aviso. Si tampoco alcanza → "datos insuficientes".
   Nunca se inventan datos.
 
@@ -282,10 +285,13 @@ Parámetros en [`etapas/config.py`](etapas/config.py):
    la etapa 1 (venía de caer) y la 3 (venía de subir).
 5. **Rango**: máximo y mínimo de las últimas N velas. Son los niveles de ruptura y de pérdida.
 6. **Volumen**: una ruptura del rango con más de 1,5 × el volumen medio (20) suma puntos.
-7. **Puntuación** (0–100 por etapa): pendiente 30 %, posición 25 %, estructura 25 %,
+7. **Ruptura del rango**: cierre más allá del techo (o suelo) del rango previo en más de media
+   anchura, con el precio del lado de la media y la media girada al menos 2 velas ⇒ etapa 2 (o 4)
+   aunque la puntuación diga otra cosa. Ver «Reglas añadidas».
+8. **Puntuación** (0–100 por etapa): pendiente 30 %, posición 25 %, estructura 25 %,
    tendencia previa 15 %, volumen 5 %. Se promedia en las últimas *n* velas para que la etapa
    no cambie por una sola vela. **Confianza** = 1ª − 2ª puntuación: alta > 30, media 15–30, baja < 15.
-8. **Transición**: si la 2ª etapa es la siguiente del ciclo y la confianza no es alta → "X→Y".
+9. **Transición**: si la 2ª etapa es la siguiente del ciclo y la confianza no es alta → "X→Y".
    **Aviso temprano**: en etapa 1, si la media lleva al menos *n* velas seguidas subiendo, el
    precio cierra por encima de ella y lo ha hecho en al menos el 60 % de las últimas N velas → "1→2"
    (y al revés en etapa 3 → "3→4"). La etapa oficial no cambia hasta que se rompe el rango.
@@ -294,10 +300,14 @@ Parámetros en [`etapas/config.py`](etapas/config.py):
 
 | Etapa | Nivel que confirma | Nivel que invalida |
 |---|---|---|
-| 1 | Techo del rango (ruptura → etapa 2) | Suelo del rango |
-| 2 | Último máximo pivote (o máximo reciente) | Soporte más cercano por debajo: último mínimo pivote o media |
-| 3 | Suelo del rango (pérdida → etapa 4) | Techo del rango |
-| 4 | Último mínimo pivote (o mínimo reciente) | Resistencia más cercana por encima: último máximo pivote o media |
+| 1 | Techo del rango + media anchura del rango: el cierre que exige la regla de ruptura (→ etapa 2) | Suelo del rango |
+| 2 | Último máximo pivote (o máximo reciente) | Soporte más cercano por debajo: último mínimo pivote, media o techo roto de la base |
+| 3 | Suelo del rango − media anchura del rango (pérdida → etapa 4) | Techo del rango |
+| 4 | Último mínimo pivote (o mínimo reciente) | Resistencia más cercana por encima: último máximo pivote, media o suelo roto del techo |
+
+Si no hay ningún nivel del lado correcto (por ejemplo, etapa 4 con el precio ya por encima de la
+media y del último máximo), el nivel que invalida se muestra como «—»: un nivel que el precio ya
+ha superado no puede invalidar nada.
 
 La línea "Métricas" de la salida muestra todos los valores que justifican cada etapa.
 
@@ -367,6 +377,27 @@ movimientos extremos más frecuentes que los que refleja el pasado reciente.
 ### Reglas añadidas al diseño original (y por qué)
 
 Todas se descubrieron en las pruebas y se pueden ajustar en `classifier.py`/`config.py`:
+
+- **Etapa por ruptura del rango** (`BREAK_FRAC`, `BREAK_RUN`, oct-2026). La puntuación solo daba
+  etapa 2 cuando la media tenía pendiente fuerte, y tras una caída larga la media de 30 semanas tarda
+  meses en tenerla. BTC, ETH y SOL semanal rompieron su base el 17/08/2026 (BTC: base 57.800–67.300,
+  cierre en 77.734 con 1,7 × su volumen) y seis semanas después seguían en «etapa 1, confianza alta».
+  Regla: si el cierre supera el techo del rango previo (máximo de las N velas anteriores) en más de
+  media anchura de ese rango, el precio está sobre la media y la media lleva al menos 2 velas
+  subiendo, la etapa es 2 (confianza «media»), y lo sigue siendo mientras el cierre no vuelva por
+  debajo del techo roto ni de la media. Simétrica para la etapa 4. El margen de media anchura es lo
+  que distingue una ruptura de un exceso dentro del rango: sin margen, la precisión sintética
+  bajaba al 90-91 %; con él queda en 94,2 / 95,5 / 93,1 % (antes 94,2 / 95,5 / 93,2 %). Que caduque
+  al perder la media evita que una ruptura antigua cuente en la base siguiente y que el resultado
+  dependa del histórico descargado. Cambios en datos reales: BTC, ETH y SOL semanal pasan a etapa 2
+  desde el 31/08/2026; SPY semanal a etapa 4 en marzo de 2020 y abril de 2025 (QQQ, en abril de
+  2025); ADA semanal a
+  etapa 2 en noviembre de 2024; el oro mensual a etapa 2 en junio de 2019. En el diario cambian
+  entre 0 y 11 velas de 663 por activo, todas arranques o caídas reales.
+- **Niveles coherentes** (oct-2026). El nivel que confirma de una base era el máximo de las últimas N
+  velas, incluida la actual: subía con cada nuevo máximo y coincidía con el aviso «ruptura alcista
+  del rango». Ahora es el cierre que exige la regla de ruptura. Y el nivel que invalida ya no puede
+  ser uno que el precio haya superado (BTC mensual mostraba 82.850 con el cierre en 83.624).
 
 - **Giro de la tendencia previa** (`PRIOR_RETRACE`, sep-2026). En el mensual cripto, el criterio de
   magnitud exige que la media se mueva un 70-220 % en 18 meses, algo imposible en una caída (no

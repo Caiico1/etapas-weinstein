@@ -23,6 +23,8 @@ FAR_ATR = 3.0          # distancia a la media (en ATR) a partir de la cual no ha
 SCORE_SMOOTHING = 1.0  # suavizado de la puntuación, en fracción de la ventana de pendiente
 EARLY_SIDE = 0.6       # aviso temprano 1→2 / 3→4: fracción mínima de cierres del lado de la media
 PRIOR_RETRACE = 0.5    # giro de la tendencia previa: parte de ella que la media ha devuelto
+BREAK_FRAC = 0.5       # ruptura: el cierre supera el techo del rango previo en esta fracción de su anchura
+BREAK_RUN = 2          # ruptura: velas seguidas que la media debe llevar girada a favor
 
 
 def _clip01(x):
@@ -95,6 +97,42 @@ def _prior_trend(ma: np.ndarray, atr_pct: np.ndarray, z: np.ndarray, cfg: Timefr
             prior[t], direction[t] = anchor_move, anchor_dir
         anchors[t] = anchor
     return prior, anchors, direction
+
+
+def _break_levels(close: np.ndarray, prior_high: np.ndarray, prior_low: np.ndarray,
+                  ma: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Nivel roto vigente en cada vela: (techo roto al alza, suelo roto a la baja), NaN si no hay.
+
+    Una ruptura al alza empieza cuando el cierre supera el techo del rango previo (el máximo de
+    las N velas anteriores) en más de BREAK_FRAC × la anchura de ese rango, y sigue vigente
+    mientras el cierre no vuelva por debajo del techo roto ni de la media. El margen descarta
+    los pequeños excesos de un rango lateral, que no son rupturas. El nivel no se mueve con los
+    máximos posteriores: es el techo de la base que se rompió. Una ruptura en un sentido cancela
+    la del sentido contrario. Que caduque al perder la media evita que una ruptura de hace años
+    siga contando en la base siguiente, y hace que el resultado no dependa de cuánto histórico
+    se descargue.
+    """
+    n = len(close)
+    up, dn = np.full(n, np.nan), np.full(n, np.nan)
+    u = d = np.nan
+    for t in range(n):
+        if not (np.isnan(prior_high[t]) or np.isnan(prior_low[t])):
+            margin = BREAK_FRAC * (prior_high[t] - prior_low[t])
+            if close[t] > prior_high[t] + margin:
+                if np.isnan(u):
+                    u = prior_high[t]
+                d = np.nan
+            elif close[t] < prior_low[t] - margin:
+                if np.isnan(d):
+                    d = prior_low[t]
+                u = np.nan
+        m = ma[t] if ma is not None else np.nan
+        if not np.isnan(u) and (close[t] < u or close[t] < m):
+            u = np.nan
+        if not np.isnan(d) and (close[t] > d or close[t] > m):
+            d = np.nan
+        up[t], dn[t] = u, d
+    return up, dn
 
 
 def classify(df: pd.DataFrame, cfg: TimeframeConfig, ma_len: int | None = None) -> pd.DataFrame:
@@ -239,6 +277,25 @@ def classify(df: pd.DataFrame, cfg: TimeframeConfig, ma_len: int | None = None) 
     early_dn = (out["stage"] == 3) & (run <= -n) & ~above & out["ma"].notna() & (side <= 1 - EARLY_SIDE)
     out.loc[early_up, "transition"] = "1→2"
     out.loc[early_dn, "transition"] = "3→4"
+    # Ruptura de la base (Weinstein): cierre claramente por encima del techo del rango previo,
+    # precio sobre la media y media ya girada al alza ⇒ etapa 2, aunque la media, que va con
+    # retraso tras una caída larga, todavía no tenga pendiente suficiente para la puntuación
+    # (BTC, ETH y SOL semanal rompieron su base el 17/08/2026 y seguían en «1» seis semanas
+    # después). Simétrico para la etapa 4 al perder el suelo de un techo.
+    prior_high = df["high"].rolling(N, min_periods=N).max().shift(1)
+    prior_low = df["low"].rolling(N, min_periods=N).min().shift(1)
+    out["break_up"], out["break_dn"] = _break_levels(close.to_numpy(), prior_high.to_numpy(),
+                                                     prior_low.to_numpy(), out["ma"].to_numpy())
+    scored = out["stage"] > 0
+    to2 = scored & out["break_up"].notna() & above & (run >= BREAK_RUN) & out["stage"].isin([1, 4])
+    to4 = scored & out["break_dn"].notna() & ~above & (run <= -BREAK_RUN) & out["stage"].isin([3, 2])
+    out["by_break"] = to2 | to4
+    for mask, s in ((to2, 2), (to4, 4)):
+        out.loc[mask, "second"] = out.loc[mask, "stage"]
+        out.loc[mask, "stage"] = s
+        out.loc[mask, "transition"] = ""
+        out.loc[mask, "confidence"] = float(CONF_MEDIUM)
+        out.loc[mask, "confidence_label"] = confidence_label(float(CONF_MEDIUM))
     out["slope_label"] = np.where(z.abs() < 1, "plana", np.where(z > 0, "positiva", "negativa"))
     out["close"] = close
     return out
@@ -255,27 +312,29 @@ def confidence_label(c: float) -> str:
 
 
 def _nearest(candidates, price, below: bool):
-    """Nivel más cercano al precio por debajo (o por encima); si no hay, el más extremo."""
+    """Nivel más cercano al precio por debajo (o por encima). Si no hay ninguno de ese lado, NaN:
+    un nivel que el precio ya ha superado no puede «invalidar» nada."""
     vals = [v for v in candidates if v is not None and not np.isnan(v)]
-    if not vals:
-        return np.nan
     side = [v for v in vals if (v < price if below else v > price)]
-    if side:
-        return max(side) if below else min(side)
-    return min(vals) if below else max(vals)
+    if not side:
+        return np.nan
+    return max(side) if below else min(side)
 
 
 def levels(row: pd.Series) -> tuple[float, float]:
     """(nivel que confirma, nivel que invalida) la etapa actual."""
     s, price = int(row["stage"]), row["close"]
+    # En una base (1) o un techo (3), el nivel que confirma es el cierre que la regla de ruptura
+    # exige a la vela siguiente: el borde del rango más BREAK_FRAC de su anchura.
+    margin = BREAK_FRAC * (row["range_top"] - row["range_bottom"])
     if s == 1:
-        return row["range_top"], row["range_bottom"]
+        return row["range_top"] + margin, row["range_bottom"]
     if s == 3:
-        return row["range_bottom"], row["range_top"]
+        return row["range_bottom"] - margin, row["range_top"]
     if s == 2:
         confirm = row["last_ph"] if row["last_ph"] > price else row["range_top"]
-        return confirm, _nearest([row["last_pl"], row["ma"]], price, below=True)
+        return confirm, _nearest([row["last_pl"], row["ma"], row.get("break_up")], price, below=True)
     if s == 4:
         confirm = row["last_pl"] if row["last_pl"] < price else row["range_bottom"]
-        return confirm, _nearest([row["last_ph"], row["ma"]], price, below=False)
+        return confirm, _nearest([row["last_ph"], row["ma"], row.get("break_dn")], price, below=False)
     return np.nan, np.nan
