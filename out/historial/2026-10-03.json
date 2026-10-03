@@ -8,15 +8,15 @@
         "vela": "2026-09-01",
         "cierre": 83623.6,
         "confirma": 57800.19,
-        "invalida": 82850.0
+        "invalida": null
       },
       "1w": {
-        "etapa": 1,
-        "transicion": "1→2",
+        "etapa": 2,
+        "transicion": "",
         "vela": "2026-09-21",
         "cierre": 84472.0,
         "confirma": 87395.67,
-        "invalida": 62275.0
+        "invalida": 71100.265
       },
       "1d": {
         "etapa": 2,
@@ -37,12 +37,12 @@
         "invalida": 4956.78
       },
       "1w": {
-        "etapa": 1,
-        "transicion": "1→2",
+        "etapa": 2,
+        "transicion": "",
         "vela": "2026-09-21",
         "cierre": 2688.65,
         "confirma": 2807.34,
-        "invalida": 1822.06
+        "invalida": 2100.413666666667
       },
       "1d": {
         "etapa": 2,
@@ -60,15 +60,15 @@
         "vela": "2026-09-01",
         "cierre": 118.12,
         "confirma": 60.13,
-        "invalida": 98.41
+        "invalida": null
       },
       "1w": {
-        "etapa": 1,
-        "transicion": "1→2",
+        "etapa": 2,
+        "transicion": "",
         "vela": "2026-09-21",
         "cierre": 121.99,
         "confirma": 124.95,
-        "invalida": 70.58
+        "invalida": 85.42166666666667
       },
       "1d": {
         "etapa": 2,
