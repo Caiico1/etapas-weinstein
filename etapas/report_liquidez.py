@@ -12,9 +12,10 @@ POS_COLORS = {"dentro": "#16a34a", "cerca del mínimo": "#d97706", "cerca del m�
 LP_NOTE = ("Rango = hasta dónde llegó el precio en el 90 % de las velas pasadas de ese marco, por cada "
            "lado, con la volatilidad actual: el precio se mantuvo dentro durante toda la vela ~8 de cada 10 "
            "veces (fuera de muestra). «Si toca el mín./máx.»: resultado frente a haber mantenido lo "
-           "depositado, sin contar comisiones. Comisiones: estimación para {cap} $ con el volumen y la "
-           "liquidez activa de las últimas 24 h, ya descontada la parte del protocolo; solo se cobran "
-           "mientras el precio está dentro del rango y cambian con el volumen. «Pérdida en el borde»: días "
+           "depositado, sin contar comisiones. Comisiones para {cap} $: lo que cobró de verdad cada unidad "
+           "de liquidez del pool, leído de la blockchain (el menor entre la media de 7 y de 30 días); si "
+           "no hay ese dato (Solana), estimación con la mediana del volumen de 30 días. Solo se cobran mientras el precio está "
+           "dentro del rango y cambian con el volumen. «Pérdida en el borde»: días "
            "de comisiones que compensan la pérdida si el precio acaba en el borde más desfavorable. No "
            "incluye el gas: en Ethereum (red principal) abrir, cerrar o mover un rango cuesta bastante más "
            "que en Base, Arbitrum o Solana, así que para el perfil diario conviene una de estas.")

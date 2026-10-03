@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import struct
+import time
 import urllib.request
 
 import pytest
@@ -33,9 +34,11 @@ def _get(url):
 def _con_red(monkeypatch):
     # conftest desconecta la red de los pools: aquí se restaura la función original
     monkeypatch.setattr(pools_mod, "_http_json", _REAL_HTTP)
+    monkeypatch.setattr(pools_mod.time, "sleep", _REAL_SLEEP)     # respeta los límites de las APIs
 
 
 _REAL_HTTP = pools_mod._http_json
+_REAL_SLEEP = time.sleep
 
 
 def _eth_call(chain, to, data):
@@ -102,3 +105,42 @@ def test_discovery_finds_known_pools():
     assert "0xd0b53d9277642d899df5c87a3966a349a798f224" in addrs      # Base 0,05 %
     sol, _ = discover("SOL", "USDC")
     assert "Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE" in {p.address for p in sol}
+
+
+def test_v4_pools_on_chain():
+    """Los pools de Uniswap v4 sin hook se encuentran por su identificador y su precio cuadra con
+    Binance (lo que confirma identificador, StateView y decimales)."""
+    from etapas.descubrir import discover
+    found, warnings = discover("ETH", "USDC")
+    assert not warnings
+    v4 = [p for p in found if p.is_v4]
+    assert "0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27" in {p.address for p in v4}
+    assert {p.chain for p in v4} == {"ethereum", "base", "arbitrum"}
+    ref = float(_get("https://data-api.binance.vision/api/v3/ticker/price?symbol=ETHUSDT")["price"])
+    states = pools_mod.fetch_states(v4)
+    big = [p for p in v4 if (states[p.id].tvl or 0) > 1e6]
+    assert len(big) >= 3
+    for p in big:
+        st = states[p.id]
+        assert abs(st.price / ref - 1) < 0.01, (p.label, st.price, ref)
+        assert st.liquidity > 0 and 0 <= st.protocol_cut < 0.01
+
+
+def test_realized_fees_on_chain():
+    """Lo cobrado por unidad de liquidez es parecido en los pools grandes de ETH/USDC (v3 y v4):
+    si el dato on-chain o la conversión a dólares fallaran, no coincidirían."""
+    from etapas.descubrir import discover
+    found, _ = discover("ETH", "USDC")
+    states = pools_mod.fetch_states(found)
+    values = {}
+    for p in found:
+        st = states[p.id]
+        if p.chain == "solana" or st.price is None or (st.tvl or 0) < 2e7:
+            continue
+        usd0, usd1 = (st.price, 1.0) if p.base_is_token0 else (1.0, st.price)
+        r = pools_mod.realized_fees(p, usd0, usd1, 7)
+        if r is not None:
+            values[p.label] = r
+    assert len(values) >= 3, values
+    lo, hi = min(values.values()), max(values.values())
+    assert lo > 0 and hi / lo < 2.0, values

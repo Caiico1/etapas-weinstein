@@ -152,6 +152,7 @@ class PoolQuote:
     breakeven_days: float | None = None   # días de comisiones que cubren la pérdida en el peor borde
     volume_24h: float | None = None
     tvl: float | None = None
+    fee_source: str = ""                  # "real" (comisiones pagadas on-chain) | "volumen" (estimación)
     error: str = ""
 
 
@@ -231,12 +232,15 @@ def lp_range(r: TimeframeResult, center: float) -> tuple[float, float] | None:
 
 
 def quote_pool(pool: Pool, state: PoolState | None, low: float, high: float, market: float,
-               capital: float, quote_usd: float = 1.0, volume: float | None = None) -> PoolQuote:
+               capital: float, quote_usd: float = 1.0, volume: float | None = None,
+               fee_per_liquidity: float | None = None) -> PoolQuote:
     """Rango ajustado a los ticks del pool y estimación de comisiones con su estado actual.
 
     `capital` en dólares; `quote_usd` = precio en dólares de la moneda en la que se cotiza el par
     (1 para una estable, el precio de BTC para ETH/BTC...). `volume` = volumen diario en dólares
-    que se usa para las comisiones (por defecto, el de las últimas 24 h)."""
+    que se usa para las comisiones (por defecto, el de las últimas 24 h). `fee_per_liquidity` =
+    dólares al día que cobró de verdad cada unidad de liquidez del pool (pools.realized_fees); si
+    se da, sustituye a la estimación por volumen."""
     lo, hi, tl, tu = snap_range(pool, low, high)
     q = PoolQuote(pool, lo, hi, tl, tu)
     if state is None or state.price is None:
@@ -253,12 +257,18 @@ def quote_pool(pool: Pool, state: PoolState | None, low: float, high: float, mar
         return q
     q.asset_share = composition(p, lo, hi)
     volume = state.volume_24h if volume is None else volume
-    if volume is None or not state.liquidity:
+    if not state.liquidity or (volume is None and fee_per_liquidity is None):
         q.error = state.error or "sin volumen o liquidez del pool: no se estiman comisiones"
         return q
     mine = liquidity_for_capital(p, lo, hi, capital / quote_usd) * 10 ** ((pool.dec0 + pool.dec1) / 2)
     share = mine / (state.liquidity + mine)
-    q.fee_day = share * volume * pool.fee * (1 - state.protocol_cut)
+    if fee_per_liquidity is not None:
+        # Lo cobrado por unidad de liquidez, diluido por la liquidez que tú añades
+        q.fee_day = mine * fee_per_liquidity * state.liquidity / (state.liquidity + mine)
+        q.fee_source = "real"
+    else:
+        q.fee_day = share * volume * pool.fee * (1 - state.protocol_cut)
+        q.fee_source = "volumen"
     q.fee_apr = q.fee_day * 365 / capital
     worst = min(divergence(p, lo, lo, hi), divergence(p, hi, lo, hi))
     if q.fee_day > 0:
@@ -274,6 +284,15 @@ def analyze_liquidity(asset: AssetResult, fetch=None,
     price = asset.last_price
     pools, note = pools_for(asset.symbol)
     states = (fetch or _pools.fetch_states)(pools)
+    # Comisiones realmente pagadas por unidad de liquidez (el menor entre 7 y 30 días); si no hay
+    # dato on-chain, quote_pool estima por volumen.
+    real, volume = {}, {}
+    for pool in pools:
+        usd0, usd1 = (price, 1.0) if pool.base_is_token0 else (1.0, price)
+        found = [r for r in (_pools.realized_fees(pool, usd0, usd1, d) for d in (7, 30)) if r is not None]
+        real[pool.id] = min(found) if found else None
+        # Sin dato on-chain (Solana): mediana del volumen de 30 días, como en la habilidad /pool
+        volume[pool.id] = None if found else _pools.median_volume(pool)
     tfs = asset.timeframes
     higher = {"1d": "1w", "1w": "1M", "1M": None}
     profiles = []
@@ -297,7 +316,8 @@ def analyze_liquidity(asset: AssetResult, fetch=None,
         for label, lvl in (("confirma", r.confirm_level), ("invalida", r.invalid_level)):
             if lvl is not None and prof.low < lvl < prof.high:
                 prof.levels_inside.append(f"nivel que {label} ({_fmt(lvl)})")
-        prof.quotes = [quote_pool(p, states.get(p.id), prof.low, prof.high, price, capital) for p in pools]
+        prof.quotes = [quote_pool(p, states.get(p.id), prof.low, prof.high, price, capital,
+                                  volume=volume[p.id], fee_per_liquidity=real[p.id]) for p in pools]
         profiles.append(prof)
     res = LiquidityResult(asset.symbol, price, profiles, pools, note, capital=capital)
     res.best = recommendation(res)

@@ -14,6 +14,7 @@ import struct
 import urllib.error
 
 from . import pools as P
+from .keccak import keccak256
 from .pools import Pool
 
 # Fábricas de Uniswap v3
@@ -21,6 +22,11 @@ FACTORY = {"ethereum": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
            "arbitrum": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
            "base": "0x33128a8fC17869897dcE68Ed026d694621f6FDfD"}
 FEE_TIERS = [100, 500, 3000, 10000]          # 0,01 %, 0,05 %, 0,30 %, 1 %
+# Uniswap v4: un pool se identifica por keccak256(token0, token1, comisión, tick spacing, hook).
+# Se buscan los pools sin hook de los cuatro niveles estándar de la aplicación; los que tienen
+# hook o parámetros a medida no se analizan (un hook cambia las reglas del pool).
+V4_TIERS = [(100, 1), (500, 10), (3000, 60), (10000, 200)]
+NATIVE = "0x0000000000000000000000000000000000000000"      # ETH nativo en v4 (sin envolver)
 WHIRLPOOL_PROGRAM = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc"
 
 # Tokens verificados: red → símbolo del activo → [(símbolo del token, dirección, decimales)]
@@ -95,6 +101,37 @@ def _uniswap_pools(chain: str, base: str, quote: str) -> list[Pool]:
     return out
 
 
+def v4_pool_id(token_a: str, token_b: str, fee: int, tick_spacing: int, hooks: str = NATIVE) -> str:
+    """Identificador de un pool de Uniswap v4: keccak256(abi.encode(PoolKey))."""
+    c0, c1 = sorted([token_a, token_b], key=lambda a: int(a, 16))
+    words = [int(c0, 16), int(c1, 16), fee, tick_spacing, int(hooks, 16)]
+    return "0x" + keccak256(b"".join(w.to_bytes(32, "big") for w in words)).hex()
+
+
+def _v4_tokens(chain: str, symbol: str) -> list[tuple[str, str, int]]:
+    toks = list(tokens_for(chain, symbol))
+    if symbol.upper() == "ETH":
+        toks.insert(0, ("ETH", NATIVE, 18))
+    return toks
+
+
+def _uniswap_v4_pools(chain: str, base: str, quote: str) -> list[Pool]:
+    out = []
+    view = P.STATE_VIEW[chain]
+    for bsym, baddr, bdec in _v4_tokens(chain, base):
+        for qsym, qaddr, qdec in _v4_tokens(chain, quote):
+            for fee, spacing in V4_TIERS:
+                pid = v4_pool_id(baddr, qaddr, fee, spacing)
+                res = P._rpc(chain, "eth_call", [{"to": view, "data": "0x" + P.SEL_SLOT0 + pid[2:]}, "latest"])
+                if not res or len(res) < 66 or int(res[2:66], 16) == 0:
+                    continue                                   # ese pool no se ha creado
+                base0 = int(baddr, 16) < int(qaddr, 16)
+                (s0, d0), (s1, d1) = ((bsym, bdec), (qsym, qdec)) if base0 else ((qsym, qdec), (bsym, bdec))
+                out.append(Pool(f"{chain}-uniswap4-{pid[2:10]}", f"{base}/{quote}", "Uniswap v4", chain,
+                                pid, f"{s0}/{s1}", fee / 1e6, spacing, d0, d1, base0))
+    return out
+
+
 def _orca_pools(base: str, quote: str, pages: int = 3) -> list[Pool]:
     btoks, qtoks = tokens_for("solana", base), tokens_for("solana", quote)
     if not btoks or not qtoks:
@@ -142,13 +179,17 @@ def _verify_orca(address, bmint, qmint, bsym, bdec, qsym, qdec, pair) -> Pool | 
 
 
 def discover(base: str, quote: str) -> tuple[list[Pool], list[str]]:
-    """Pools de Uniswap v3 y Orca para base/quote. Devuelve (pools, avisos)."""
+    """Pools de Uniswap v3, Uniswap v4 (sin hook) y Orca para base/quote. Devuelve (pools, avisos)."""
     pools, warnings = [], []
     for chain in ("ethereum", "base", "arbitrum"):
         try:
             pools += _uniswap_pools(chain, base, quote)
         except (OSError, ValueError, KeyError, TypeError) as e:
             warnings.append(f"Uniswap v3 {chain}: no se pudo consultar ({type(e).__name__})")
+        try:
+            pools += _uniswap_v4_pools(chain, base, quote)
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            warnings.append(f"Uniswap v4 {chain}: no se pudo consultar ({type(e).__name__})")
     try:
         pools += _orca_pools(base, quote)
     except (OSError, ValueError, KeyError, TypeError, struct.error, urllib.error.URLError) as e:

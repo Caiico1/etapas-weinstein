@@ -1,6 +1,6 @@
 ---
 name: pool
-description: Mejores oportunidades de liquidez concentrada (Uniswap v3 y Orca) para un par de criptomonedas. Dado un par como ETH/USDC, BTC/USDT o ETH/BTC y un capital, indica el mejor ciclo (diario, semanal o mensual), el pool concreto (red, DEX, comisión y dirección), el rango exacto de precios ajustado a los ticks del pool y el depósito de cada token. Úsala cuando el usuario pida un pool, un par o una dupla para aportar liquidez, pregunte qué rango poner en Uniswap u Orca, o escriba /pool.
+description: Mejores oportunidades de liquidez concentrada (Uniswap v3, Uniswap v4 y Orca) para un par de criptomonedas. Dado un par como ETH/USDC, BTC/USDT o ETH/BTC y un capital, indica el mejor ciclo (diario, semanal o mensual), el pool concreto (red, DEX, comisión y dirección), el rango exacto de precios ajustado a los ticks del pool y el depósito de cada token. Úsala cuando el usuario pida un pool, un par o una dupla para aportar liquidez, pregunte qué rango poner en Uniswap u Orca, o escriba /pool.
 ---
 
 # Oportunidades de liquidez concentrada para un par
@@ -22,8 +22,9 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
    Con `--json` obtienes los mismos datos en JSON, si los necesitas para responder a una pregunta
    concreta.
 3. **Presenta el resultado** al usuario, en español:
-   - Si hay **propuestas** (una o dos): para cada una, el pool (DEX, red, par, comisión, dirección
-     y enlace), el **mínimo y el máximo** a introducir, el **depósito** de cada token para su
+   - Si hay **propuestas** (una o dos): para cada una, el pool (DEX y **versión v3 o v4**, red,
+     par, comisión, dirección o identificador y el enlace a Uniswap), el **mínimo y el máximo** a
+     introducir, el **depósito** de cada token para su
      capital, la etapa y su idoneidad, el comportamiento histórico del método y la estimación
      neta por ciclo (con y sin margen de seguridad). Copia los números tal cual.
    - Si **no hay propuesta**: dilo claramente y explica el motivo que da la salida (etapa
@@ -51,6 +52,10 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
 
 - Pares **activo / estable** (ETH, BTC, SOL, LINK, UNI, AAVE, ARB con USDC o USDT; `USD` = ambas) y
   **activo / activo** (ETH/BTC, SOL/ETH, SOL/BTC, LINK/ETH...).
-- **Uniswap v3** en Ethereum, Base y Arbitrum, y **Orca** en Solana. El ciclo diario no se
-  propone en Ethereum por el coste del gas.
+- **Uniswap v3** y **Uniswap v4** (pools sin hook) en Ethereum, Base y Arbitrum, y **Orca** en
+  Solana. El ciclo diario no se propone en Ethereum por el coste del gas.
+- v3 y v4 son pools distintos: recuerda al usuario que, al crear la posición en app.uniswap.org,
+  elija la versión y la comisión de la propuesta (la aplicación propone v4 por defecto).
+- Las comisiones salen de lo que pagó de verdad cada pool (dato on-chain, el menor entre 7 y 30
+  días); solo si no hay ese dato se estiman por volumen, y la tabla lo indica en «Fuente».
 - Detalle del método: README, sección «Habilidad /pool».

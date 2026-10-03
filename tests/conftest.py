@@ -15,3 +15,5 @@ def _sin_red_de_pools(monkeypatch):
     def offline(*args, **kwargs):
         raise OSError("sin red en los tests")
     monkeypatch.setattr(pools, "_http_json", offline)
+    monkeypatch.setattr(pools.time, "sleep", lambda s: None)      # sin esperas de reintento
+    pools._window_cache.clear()

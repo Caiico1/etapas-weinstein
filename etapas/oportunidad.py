@@ -8,8 +8,10 @@ Para cada ciclo (diario, semanal, mensual) y cada pool verificado del par:
   2. Rango con el método validado del proyecto (liquidez.lp_range), ajustado a los ticks del pool.
   3. Comportamiento histórico del mismo método en este par, fuera de muestra: fracción de ciclos en
      que el precio no salió del rango y resultado medio frente a mantener los tokens.
-  4. Comisiones estimadas para el capital, con la mediana del volumen diario de 30 días y la
-     liquidez activa actual del pool (ya descontada la comisión del protocolo).
+  4. Comisiones para el capital: lo que cobró de verdad cada unidad de liquidez del pool en los
+     últimos 7 y 30 días (el menor), leído de la blockchain (pools.realized_fees). Si la red no tiene nodo con
+     histórico (Solana) o falla, estimación con la mediana del volumen diario de 30 días y la
+     liquidez activa actual, ya descontada la comisión del protocolo.
   5. Gas de un reajuste por ciclo.
 Resultado neto por ciclo = comisiones × fracción de ciclos dentro + resultado medio frente a
 mantener × capital − gas. Se proponen las dos mejores combinaciones (de ciclos distintos si
@@ -47,6 +49,7 @@ NO_DAILY_ON = {"ethereum"}                            # el ciclo diario no se pr
 # 20-30 % entre mitades del histórico (BTC, SOL). Solo se propone lo que sigue siendo rentable con
 # una pérdida un 25 % peor que la estimada.
 SAFETY_LOSS = 1.25
+REAL_FEE_DAYS = (7, 30)                               # ventanas de comisiones reales; se usa la menor
 ALIASES = {"WETH": "ETH", "WBTC": "BTC", "CBBTC": "BTC", "WSOL": "SOL", "USDT0": "USDT"}
 
 
@@ -219,7 +222,7 @@ def analyze(pair: str, capital: float = 5000.0) -> Report:
     found, warn = discover(base, quote)
     rep.warnings += warn
     if not found:
-        rep.warnings.append(f"No hay pools de Uniswap v3 ni de Orca para {base}/{quote} con los tokens verificados")
+        rep.warnings.append(f"No hay pools de Uniswap v3, v4 ni de Orca para {base}/{quote} con los tokens verificados")
         return rep
     states = P.fetch_states(found)
     liquid = []
@@ -235,15 +238,23 @@ def analyze(pair: str, capital: float = 5000.0) -> Report:
         if vol is None or vol < MIN_VOLUME:
             rep.illiquid.append(f"{pool.label}: volumen diario {'desconocido' if vol is None else f'{vol / 1e3:,.0f} k$'}")
             continue
-        liquid.append((pool, st, vol))
-    gas, warn = gas_costs({p.chain for p, _, _ in liquid})
+        base_usd = rep.price * rep.quote_usd
+        usd0, usd1 = (base_usd, rep.quote_usd) if pool.base_is_token0 else (rep.quote_usd, base_usd)
+        # Prudencia: el menor entre lo cobrado a 7 y a 30 días (una semana buena no se extrapola)
+        real = [r for r in (P.realized_fees(pool, usd0, usd1, d) for d in REAL_FEE_DAYS) if r is not None]
+        liquid.append((pool, st, vol, min(real) if real else None))
+    unknown = sum(1 for p in found if (st := states.get(p.id)) and st.price is not None and st.tvl is None)
+    if unknown:
+        rep.warnings.append(f"GeckoTerminal no devolvió el TVL de {unknown} pools: el análisis puede estar "
+                            f"incompleto; vuelve a ejecutarlo en unos minutos")
+    gas, warn = gas_costs({p.chain for p, _, _, _ in liquid})
     rep.warnings += warn
 
     for key, name, days in CYCLES:
         level, reasons = rep.stages[key]
         rng, bt = rep.ranges[key], rep.backtests[key]
-        for pool, st, vol in liquid:
-            q = (quote_pool(pool, st, rng[0], rng[1], rep.price, capital, rep.quote_usd, vol)
+        for pool, st, vol, real in liquid:
+            q = (quote_pool(pool, st, rng[0], rng[1], rep.price, capital, rep.quote_usd, vol, real)
                  if rng else PoolQuote(pool, error="sin rango: historial insuficiente"))
             o = Opportunity(key, name, days, level, reasons, pool, q, bt, gas.get(pool.chain))
             if rng is None:
@@ -347,11 +358,12 @@ def render(rep: Report) -> str:
                 else f"insuficiente ({bt.samples} ciclos)")
         out.append(f"| {name} | {_stage_line(rep, key)} | {level} | {rtxt} | {btxt} |")
     out += ["", "## Todas las combinaciones evaluadas", "",
-            "| Ciclo | Pool | Comisiones/día | Gas/reajuste | Neto/ciclo | Neto anual | Estado |",
-            "|---|---|---|---|---|---|---|"]
+            "| Ciclo | Pool | Comisiones/día | Fuente | Gas/reajuste | Neto/ciclo | Neto anual | Estado |",
+            "|---|---|---|---|---|---|---|---|"]
     for o in sorted(rep.opportunities, key=lambda o: (o.net_apr is None, -(o.net_apr or 0))):
         star = "**propuesta**" if o in rep.proposals else (o.excluded or "válida")
-        out.append(f"| {o.name} | {o.pool.label} | {_usd(o.quote.fee_day)} | {_usd(o.gas_usd)} | "
+        out.append(f"| {o.name} | {o.pool.label} | {_usd(o.quote.fee_day)} | "
+                   f"{ {'real': 'real', 'volumen': 'volumen'}.get(o.quote.fee_source, '—') } | {_usd(o.gas_usd)} | "
                    f"{_usd(o.net_cycle)} | {_pct(o.net_apr)} | {star} |")
     if rep.illiquid:
         out += ["", f"Pools descartados por poca liquidez (TVL < {MIN_TVL / 1e3:,.0f} k$ o volumen < "
@@ -361,9 +373,10 @@ def render(rep: Report) -> str:
     out += ["", "**Cómo se calcula.** Rango: hasta dónde llegó el precio del par en el 90 % de los ciclos "
                 "pasados, por cada lado, con la volatilidad actual. «Dentro» y «resultado medio» salen de "
                 "aplicar el mismo método a los ciclos pasados sin ver el futuro; el resultado se reescala "
-                "a la anchura actual del rango, que depende de la volatilidad de hoy. Comisiones: tu parte de la "
-                "liquidez activa actual × mediana del volumen diario de 30 días × comisión del pool, ya "
-                "descontada la parte del protocolo; se cobran solo con el precio dentro. Neto por ciclo = "
+                "a la anchura actual del rango, que depende de la volatilidad de hoy. Comisiones «real»: lo "
+                "que cobró de verdad cada unidad de liquidez de ese pool, leído de la blockchain (el menor "
+                "entre la media de 7 y de 30 días), por la liquidez que aportas; «volumen»: estimación con la mediana del volumen "
+                "de 30 días cuando no hay dato on-chain. Se cobran solo con el precio dentro. Neto por ciclo = "
                 "comisiones × fracción de ciclos dentro + resultado esperado frente a mantener × capital − gas "
                 "de un reajuste. Solo se propone lo que sigue siendo positivo con una pérdida un "
                 f"{SAFETY_LOSS - 1:.0%} peor. Son estimaciones: el volumen y la liquidez del pool cambian cada día.",
@@ -380,7 +393,16 @@ def _proposal(rep: Report, o: Opportunity, i: int) -> list[str]:
         f"## Propuesta {i}: ciclo {o.name.lower()} en {pool.label}",
         "",
         f"- **Pool**: {pool.dex} en {pool.chain.capitalize()}, par {pool.pair}, comisión "
-        f"{P._pct(pool.fee)}. Dirección `{pool.address}` ([ver en GeckoTerminal]({pool.url})).",
+        f"{P._pct(pool.fee)}" + (", sin hook" if pool.is_v4 else "") + ". "
+        + ("Identificador" if pool.is_v4 else "Dirección") + f" `{pool.address}` ("
+        + (f"[abrir en Uniswap]({pool.app_url}) · " if pool.app_url else "")
+        + f"[ver en GeckoTerminal]({pool.url}))."
+        + (" Al crear la posición, comprueba que la aplicación marca **v4** y esta comisión; puedes "
+           "depositar ETH sin envolver." if pool.is_v4 and "ETH" in pool.pair.split("/") else
+           " Al crear la posición, comprueba que la aplicación marca **v4** y esta comisión."
+           if pool.is_v4 else
+           " Al crear la posición, elige **v3** (la aplicación propone v4 por defecto) y esta comisión."
+           if pool.dex == "Uniswap v3" else ""),
         f"- **Rango a introducir** (ya ajustado a los ticks del pool): mínimo **{_p(qt.low)}** y máximo "
         f"**{_p(qt.high)}** {q} por {b} ({qt.low / qt.pool_price - 1:+.1%} / {qt.high / qt.pool_price - 1:+.1%} "
         f"desde el precio del pool, {_p(qt.pool_price)}). Ticks {qt.tick_lower} / {qt.tick_upper}."
@@ -394,7 +416,11 @@ def _proposal(rep: Report, o: Opportunity, i: int) -> list[str]:
         f"tokens, con la anchura actual del rango: {o.expected_result:+.2%} por ciclo "
         f"({o.expected_result * rep.capital:+,.2f} $).",
         f"- **Estimación por ciclo**: comisiones {_usd(o.fees_cycle)} ({_usd(qt.fee_day)}/día con el "
-        f"precio dentro × {o.days:g} días × {o.backtest.inside:.0%}), resultado frente a mantener "
+        f"precio dentro × {o.days:g} días × {o.backtest.inside:.0%}; "
+        + ("según lo que pagó de verdad este pool, el menor entre los últimos 7 y 30 días"
+           if qt.fee_source == "real"
+           else "estimadas por volumen, sin dato on-chain")
+        + "), resultado frente a mantener "
         f"{o.expected_result * rep.capital:+,.2f} $, gas {_usd(o.gas_usd)} → **neto {_usd(o.net_cycle)}**, "
         f"equivalente a {_pct(o.net_apr)} anual. Con una pérdida un {SAFETY_LOSS - 1:.0%} peor: "
         f"{_usd(o.net_safe)} por ciclo.",
@@ -414,7 +440,9 @@ def to_json(rep: Report) -> dict:
                 "cantidad_cotizada": o.quote_amount, "idoneidad": o.level,
                 "historico_dentro": o.backtest.inside, "historico_resultado_medio": o.backtest.mean_result,
                 "resultado_esperado": o.expected_result, "comisiones_ciclo": o.fees_cycle,
-                "comisiones_dia": o.quote.fee_day, "gas_reajuste": o.gas_usd, "neto_ciclo": o.net_cycle,
+                "comisiones_dia": o.quote.fee_day, "fuente_comisiones": o.quote.fee_source or None,
+                "enlace_dex": o.pool.app_url or None, "enlace_geckoterminal": o.pool.url,
+                "gas_reajuste": o.gas_usd, "neto_ciclo": o.net_cycle,
                 "neto_anual": o.net_apr, "neto_ciclo_con_margen": o.net_safe, "excluida": o.excluded or None}
     return {"par": f"{rep.base}/{rep.quote}", "capital": rep.capital, "precio": rep.price,
             "error": rep.error or None, "propuestas": [opp(o) for o in rep.proposals],

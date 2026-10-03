@@ -170,13 +170,27 @@ y devuelve hasta **dos propuestas** (de ciclos distintos si es posible), cada un
 **depósito** de cada token para el capital y la estimación neta. Si nada compensa, lo dice. Tarda
 de 1 a 3 minutos. Código: `etapas/oportunidad.py`, `etapas/descubrir.py`.
 
+**Dónde se crea la posición**: en app.uniswap.org (Pool → New). La aplicación propone v4 por
+defecto y tiene un selector para v3. Hay que elegir la versión y la comisión que indica la propuesta:
+v3 y v4 son pools distintos, con su propia liquidez y sus propias comisiones.
+
 **Pares**: activo/estable (ETH, BTC, SOL, LINK, UNI, AAVE, ARB con USDC o USDT; `USD` = ambas) y
 activo/activo (ETH/BTC, SOL/ETH...). Acepta `WETH`, `WBTC`, `cbBTC` y la estable delante.
 
 **Pools**: solo tokens con dirección verificada on-chain (`TOKENS` en `descubrir.py`), así que un
 token falso con el mismo símbolo nunca entra. Uniswap v3 en Ethereum, Base y Arbitrum (se le
-pregunta a la fábrica oficial por cada token y comisión) y Orca en Solana (candidatos de
-GeckoTerminal comprobados on-chain). Se descartan los pools con menos de 1 M$ de TVL o 50 k$ de
+pregunta a la fábrica oficial por cada token y comisión), **Uniswap v4** en las mismas redes y
+Orca en Solana (candidatos de GeckoTerminal comprobados on-chain).
+
+*Uniswap v4.* Un pool v4 no tiene dirección: se identifica por keccak256(token0, token1, comisión,
+tick spacing, hook) y su estado se lee del contrato StateView (direcciones de la documentación
+oficial). Se buscan los pools **sin hook** de los cuatro niveles estándar (0,01 %, 0,05 %, 0,30 % y
+1 %), con ETH nativo o WETH; los que tienen hook o parámetros a medida no se analizan, porque un
+hook cambia las reglas del pool. Comprobado: los identificadores calculados devuelven pools cuyo
+precio coincide con el de mercado y que Uniswap muestra con el par esperado. En v4 la comisión del
+protocolo se suma a la del pool en lugar de descontarse: el proveedor de liquidez cobra
+prácticamente la comisión íntegra (en v3 cede 1/4 o 1/6). Cada propuesta lleva el enlace al pool
+en app.uniswap.org e indica si hay que elegir v3 o v4 al crear la posición. Se descartan los pools con menos de 1 M$ de TVL o 50 k$ de
 volumen diario: con 5.000 $ en un pool pequeño, la estimación depende demasiado de ti mismo.
 
 **Cálculo, por ciclo (diario, semanal, mensual) y pool**:
@@ -193,11 +207,21 @@ volumen diario: con 5.000 $ en un pool pequeño, la estimación depende demasiad
    resultado se mide por unidad de anchura del rango y se reescala a la anchura de hoy, porque el
    método ensancha el rango con la volatilidad. Medido por anchura, varía entre mitades del
    histórico un 1-11 % (ETH, SOL diario, ETH/BTC), frente al 15-51 % de la media sin reescalar.
-4. **Comisiones** = tu liquidez / (liquidez activa del pool + la tuya) × mediana del volumen diario
-   de 30 días × comisión × (1 − parte del protocolo). **Validada con las comisiones reales**: en los
-   7 días hasta el 29/09/2026, lo que cobró cada unidad de liquidez según `feeGrowthGlobal`
-   (on-chain) frente a la fórmula con el volumen de ese día: 0,996 (Ethereum USDC/WETH 0,05 %),
-   1,011 (Base WETH/USDC 0,05 %) y 1,011 (Base WETH/USDC 0,30 %).
+4. **Comisiones reales** (`pools.realized_fees`): lo que cobró de verdad cada unidad de liquidez
+   del pool, leído de la blockchain (`feeGrowthGlobal` en un bloque de hace 7 y 30 días, por nodos
+   públicos con histórico), por la liquidez que aportas. Se usa **el menor** de los dos periodos. No
+   depende de datos de volumen ni de suponer constante la liquidez activa. Si no hay dato on-chain
+   (Solana, o fallo del nodo), se estima: tu liquidez / (liquidez activa + la tuya) × mediana del
+   volumen de 30 días × comisión × (1 − parte del protocolo); la tabla indica la fuente de cada fila.
+   - La fórmula por volumen se validó día a día contra `feeGrowthGlobal` (real/modelo): v3, 0,996
+     (Ethereum 0,05 %), 1,011 (Base 0,05 %) y 1,011 (Base 0,30 %); v4, 1,012 (Ethereum 0,30 %) y
+     1,004 (Base 0,30 %). Pero en v4 Ethereum 0,05 % dio 0,55: la liquidez activa cambia mucho
+     dentro del día y la estimación con una foto de la liquidez casi dobla lo cobrado. Por eso se
+     pasó a las comisiones reales.
+   - Lo cobrado por unidad de liquidez es casi igual en todos los pools grandes de un par (ETH/USDC,
+     oct-2026: 4,4–5,1 × 10⁻¹⁵ $ al día a 7 días, v3 y v4, en las tres redes), como cabe esperar: si
+     un pool pagara más, entraría liquidez. Con la estimación por volumen se desviaba entre 0,6 y
+     1,5 veces según el pool, y un pool v3 llegó a proponerse con comisiones sobreestimadas.
 5. **Gas** de un reajuste por ciclo: 900.000 unidades de gas al precio actual de cada red (más 0,05 $
    de margen en Base y Arbitrum), o 0,001 SOL en Solana.
 6. **Neto por ciclo** = comisiones × fracción de ciclos dentro + resultado esperado frente a mantener
