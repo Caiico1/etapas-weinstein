@@ -89,10 +89,8 @@ def test_non_notifying_run_does_not_consume_the_alert(tmp_path, monkeypatch):
     from test_liquidez import _asset
     monkeypatch.setattr(rutina, "analyze_symbol", lambda symbol, provisional=False: _asset(symbol))
     monkeypatch.setattr(vigilancia, "check", lambda w: check(w, lambda *a: _report(True)))
-    (tmp_path / "watchlist.txt").write_text("ETH
-", encoding="utf-8")
-    (tmp_path / "oportunidades.txt").write_text("BTC/USDC 5000 base
-", encoding="utf-8")
+    (tmp_path / "watchlist.txt").write_text("ETH\n", encoding="utf-8")
+    (tmp_path / "oportunidades.txt").write_text("BTC/USDC 5000 base\n", encoding="utf-8")
     out = tmp_path / "out"
     monkeypatch.setenv("ETAPAS_AVISA", "0")
     assert rutina.run(tmp_path / "watchlist.txt", out, now=pd.Timestamp("2026-10-04 12:00", tz="UTC")) == 0
