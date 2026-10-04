@@ -8,3 +8,4 @@
 
 BTC/USDC 4500 base
 ETH/USDC 4500
+cbBTC/WETH 4500 base
