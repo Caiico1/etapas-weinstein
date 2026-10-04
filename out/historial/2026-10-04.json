@@ -107,8 +107,5 @@
     }
   },
   "posiciones": {},
-  "oportunidades": {
-    "BTC/USDC 4500 base": "",
-    "ETH/USDC 4500 todas": "Semanal · Uniswap v4 · Ethereum · ETH/USDC 0,01 %"
-  }
+  "oportunidades": {}
 }
