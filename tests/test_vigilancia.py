@@ -81,3 +81,25 @@ def test_routine_watches(tmp_path, monkeypatch):
     # Al día siguiente, con la misma propuesta, no hay aviso nuevo
     assert rutina.run(tmp_path / "watchlist.txt", out, now=pd.Timestamp("2026-10-05 06:00", tz="UTC")) == 0
     assert not (out / "alertas.md").exists()
+
+
+def test_non_notifying_run_does_not_consume_the_alert(tmp_path, monkeypatch):
+    """Una propuesta que aparece en una ejecución sin correo (ETAPAS_AVISA=0) no se da por avisada:
+    la siguiente ejecución con correo la incluye."""
+    from test_liquidez import _asset
+    monkeypatch.setattr(rutina, "analyze_symbol", lambda symbol, provisional=False: _asset(symbol))
+    monkeypatch.setattr(vigilancia, "check", lambda w: check(w, lambda *a: _report(True)))
+    (tmp_path / "watchlist.txt").write_text("ETH
+", encoding="utf-8")
+    (tmp_path / "oportunidades.txt").write_text("BTC/USDC 5000 base
+", encoding="utf-8")
+    out = tmp_path / "out"
+    monkeypatch.setenv("ETAPAS_AVISA", "0")
+    assert rutina.run(tmp_path / "watchlist.txt", out, now=pd.Timestamp("2026-10-04 12:00", tz="UTC")) == 0
+    hist = json.loads((out / "historial" / "2026-10-04.json").read_text(encoding="utf-8"))
+    assert hist["oportunidades"] == {}                                   # no se da por avisada
+    monkeypatch.setenv("ETAPAS_AVISA", "1")
+    assert rutina.run(tmp_path / "watchlist.txt", out, now=pd.Timestamp("2026-10-05 06:00", tz="UTC")) == 0
+    assert "propuesta: ciclo semanal" in (out / "alertas.md").read_text(encoding="utf-8")
+    hist = json.loads((out / "historial" / "2026-10-05.json").read_text(encoding="utf-8"))
+    assert hist["oportunidades"] == {"BTC/USDC 5000 base": "Semanal · " + POOL.label}

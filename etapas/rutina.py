@@ -239,9 +239,15 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None,
     prev_date = previous[0] if previous else None
 
     positions = position_status(positions_file or watchlist.parent / "posiciones.txt", assets, log)
+    # Solo la ejecución que envía el correo da por «avisados» los estados nuevos de posiciones y
+    # vigilancias. En las demás (ETAPAS_AVISA=0: reejecuciones del mismo día) se conserva el último
+    # estado avisado, para que la siguiente ejecución con correo todavía vea el cambio.
+    notifies = os.environ.get("ETAPAS_AVISA", "1") != "0"
     prev_pos = load_previous_positions(hist_dir, today)
     changes += position_alerts(prev_pos, positions)
     pos_state = {f"{i['simbolo']} {i['min']:g}-{i['max']:g}": i["estado"] for i in positions}
+    if not notifies:
+        pos_state = {k: prev_pos[k] for k in pos_state if k in prev_pos}
 
     # Vigilancia de oportunidades de liquidez (oportunidades.txt)
     watches, warnings = vigilancia.load_watches(watches_file or watchlist.parent / "oportunidades.txt")
@@ -250,8 +256,11 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None,
     for w in watches:
         print(f"Vigilando {w.key}...", flush=True)
         watched.append(vigilancia.check(w))
-    changes += vigilancia.alerts(load_previous_watches(hist_dir, today), watched)
+    prev_watch = load_previous_watches(hist_dir, today)
+    changes += vigilancia.alerts(prev_watch, watched)
     watch_state = {i["clave"]: i["estado"] for i in watched if not i.get("error")}
+    if not notifies:
+        watch_state = {k: prev_watch[k] for k in watch_state if k in prev_watch}
     (hist_dir / f"{today}.json").write_text(
         json.dumps({"fecha": today, "activos": curr, "posiciones": pos_state, "oportunidades": watch_state},
                    ensure_ascii=False, indent=2),

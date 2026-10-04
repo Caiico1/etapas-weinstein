@@ -78,6 +78,8 @@ jobs:
           ETAPAS_WEB_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
           ETAPAS_AVISO_PRUEBA: ${{ inputs.aviso_prueba && '1' || '' }}
           ETAPAS_IA: ${{ vars.ETAPAS_IA }}
+          # 1 si esta ejecución enviará el correo de novedades (la primera del día o una prueba)
+          ETAPAS_AVISA: ${{ (needs.comprobar.outputs.hecho != '1' || inputs.aviso_prueba) && '1' || '0' }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -m etapas --rutina
 
