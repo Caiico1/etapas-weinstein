@@ -16,7 +16,7 @@ on:
         default: false
   push:
     branches: [main]
-    paths: ["watchlist.txt", "posiciones.txt", "etapas/**"]   # al cambiar las listas o el código, se actualiza
+    paths: ["watchlist.txt", "posiciones.txt", "oportunidades.txt", "etapas/**"]   # al cambiar las listas o el código, se actualiza
 
 permissions:
   contents: write               # guardar el historial en el repositorio

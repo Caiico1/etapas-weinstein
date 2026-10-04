@@ -40,6 +40,9 @@ TOKENS: dict[str, dict[str, list[tuple[str, str, int]]]] = {
         "LINK": [("LINK", "0x514910771AF9Ca656af840dff83E8264EcF986CA", 18)],
         "UNI": [("UNI", "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", 18)],
         "AAVE": [("AAVE", "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9", 18)],
+        # Oro tokenizado: 1 token = 1 onza troy custodiada (PAXG, de Paxos; XAUt, de Tether)
+        "PAXG": [("PAXG", "0x45804880De22913dAFE09f4980848ECE6EcbAf78", 18)],
+        "XAUT": [("XAUt", "0x68749665FF8D2d112Fa859AA293F07A622782F38", 6)],
     },
     "base": {
         "ETH": [("WETH", "0x4200000000000000000000000000000000000006", 18)],

@@ -173,3 +173,26 @@ def positions_html(items: list[dict]) -> str:
     return ('<h2>Mis posiciones de liquidez (posiciones.txt)</h2><div class="wrap"><table><thead><tr>'
             '<th>Posición</th><th>Rango</th><th>Precio actual</th><th>Estado</th></tr></thead>'
             f'<tbody>{rows}</tbody></table></div>')
+
+
+def watches_html(items: list[dict]) -> str:
+    """Tabla de las oportunidades vigiladas (oportunidades.txt) en el índice."""
+    if not items:
+        return ""
+    rows = []
+    for i in items:
+        where = ", ".join(r.capitalize() for r in i["redes"]) or "todas las redes"
+        color = "#16a34a" if i["hay_propuesta"] else "#6b7280"
+        text = html.escape(i["texto"])
+        if i.get("enlace"):
+            text += f' · <a href="{html.escape(i["enlace"])}" target="_blank" rel="noopener">abrir el pool</a>'
+        rows.append(f'<tr><td><b>{html.escape(i["par"])}</b><br><span class="muted">{i["capital"]:,.0f} $ · '
+                    f'{html.escape(where)}</span></td><td><b style="color:{color}">'
+                    f'{"hay propuesta" if i["hay_propuesta"] else "sin propuesta"}</b><br>'
+                    f'<span class="small">{text}</span></td></tr>')
+    return ('<h2>Oportunidades de liquidez vigiladas (oportunidades.txt)</h2><div class="wrap"><table><thead><tr>'
+            '<th>Par</th><th>Hoy</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table></div>'
+            '<p class="muted">Hay propuesta cuando la etapa no es desfavorable, el pool tiene liquidez suficiente y '
+            'el resultado neto estimado es positivo incluso con el margen de seguridad. Son estimaciones.</p>')
+

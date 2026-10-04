@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import agentes
+from . import agentes, vigilancia
 from .analysis import AssetResult, analyze_symbol, parse_symbol
 from .config import DISCLAIMER, ORDER, TIMEFRAMES
 from .contexto import MarketContext, headlines_for, load_context
@@ -192,8 +192,17 @@ def position_alerts(prev: dict, items: list[dict]) -> list[dict]:
     return alerts
 
 
+def load_previous_watches(hist_dir: Path, today: str) -> dict:
+    """Estado de las vigilancias en la última instantánea anterior a hoy que las incluya."""
+    for f in sorted((p for p in hist_dir.glob("*.json") if p.stem < today), reverse=True):
+        data = json.loads(f.read_text(encoding="utf-8"))
+        if "oportunidades" in data:
+            return data["oportunidades"]
+    return {}
+
+
 def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None,
-        positions_file: Path | None = None, ia: bool = False) -> int:
+        positions_file: Path | None = None, ia: bool = False, watches_file: Path | None = None) -> int:
     now = now or pd.Timestamp.now(tz="UTC")
     today = now.strftime("%Y-%m-%d")
     log = []
@@ -233,8 +242,19 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None,
     prev_pos = load_previous_positions(hist_dir, today)
     changes += position_alerts(prev_pos, positions)
     pos_state = {f"{i['simbolo']} {i['min']:g}-{i['max']:g}": i["estado"] for i in positions}
+
+    # Vigilancia de oportunidades de liquidez (oportunidades.txt)
+    watches, warnings = vigilancia.load_watches(watches_file or watchlist.parent / "oportunidades.txt")
+    log.extend(warnings)
+    watched = []
+    for w in watches:
+        print(f"Vigilando {w.key}...", flush=True)
+        watched.append(vigilancia.check(w))
+    changes += vigilancia.alerts(load_previous_watches(hist_dir, today), watched)
+    watch_state = {i["clave"]: i["estado"] for i in watched if not i.get("error")}
     (hist_dir / f"{today}.json").write_text(
-        json.dumps({"fecha": today, "activos": curr, "posiciones": pos_state}, ensure_ascii=False, indent=2),
+        json.dumps({"fecha": today, "activos": curr, "posiciones": pos_state, "oportunidades": watch_state},
+                   ensure_ascii=False, indent=2),
         encoding="utf-8")
 
     # Agentes: dictamen por activo, listo para una IA (gratis: pegar en claude.ai; con --ia: API)
@@ -250,7 +270,7 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None,
 
     write_guide(out_dir)
     index = write_index(assets, [c for c in changes if c.get("tipo") != "prueba"], prev_date, log,
-                        out_dir, now, context, positions)
+                        out_dir, now, context, positions, watched)
     # Añadir o quitar valores de la lista se ve en la web, pero no genera correo
     headlines = {a.key: headlines_for(context, a.symbol, a.kind) for a in assets if not a.error}
     write_alerts([c for c in changes if c.get("tipo") != "lista"], prev_date, out_dir, today, headlines)

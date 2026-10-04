@@ -20,7 +20,8 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
    ```
 
    Con `--json` obtienes los mismos datos en JSON, si los necesitas para responder a una pregunta
-   concreta.
+   concreta. Si el usuario pide una red concreta («en Base»), añade `--red base` (admite varias
+   separadas por comas: ethereum, base, arbitrum, solana).
 3. **Presenta el resultado** al usuario, en español:
    - Si hay **propuestas** (una o dos): para cada una, el pool (DEX y **versión v3 o v4**, red,
      par, comisión, dirección o identificador y el enlace a Uniswap), el **mínimo y el máximo** a
@@ -50,7 +51,8 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
 
 ## Qué cubre
 
-- Pares **activo / estable** (ETH, BTC, SOL, LINK, UNI, AAVE, ARB con USDC o USDT; `USD` = ambas) y
+- Pares **activo / estable** (ETH, BTC, SOL, LINK, UNI, AAVE, ARB y oro tokenizado PAXG o XAUT con USDC
+  o USDT; `USD` = ambas) y
   **activo / activo** (ETH/BTC, SOL/ETH, SOL/BTC, LINK/ETH...).
 - **Uniswap v3** y **Uniswap v4** (pools sin hook) en Ethereum, Base y Arbitrum, y **Orca** en
   Solana. El ciclo diario no se propone en Ethereum por el coste del gas.

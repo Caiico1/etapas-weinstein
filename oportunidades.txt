@@ -1,0 +1,9 @@
+# Oportunidades de liquidez vigiladas
+# Una por línea: PAR  CAPITAL_EN_DÓLARES  [redes]
+#   redes (opcional): ethereum, base, arbitrum, solana. Sin redes, se miran todas.
+# La rutina diaria analiza cada par y avisa por correo cuando aparece una propuesta que cumple
+# todos los criterios (etapa no desfavorable, liquidez suficiente y resultado neto estimado
+# positivo incluso con el margen de seguridad), y también cuando deja de cumplirlos.
+# Para dejar de vigilar una, bórrala o ponle # delante.
+
+BTC/USDC 5000 base

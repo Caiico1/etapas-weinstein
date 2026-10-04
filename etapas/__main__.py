@@ -37,6 +37,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="Salida estructurada en JSON")
     parser.add_argument("--posiciones", default=None, metavar="ARCHIVO",
                         help="Posiciones de liquidez abiertas (por defecto, posiciones.txt junto a la lista)")
+    parser.add_argument("--oportunidades", default=None, metavar="ARCHIVO",
+                        help="Pares vigilados (por defecto, oportunidades.txt junto a la lista)")
     parser.add_argument("--ia", action="store_true",
                         help="Con --rutina: envía el dictamen de los agentes a Claude (API de pago; "
                              "requiere pip install anthropic y ANTHROPIC_API_KEY)")
@@ -49,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.rutina:
         code = run_routine(Path(args.lista), Path(args.html or "out"),
                            positions_file=Path(args.posiciones) if args.posiciones else None,
+                           watches_file=Path(args.oportunidades) if args.oportunidades else None,
                            ia=args.ia or os.environ.get("ETAPAS_IA") == "1")
         print(f"\n{DISCLAIMER}")
         return code

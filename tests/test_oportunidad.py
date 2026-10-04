@@ -182,3 +182,20 @@ def test_inverted_pair_is_analyzed_in_canonical_orientation(fake_world, monkeypa
     assert (rep.base, rep.quote) == ("ETH", "BTC") and seen == [("ETH", "BTC")]
     assert any(w.startswith("Se analiza como ETH/BTC") for w in rep.warnings)
     assert "> Se analiza como ETH/BTC" in op.render(rep)
+
+
+def test_analyze_can_be_limited_to_some_networks(fake_world):
+    rep = op.analyze("ETH/USDC", 5000, ["arbitrum"])
+    assert {o.pool.chain for o in rep.opportunities} == {"arbitrum"}
+    assert any("Solo se evalúan pools en: Arbitrum" in w for w in rep.warnings)
+    assert all(o.pool.chain == "arbitrum" for o in rep.proposals)
+
+
+def test_price_proxy_for_assets_without_history(fake_world, monkeypatch):
+    """XAUT se analiza con el histórico de PAXG (mismo subyacente), y se avisa."""
+    asked = []
+    monkeypatch.setattr(op, "fetch_pair_candles", lambda b, q, cfg: asked.append(b))
+    monkeypatch.setattr(op, "analyze_symbol", lambda sym, fetch=None: (fetch(sym, None), _fake_asset(sym))[1])
+    rep = op.analyze("XAUT/USDT", 5000)
+    assert asked == ["PAXG"] and rep.base == "XAUT"
+    assert any("histórico de PAXG" in w for w in rep.warnings)

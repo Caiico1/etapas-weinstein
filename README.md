@@ -174,7 +174,8 @@ de 1 a 3 minutos. Código: `etapas/oportunidad.py`, `etapas/descubrir.py`.
 defecto y tiene un selector para v3. Hay que elegir la versión y la comisión que indica la propuesta:
 v3 y v4 son pools distintos, con su propia liquidez y sus propias comisiones.
 
-**Pares**: activo/estable (ETH, BTC, SOL, LINK, UNI, AAVE, ARB con USDC o USDT; `USD` = ambas) y
+**Pares**: activo/estable (ETH, BTC, SOL, LINK, UNI, AAVE, ARB y oro tokenizado PAXG/XAUT con USDC o
+USDT; `USD` = ambas) y
 activo/activo (ETH/BTC, SOL/ETH...). Acepta `WETH`, `WBTC`, `cbBTC` y la estable delante.
 
 **Pools**: solo tokens con dirección verificada on-chain (`TOKENS` en `descubrir.py`), así que un
@@ -236,6 +237,25 @@ buena parte de las posiciones pierde frente a mantener: en «Impermanent Loss in
 eso la habilidad a menudo responde
 «mejor esperar», y cuando propone algo es porque el volumen del pool compensa con margen.
 Tests: `tests/test_oportunidad.py` (sin red) y `tests/test_pools_red.py` (con `ETAPAS_TEST_RED=1`).
+
+### Vigilancia de oportunidades (`oportunidades.txt`)
+
+Una línea por par vigilado: `BTC/USDC 5000 base` (par, capital en dólares y, si se quiere, las redes).
+La rutina diaria analiza cada uno con `etapas.oportunidad` y lo muestra en el índice. Avisa por
+correo **cuando aparece una propuesta**, cuando cambia de pool o de ciclo y cuando deja de cumplir
+los criterios; si nunca la hubo, no avisa. El estado se guarda en el historial. Editar
+`oportunidades.txt` en GitHub relanza la rutina. Código: `etapas/vigilancia.py`.
+
+Otras opciones de `python -m etapas.oportunidad`: `--red base,arbitrum` limita las redes. Oro
+tokenizado: `PAXG/USDC` y `XAUT/USDT` (Ethereum); XAUT se analiza con el histórico de PAXG, porque
+los dos son una onza de oro y XAUT cotiza en Binance solo desde marzo de 2026.
+
+**Aerodrome (Base) no está incluido.** Se midió en oct-2026 para cbBTC/USDC: sin stake paga lo mismo
+que Uniswap por unidad de liquidez (3,4–3,6 frente a 3,5–3,7 $/día para 5.000 $ en el rango
+semanal); con stake paga en el token AERO (4,8–5,5 $/día medidos a 7 y 30 días, 2,6 $/día al ritmo
+de emisión de ese momento), que hay que reclamar y vender. Entre el 93 % y el 99 % de su liquidez
+está en stake, tiene tres fábricas de pools y sus recompensas cambian cada semana: no mejora el
+resultado lo bastante para justificar esa complejidad.
 
 ## Versión en la nube (GitHub)
 

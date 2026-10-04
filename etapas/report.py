@@ -11,7 +11,8 @@ from .classifier import STAGE_NAMES
 from .config import DISCLAIMER, ORDER
 from .contexto import MarketContext, fng_history, fomc_notes, headlines_for, next_fomc
 from .explain import KEY_ZONE_NOTE, KEY_ZONE_TITLE, key_zone, meaning
-from .report_liquidez import LIQ_CSS, index_cell, liquidity_html, liquidity_text, positions_html
+from .report_liquidez import (LIQ_CSS, index_cell, liquidity_html, liquidity_text, positions_html,
+                              watches_html)
 
 STAGE_COLORS = {1: "#2563eb", 2: "#16a34a", 3: "#eab308", 4: "#dc2626"}
 HEADERS = ["Marco", "Etapa", "Si cerrara hoy", "Confianza", "Transición", "Cierre de referencia",
@@ -519,7 +520,8 @@ def _stage_cell(r: TimeframeResult) -> str:
 
 def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str | None,
                 warnings: list[str], out_dir: Path, now: pd.Timestamp,
-                context: MarketContext | None = None, positions: list[dict] | None = None) -> Path:
+                context: MarketContext | None = None, positions: list[dict] | None = None,
+                watches: list[dict] | None = None) -> Path:
     """Página resumen de todos los activos de la lista, con los cambios desde la última ejecución."""
     rows = []
     for a in assets:
@@ -582,6 +584,7 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
 {_context_strip(context)}
 {changes_html}
 {positions_html(positions or [])}
+{watches_html(watches or [])}
 <div class="wrap"><table>
 <thead><tr><th>Activo</th><th>Mensual (contexto)</th><th>Semanal (tendencia)</th>
 <th>Diario (entrada)</th><th>Alineación</th><th>Liquidez: idoneidad y rango</th></tr></thead>

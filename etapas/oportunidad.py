@@ -51,6 +51,9 @@ NO_DAILY_ON = {"ethereum"}                            # el ciclo diario no se pr
 SAFETY_LOSS = 1.25
 REAL_FEE_DAYS = (7, 30)                               # ventanas de comisiones reales; se usa la menor
 ALIASES = {"WETH": "ETH", "WBTC": "BTC", "CBBTC": "BTC", "WSOL": "SOL", "USDT0": "USDT"}
+# Activos sin histórico suficiente que siguen el mismo precio que otro: XAUt y PAXG son una onza
+# de oro cada uno (XAUT cotiza en Binance solo desde marzo de 2026).
+PRICE_PROXY = {"XAUT": "PAXG"}
 
 
 @dataclass
@@ -190,7 +193,8 @@ def _quote_usd(quote: str) -> float:
 # ---------------------------------------------------------------- análisis completo
 
 
-def analyze(pair: str, capital: float = 5000.0) -> Report:
+def analyze(pair: str, capital: float = 5000.0, chains=None) -> Report:
+    """Analiza un par. `chains` limita los pools a esas redes (por ejemplo, ["base"])."""
     try:
         base, quote, notes = parse_pair(pair)
     except ValueError as e:
@@ -201,7 +205,11 @@ def analyze(pair: str, capital: float = 5000.0) -> Report:
                      f"el mismo rango. En la propuesta tienes también los precios en {base}/{quote}.")
         base, quote = cb, cq
     rep = Report(base, quote, capital, None, None, None, warnings=list(notes))
-    asset = analyze_symbol(base, fetch=lambda t, cfg: fetch_pair_candles(base, quote, cfg))
+    series = PRICE_PROXY.get(base, base)
+    if series != base:
+        rep.warnings.append(f"Etapas y rangos de {base} calculados con el histórico de {series}, que sigue "
+                            f"el mismo precio y tiene más años de datos")
+    asset = analyze_symbol(base, fetch=lambda t, cfg: fetch_pair_candles(series, quote, cfg))
     if asset.error or not asset.last_price:
         rep.error = f"No hay histórico de precios de {base}/{quote}: {asset.error}"
         return rep
@@ -221,6 +229,9 @@ def analyze(pair: str, capital: float = 5000.0) -> Report:
 
     found, warn = discover(base, quote)
     rep.warnings += warn
+    if chains:
+        found = [p for p in found if p.chain in chains]
+        rep.warnings.append("Solo se evalúan pools en: " + ", ".join(c.capitalize() for c in chains))
     if not found:
         rep.warnings.append(f"No hay pools de Uniswap v3, v4 ni de Orca para {base}/{quote} con los tokens verificados")
         return rep
@@ -460,9 +471,12 @@ def main(argv: list[str] | None = None) -> int:
                                  description="Mejores rangos de liquidez concentrada para un par.")
     ap.add_argument("par", help="Par, por ejemplo ETH/USDC, BTC/USDT o ETH/BTC")
     ap.add_argument("--capital", type=float, default=5000.0, help="Capital por posición en dólares")
+    ap.add_argument("--red", default="", metavar="REDES",
+                    help="Limita a estas redes, separadas por comas: ethereum, base, arbitrum, solana")
     ap.add_argument("--json", action="store_true", help="Salida en JSON")
     args = ap.parse_args(argv)
-    rep = analyze(args.par, args.capital)
+    chains = [c.strip().lower() for c in args.red.split(",") if c.strip()]
+    rep = analyze(args.par, args.capital, chains or None)
     print(json.dumps(to_json(rep), ensure_ascii=False, indent=2, default=float) if args.json else render(rep))
     return 1 if rep.error else 0
 
