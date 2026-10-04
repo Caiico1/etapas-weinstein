@@ -6,4 +6,4 @@
 # positivo incluso con el margen de seguridad), y también cuando deja de cumplirlos.
 # Para dejar de vigilar una, bórrala o ponle # delante.
 
-BTC/USDC 5000 base
+BTC/USDC 4500 base
