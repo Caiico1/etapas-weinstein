@@ -28,7 +28,7 @@ import pandas as pd
 
 from . import pools as P
 from .analysis import AssetResult, TimeframeResult, analyze_symbol
-from .config import DISCLAIMER, LP_QUANTILE, TIMEFRAMES
+from .config import DISCLAIMER, LP_MIN_TVL, LP_MIN_VOLUME, LP_NO_DAILY_ON, LP_QUANTILE, TIMEFRAMES
 from .data import STABLES, DataError, canonical_pair, fetch_candles, fetch_pair_candles
 from .descubrir import discover, supported_symbols
 from .indicators import expected_range
@@ -39,12 +39,12 @@ CYCLES = [("1d", "Diario", 1.0), ("1w", "Semanal", 7.0), ("1M", "Mensual", 30.44
 HIGHER = {"1d": "1w", "1w": "1M", "1M": None}
 BACKTEST = {"1d": 365, "1w": 104, "1M": 48}          # ciclos pasados que se comprueban
 MIN_BACKTEST = 24
-MIN_TVL = 1_000_000                                   # con menos, 5.000 $ pesan demasiado en el pool
-MIN_VOLUME = 50_000                                   # volumen diario mínimo (mediana 30 días)
+MIN_TVL = LP_MIN_TVL                                  # con menos, 5.000 $ pesan demasiado en el pool
+MIN_VOLUME = LP_MIN_VOLUME                            # volumen diario mínimo (mediana 30 días)
 REBALANCE_GAS = 900_000                               # retirar + cobrar + cambiar + abrir (Uniswap v3)
 L2_DATA_FEE_USD = 0.05                                # margen por la tarifa de datos de L1 en Base/Arbitrum
 SOLANA_REBALANCE_SOL = 0.001                          # comisiones de transacción y prioridad en Solana
-NO_DAILY_ON = {"ethereum"}                            # el ciclo diario no se propone en Ethereum (gas)
+NO_DAILY_ON = LP_NO_DAILY_ON                          # el ciclo diario no se propone en Ethereum (gas)
 # Margen de seguridad: la pérdida frente a mantener, medida por anchura del rango, varía hasta un
 # 20-30 % entre mitades del histórico (BTC, SOL). Solo se propone lo que sigue siendo rentable con
 # una pérdida un 25 % peor que la estimada.

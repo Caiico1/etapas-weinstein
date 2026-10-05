@@ -63,7 +63,7 @@ Finance: `accion:NVDA`, `accion:SPY`, `accion:SAN.MC` (bolsa española con `.MC`
   bolsa está cerrada y el token apenas se mueve) y su liquidez es baja (~200 k$/día). Como el
   token sigue a la acción, las etapas y niveles de la acción valen para el token.
 
-## Liquidez concentrada (Uniswap v3 / Orca)
+## Liquidez concentrada (Uniswap v3 y v4 / Orca)
 
 Para cada criptomoneda, el informe añade tres perfiles de rango para aportar liquidez, con los
 **números exactos** de precio mínimo y máximo que hay que escribir en Uniswap u Orca:
@@ -115,8 +115,19 @@ lado prudente. Una etapa favorable con el marco superior en etapa 4 baja a preca
 - *Pérdida en el borde = días*: días de comisiones que compensan la pérdida si el precio acaba en
   el borde más desfavorable.
 
-**Pools de referencia** (verificados on-chain en sep-2026; `tests/test_pools_red.py` los vuelve a
-comprobar con `ETAPAS_TEST_RED=1`):
+**Qué pools aparecen: búsqueda en vivo.** Cada día, para cada criptomoneda, `liquidez.live_pools`
+busca todos los pools del activo frente a USDC y USDT en Uniswap v3, Uniswap v4 (sin hook) y Orca
+(el mismo descubrimiento on-chain que la habilidad `/pool`, `etapas/descubrir.py`) y se queda con
+los que tienen al menos 1 M$ de TVL y 50 k$ de volumen diario (mediana de 30 días), ordenados por
+TVL. En la tabla principal se destaca el que más comisiones pagó por dólar; en el perfil diario no
+se destaca un pool de Ethereum si hay otro en una red barata (el gas de reajustar cada día se come
+las comisiones). Comprobación (oct-2026): BTC 15 pools, ETH 19, SOL 1; el pool Uniswap v4 de
+Ethereum ETH/USDC 0,01 % sale como el que más paga en semanal y mensual, igual que en `/pool`. La
+búsqueda añade unos 5-7 minutos por activo a la rutina (BTC 320 s, ETH 390 s, SOL 91 s).
+
+**Pools de referencia.** Si la búsqueda en vivo no devuelve ningún pool (fuentes caídas), el
+informe usa esta lista fija y lo dice (verificados on-chain en sep-2026; `tests/test_pools_red.py`
+los vuelve a comprobar con `ETAPAS_TEST_RED=1`):
 
 | Activo | Pools |
 |---|---|
@@ -125,8 +136,9 @@ comprobar con `ETAPAS_TEST_RED=1`):
 | SOL | Orca SOL/USDC 0,04 % (Solana). En Uniswap solo hay un pool WETH/SOL de ~1 M$ |
 | ADA | ninguno: no está en Uniswap ni en Orca, y Minswap (Cardano) no usa liquidez concentrada |
 
-Para añadir un pool, se añade una línea en `POOLS` de `etapas/pools.py` y se comprueba con el
-test de red. Datos gratuitos, sin claves: nodos RPC públicos de publicnode.com y de Solana para
+Para añadir un pool de referencia, se añade una línea en `POOLS` de `etapas/pools.py` y se
+comprueba con el test de red; para que la búsqueda en vivo cubra un token nuevo, se añade a
+`TOKENS` de `etapas/descubrir.py`. Datos gratuitos, sin claves: nodos RPC públicos de publicnode.com y de Solana para
 el estado del pool (precio, liquidez activa, comisión de protocolo), y la API de GeckoTerminal
 (una petición por red) para el volumen y el TVL. Si alguna fuente falla, el rango sigue
 apareciendo y solo falta la estimación de comisiones. El precio de cada pool se compara con el de
