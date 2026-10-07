@@ -266,6 +266,10 @@ tarea de Windows, pero en los servidores de GitHub, así que funciona con el PC 
   y 10:07 UTC que solo trabajan si ese día aún no se ha ejecutado, porque GitHub no garantiza las
   ejecuciones programadas. También se ejecuta cuando se modifica `watchlist.txt` o el código, y cuando
   se pulsa **Actions → Rutina diaria de etapas → Run workflow**.
+- **Pool de un par, sin el PC**: el flujo [`.github/workflows/pool.yml`](.github/workflows/pool.yml)
+  ejecuta lo mismo que la habilidad `/pool`. Se pulsa **Actions → Pool de liquidez → Run workflow**, se
+  escriben los pares (separados por comas) y el capital en euros o dólares, y el resultado aparece en
+  el resumen de esa ejecución. El índice de la web enlaza con ese botón.
 - Pasa los tests, ejecuta la rutina y publica `out/` en **GitHub Pages**. El índice queda en la
   raíz de la web.
 - Guarda `out/historial/` en el repositorio con un commit automático, para detectar los cambios

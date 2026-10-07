@@ -156,3 +156,11 @@ def test_alert_email_includes_headlines_for_assets_with_news(tmp_path):
                                {"BTC": [h], "ETH": [h]}).read_text(encoding="utf-8")
     assert "Titulares recientes" in body and "[Bitcoin falls](https://x/1)" in body
     assert "**ETH**" not in body                        # ETH no tiene novedades: sin titulares
+
+
+def test_index_links_pool_button_only_on_github(monkeypatch):
+    from etapas.report import pool_button
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    assert pool_button() == ""
+    monkeypatch.setenv("GITHUB_REPOSITORY", "alguien/repo")
+    assert 'href="https://github.com/alguien/repo/actions/workflows/pool.yml"' in pool_button()

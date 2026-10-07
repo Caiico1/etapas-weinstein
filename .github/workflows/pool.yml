@@ -1,0 +1,73 @@
+name: Pool de liquidez
+
+# Lo mismo que la habilidad /pool, pero en los servidores de GitHub: se pulsa "Run workflow", se
+# escriben los pares y el capital, y el resultado aparece en el resumen de la ejecución.
+on:
+  workflow_dispatch:
+    inputs:
+      pares:
+        description: "Par o pares, separados por comas (ETH/USDC, BTC/USDC, ETH/BTC)"
+        required: true
+        default: "ETH/USDC"
+      capital:
+        description: "Capital por posición"
+        required: true
+        default: "1000"
+      moneda:
+        description: "Moneda del capital"
+        type: choice
+        options: [EUR, USD]
+        default: EUR
+      red:
+        description: "Solo estas redes (opcional): ethereum, base, arbitrum, solana"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  pool:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Calcular las oportunidades
+        env:                    # los datos del formulario llegan como variables, nunca dentro del script
+          PARES: ${{ inputs.pares }}
+          CAPITAL: ${{ inputs.capital }}
+          MONEDA: ${{ inputs.moneda }}
+          RED: ${{ inputs.red }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          if [ "$MONEDA" = "EUR" ]; then
+            CAMBIO=$(curl -sf "https://data-api.binance.vision/api/v3/ticker/price?symbol=EURUSDC" \
+              | python -c "import json, sys; print(json.load(sys.stdin)['price'])")
+            USD=$(python -c "import sys; print(round(float(sys.argv[1]) * float(sys.argv[2])))" "$CAPITAL" "$CAMBIO")
+            echo "Capital: $CAPITAL € = $USD \$ (1 € = $CAMBIO USDC, cambio de Binance)." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+          else
+            USD=$(python -c "import sys; print(float(sys.argv[1]))" "$CAPITAL")
+          fi
+          RED=$(echo "$RED" | tr -d ' ')
+          fallo=0
+          IFS=',' read -ra LISTA <<< "$PARES"
+          for par in "${LISTA[@]}"; do
+            par=$(echo "$par" | tr -d ' ' | tr '-' '/')
+            [ -z "$par" ] && continue
+            python -m etapas.oportunidad "$par" --capital "$USD" ${RED:+--red "$RED"} \
+              | tee -a "$GITHUB_STEP_SUMMARY" || fallo=1
+            printf '\n\n---\n\n' >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $fallo
