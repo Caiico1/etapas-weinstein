@@ -340,6 +340,91 @@ def _stage_line(rep: Report, key: str) -> str:
     return f"etapa {r.stage} · {r.stage_name}{trans}, confianza {r.confidence_label}"
 
 
+OK, WARN, FAIL = "✅", "⚠️", "❌"
+GAS_SHARE_WARN = 0.10            # aviso (no veto) si el gas se lleva más del 10 % de las comisiones del ciclo
+
+
+def checklist(rep: Report, o: Opportunity) -> tuple[list[tuple[str, str, str, str]], str]:
+    """Condiciones del método para una combinación de ciclo y pool, con el dato que las decide.
+    Devuelve (filas, lectura); cada fila es (bloque, estado, condición, dato). Un ❌ es un veto: la
+    combinación no se propone. Un ⚠️ es un aviso y no impide la propuesta. No añade ningún cálculo:
+    ordena los que ya deciden `excluded`."""
+    q, bt = o.quote, o.backtest
+    rows = []
+    rows.append(("Veto", {"favorable": OK, "precaución": WARN}.get(o.level, FAIL),
+                 "La etapa del ciclo no es desfavorable", f"{_stage_line(rep, o.cycle)} → {o.level}"))
+    rows.append(("Veto", OK if q.tvl is not None and q.tvl >= MIN_TVL else WARN,
+                 "El pool tiene liquidez suficiente",
+                 ("TVL desconocido" if q.tvl is None else f"TVL {q.tvl / 1e6:,.1f} M$")
+                 + f" (mínimo {MIN_TVL / 1e6:,.0f} M$)"))
+    if o.cycle == "1d" and o.pool.chain in NO_DAILY_ON:
+        rows.append(("Veto", FAIL, "El gas de la red permite reajustar cada día",
+                     f"en {o.pool.chain.capitalize()} no se propone el ciclo diario"))
+    if o.fees_cycle is None or o.expected_result is None:
+        rows.append(("Rentabilidad", FAIL, "Se puede calcular el resultado neto", o.excluded or "faltan datos"))
+    else:
+        il = o.expected_result * rep.capital
+        rows.append(("Rentabilidad", OK if o.fees_cycle + il > 0 else FAIL,
+                     "Las comisiones del ciclo superan el IL",
+                     f"comisiones {_usd(o.fees_cycle)} frente a IL {_usd(il)}"))
+        rows.append(("Rentabilidad", OK if o.net_cycle > 0 else FAIL,
+                     "El neto es positivo después del gas",
+                     f"neto {_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual)"))
+        rows.append(("Rentabilidad", OK if o.net_safe > 0 else FAIL,
+                     f"Sigue positivo con un IL un {SAFETY_LOSS - 1:.0%} peor", f"neto {_usd(o.net_safe)} por ciclo"))
+        share = o.gas_usd / o.fees_cycle if o.fees_cycle > 0 else math.inf
+        rows.append(("Contexto", OK if share <= GAS_SHARE_WARN else WARN,
+                     "El gas de un reajuste es pequeño frente a las comisiones",
+                     f"gas {_usd(o.gas_usd)}" + (f", el {share:.0%} de las comisiones del ciclo"
+                                                if math.isfinite(share) else "")))
+    if q.fee_day is not None:
+        rows.append(("Contexto", OK if q.fee_source == "real" else WARN,
+                     "Las comisiones son las que pagó de verdad el pool",
+                     "dato de la blockchain" if q.fee_source == "real" else "estimadas por volumen"))
+    if bt.inside is not None:
+        target = 2 * LP_QUANTILE - 1
+        rows.append(("Contexto", OK if bt.inside >= target else WARN,
+                     "En el pasado el precio se quedó dentro del rango",
+                     f"{bt.inside:.0%} de {bt.samples} ciclos (el método apunta al {target:.0%})"))
+    up = rep.asset.timeframes.get(HIGHER[o.cycle]) if HIGHER[o.cycle] else None
+    if up is not None and up.status == "ok":
+        against = {4} if rep.quote in STABLES else {2, 4}
+        rows.append(("Contexto", WARN if up.stage in against else OK,
+                     "El ciclo superior no empuja el precio fuera del rango",
+                     f"{up.label.lower()} en etapa {up.stage} · {up.stage_name}"))
+    r = rep.asset.timeframes[o.cycle]
+    if r.status == "ok":
+        rows.append(("Contexto", WARN if r.confidence_label == "baja" else OK,
+                     "La lectura de la etapa es fiable", f"confianza {r.confidence_label}"))
+    if o.excluded and not any(st == FAIL for _, st, _, _ in rows):
+        rows.append(("Veto", FAIL, "El programa puede evaluar esta combinación", o.excluded))
+    fails = [c for _, st, c, _ in rows if st == FAIL]
+    warns = sum(1 for _, st, _, _ in rows if st == WARN)
+    if fails:
+        reading = "**No cumple** las condiciones del método. Lo impide: " + "; ".join(x.lower() for x in fails) + "."
+    else:
+        reading = ("**Cumple** las condiciones del método"
+                   + (f", con {warns} aviso{'s' if warns != 1 else ''} (⚠️)." if warns else "."))
+    return rows, reading
+
+
+def _checklist_md(rep: Report, o: Opportunity, title: str) -> list[str]:
+    rows, reading = checklist(rep, o)
+    return ([title, "", "| | Bloque | Condición | Dato |", "|---|---|---|---|"]
+            + [f"| {st} | {block} | {cond} | {data} |" for block, st, cond, data in rows]
+            + ["", f"Lectura: {reading}", ""])
+
+
+def best_per_cycle(opps: list[Opportunity]) -> list[Opportunity]:
+    """La combinación con mejor neto de cada ciclo (si ninguna tiene neto, la primera evaluada)."""
+    out = []
+    for key, _, _ in CYCLES:
+        mine = [o for o in opps if o.cycle == key]
+        if mine:
+            out.append(max(mine, key=lambda o: (o.net_apr is not None, o.net_apr or 0)))
+    return out
+
+
 def render(rep: Report) -> str:
     if rep.error:
         return f"**No se puede analizar {rep.base}{'/' + rep.quote if rep.quote else ''}**: {rep.error}"
@@ -351,13 +436,18 @@ def render(rep: Report) -> str:
         [""] if any(n.startswith(("Se analiza como", "Par expresado")) for n in rep.warnings) else [])
     if rep.proposals:
         for i, o in enumerate(rep.proposals, 1):
-            out += _proposal(rep, o, i)
+            out += _proposal(rep, o, i) + _checklist_md(rep, o, f"**Checklist de la propuesta {i}**")
     else:
         out += ["## Sin propuesta ahora",
                 "Ninguna combinación de ciclo y pool cumple a la vez: etapa no desfavorable, liquidez "
                 "suficiente y resultado neto positivo incluso con el margen de seguridad. Con los datos de "
                 "hoy, las comisiones no compensan lo que se pierde frente a mantener los tokens: mejor "
                 "esperar y volver a consultar.", ""]
+        best = best_per_cycle(rep.opportunities)
+        if best:
+            out += ["## Checklist: qué falla en la mejor combinación de cada ciclo", ""]
+            for o in best:
+                out += _checklist_md(rep, o, f"**Ciclo {o.name.lower()} · {o.pool.label}**")
     out += ["## Etapas del par", "",
             "| Ciclo | Etapa | Idoneidad | Rango del método | Histórico: dentro / resultado medio frente a mantener |",
             "|---|---|---|---|---|"]
@@ -394,7 +484,10 @@ def render(rep: Report) -> str:
                 "«Comisiones/ciclo» = comisiones por día × días del ciclo × fracción de ciclos dentro; «IL/ciclo» "
                 "(pérdida impermanente) = resultado esperado frente a mantener × capital, casi siempre negativo; "
                 "y Neto/ciclo = Comisiones/ciclo + IL/ciclo − Gas/reajuste. Solo se propone lo que sigue siendo positivo con una pérdida un "
-                f"{SAFETY_LOSS - 1:.0%} peor. Son estimaciones: el volumen y la liquidez del pool cambian cada día.",
+                f"{SAFETY_LOSS - 1:.0%} peor. Checklist: ordena esas mismas condiciones; un ❌ es un veto (la "
+                "combinación no se propone) y un ⚠️ es un aviso que no la impide. Que se cumplan todas indica "
+                "que la combinación encaja en el método, no que vaya a salir bien. "
+                "Son estimaciones: el volumen y la liquidez del pool cambian cada día.",
             "", f"_{DISCLAIMER}_"]
     return "\n".join(out)
 
@@ -448,7 +541,11 @@ def _proposal(rep: Report, o: Opportunity, i: int) -> list[str]:
 
 def to_json(rep: Report) -> dict:
     def opp(o: Opportunity) -> dict:
-        return {"ciclo": o.name, "pool": o.pool.label, "direccion": o.pool.address, "red": o.pool.chain,
+        rows, reading = checklist(rep, o)
+        return {"checklist": [{"bloque": b, "estado": {OK: "cumple", WARN: "aviso", FAIL: "no cumple"}[st],
+                               "condicion": c, "dato": d} for b, st, c, d in rows],
+                "lectura": reading.replace("**", ""),
+                "ciclo": o.name, "pool": o.pool.label, "direccion": o.pool.address, "red": o.pool.chain,
                 "dex": o.pool.dex, "comision": o.pool.fee, "min": o.quote.low, "max": o.quote.high,
                 "tick_inferior": o.quote.tick_lower, "tick_superior": o.quote.tick_upper,
                 "precio_pool": o.quote.pool_price, "cantidad_base": o.base_amount,

@@ -208,3 +208,33 @@ def test_price_proxy_for_assets_without_history(fake_world, monkeypatch):
     rep = op.analyze("XAUT/USDT", 5000)
     assert asked == ["PAXG"] and rep.base == "XAUT"
     assert any("histórico de PAXG" in w for w in rep.warnings)
+
+
+def test_checklist_agrees_with_the_proposal_rules(fake_world):
+    rep = op.analyze("ETH/USDC", 5000)
+    assert rep.opportunities
+    for o in rep.opportunities:
+        rows, reading = op.checklist(rep, o)
+        failed = any(st == op.FAIL for _, st, _, _ in rows)
+        assert failed == bool(o.excluded)                 # un veto en el checklist ⇔ no se propone
+        assert reading.startswith("**No cumple**" if o.excluded else "**Cumple**")
+        if o.fees_cycle is not None:                      # las filas de rentabilidad repiten la cuenta
+            data = {c: st for _, st, c, _ in rows}
+            assert (data["El neto es positivo después del gas"] == op.OK) == (o.net_cycle > 0)
+            assert (data["Las comisiones del ciclo superan el IL"] == op.OK) == (
+                o.fees_cycle + o.expected_result * 5000 > 0)
+    text = op.render(rep)
+    assert ("Checklist de la propuesta 1" in text) == bool(rep.proposals)
+    assert ("qué falla en la mejor combinación de cada ciclo" in text) == (not rep.proposals)
+    assert all("checklist" in x and "lectura" in x for x in op.to_json(rep)["combinaciones"])
+
+
+def test_checklist_shown_for_best_of_each_cycle_when_nothing_is_proposed(fake_world):
+    rep = op.analyze("ETH/USDC", 5000)
+    rep.proposals = []
+    for o in rep.opportunities:
+        o.excluded = o.excluded or "resultado neto estimado negativo"
+    best = op.best_per_cycle(rep.opportunities)
+    assert [o.cycle for o in best] == ["1d", "1w", "1M"]
+    text = op.render(rep)
+    assert text.count("Lectura: **No cumple**") == 3
