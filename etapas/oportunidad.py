@@ -369,12 +369,15 @@ def render(rep: Report) -> str:
                 else f"insuficiente ({bt.samples} ciclos)")
         out.append(f"| {name} | {_stage_line(rep, key)} | {level} | {rtxt} | {btxt} |")
     out += ["", "## Todas las combinaciones evaluadas", "",
-            "| Ciclo | Pool | Comisiones/día | Fuente | Gas/reajuste | Neto/ciclo | Neto anual | Estado |",
-            "|---|---|---|---|---|---|---|---|"]
+            "| Ciclo | Pool | Comisiones/día | Fuente | Comisiones/ciclo | IL/ciclo | Gas/reajuste | "
+            "Neto/ciclo | Neto anual | Estado |",
+            "|---|---|---|---|---|---|---|---|---|---|"]
     for o in sorted(rep.opportunities, key=lambda o: (o.net_apr is None, -(o.net_apr or 0))):
         star = "**propuesta**" if o in rep.proposals else (o.excluded or "válida")
+        il = None if o.expected_result is None else o.expected_result * rep.capital
         out.append(f"| {o.name} | {o.pool.label} | {_usd(o.quote.fee_day)} | "
-                   f"{ {'real': 'real', 'volumen': 'volumen'}.get(o.quote.fee_source, '—') } | {_usd(o.gas_usd)} | "
+                   f"{ {'real': 'real', 'volumen': 'volumen'}.get(o.quote.fee_source, '—') } | "
+                   f"{_usd(o.fees_cycle)} | {_usd(il)} | {_usd(o.gas_usd)} | "
                    f"{_usd(o.net_cycle)} | {_pct(o.net_apr)} | {star} |")
     if rep.illiquid:
         out += ["", f"Pools descartados por poca liquidez (TVL < {MIN_TVL / 1e3:,.0f} k$ o volumen < "
@@ -387,9 +390,10 @@ def render(rep: Report) -> str:
                 "a la anchura actual del rango, que depende de la volatilidad de hoy. Comisiones «real»: lo "
                 "que cobró de verdad cada unidad de liquidez de ese pool, leído de la blockchain (el menor "
                 "entre la media de 7 y de 30 días), por la liquidez que aportas; «volumen»: estimación con la mediana del volumen "
-                "de 30 días cuando no hay dato on-chain. Se cobran solo con el precio dentro. Neto por ciclo = "
-                "comisiones × fracción de ciclos dentro + resultado esperado frente a mantener × capital − gas "
-                "de un reajuste. Solo se propone lo que sigue siendo positivo con una pérdida un "
+                "de 30 días cuando no hay dato on-chain. Se cobran solo con el precio dentro. En la tabla, "
+                "«Comisiones/ciclo» = comisiones por día × días del ciclo × fracción de ciclos dentro; «IL/ciclo» "
+                "(pérdida impermanente) = resultado esperado frente a mantener × capital, casi siempre negativo; "
+                "y Neto/ciclo = Comisiones/ciclo + IL/ciclo − Gas/reajuste. Solo se propone lo que sigue siendo positivo con una pérdida un "
                 f"{SAFETY_LOSS - 1:.0%} peor. Son estimaciones: el volumen y la liquidez del pool cambian cada día.",
             "", f"_{DISCLAIMER}_"]
     return "\n".join(out)

@@ -137,6 +137,15 @@ def test_analyze_end_to_end(fake_world):
         assert rep.proposals[0] is ok[0]
     text = op.render(rep)
     assert "Etapas del par" in text and "Todas las combinaciones evaluadas" in text
+    # La tabla de combinaciones enseña el IL y la cuenta completa: comisiones + IL − gas = neto
+    rows = [[c.strip() for c in line.strip("|").split("|")]
+            for line in text.split("## Todas las combinaciones evaluadas")[1].splitlines() if line.startswith("|")]
+    assert rows[0][4:8] == ["Comisiones/ciclo", "IL/ciclo", "Gas/reajuste", "Neto/ciclo"]
+    usd = lambda cell: float(cell.replace("$", "").replace(",", ""))
+    full = [r for r in rows[2:] if "—" not in r[4:8]]
+    assert full
+    for r in full:
+        assert usd(r[4]) + usd(r[5]) - usd(r[6]) == pytest.approx(usd(r[7]), abs=0.02)
     data = op.to_json(rep)
     assert data["par"] == "ETH/USDC" and len(data["combinaciones"]) == len(rep.opportunities)
 
