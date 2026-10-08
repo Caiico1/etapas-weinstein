@@ -13,10 +13,12 @@ import numpy as np
 import pandas as pd
 
 from .analysis import AssetResult, TimeframeResult
-from .config import LP_CAPITAL_REF, LP_PROFILES, LP_QUANTILE, LP_MAX_POOL_DEVIATION, TIMEFRAMES
+from .config import (LP_CAPITAL_REF, LP_MAX_POOL_DEVIATION, LP_MIN_TVL, LP_MIN_VOLUME, LP_NO_DAILY_ON,
+                     LP_PROFILES, LP_QUANTILE, LP_QUOTES, TIMEFRAMES)
+from .descubrir import discover
 from .indicators import expected_range
 from . import pools as _pools
-from .pools import Pool, PoolState, pools_for
+from .pools import NOTES, Pool, PoolState, pools_for
 
 TICK_BASE = 1.0001
 MIN_TICK, MAX_TICK = -887272, 887272
@@ -174,8 +176,12 @@ class ProfileResult:
 
     @property
     def main_quote(self) -> PoolQuote | None:
-        """El pool con más comisiones estimadas para el capital de referencia."""
+        """El pool con más comisiones estimadas para el capital de referencia. En el perfil
+        diario se prefiere una red barata: en Ethereum el gas de reajustar cada día se come las
+        comisiones."""
         ok = [q for q in self.quotes if q.fee_day is not None]
+        if self.timeframe == "1d":
+            ok = [q for q in ok if q.pool.chain not in LP_NO_DAILY_ON] or ok
         return max(ok, key=lambda q: q.fee_day) if ok else None
 
     @property
@@ -194,6 +200,8 @@ class LiquidityResult:
     note: str = ""
     best: str = ""                        # recomendación de conjunto
     capital: float = LP_CAPITAL_REF
+    live: bool = False                    # True: pools de la búsqueda en vivo; False: lista de referencia
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         def q(x: PoolQuote) -> dict:
@@ -276,14 +284,51 @@ def quote_pool(pool: Pool, state: PoolState | None, low: float, high: float, mar
     return q
 
 
-def analyze_liquidity(asset: AssetResult, fetch=None,
-                      capital: float = LP_CAPITAL_REF) -> LiquidityResult | None:
-    """Perfiles diario, semanal y mensual para un criptoactivo (None para acciones)."""
+def live_pools(symbol: str) -> tuple[list[Pool], dict[str, PoolState], dict[str, float], list[str]]:
+    """Búsqueda en vivo: pools de Uniswap v3, Uniswap v4 (sin hook) y Orca del activo frente a
+    USDC y USDT con liquidez suficiente (los mismos mínimos que la habilidad /pool), de mayor a
+    menor TVL. Devuelve (pools, estado por id, mediana del volumen por id, avisos)."""
+    found, warnings = [], []
+    for quote in LP_QUOTES:
+        pools, warn = discover(symbol, quote)
+        found += pools
+        warnings += warn
+    if not found:
+        return [], {}, {}, warnings
+    states = _pools.fetch_states(found)
+    keep, volumes = [], {}
+    for pool in found:
+        st = states.get(pool.id)
+        if st is None or st.price is None or st.tvl is None or st.tvl < LP_MIN_TVL:
+            continue
+        vol = _pools.median_volume(pool)
+        if vol is None or vol < LP_MIN_VOLUME:
+            continue
+        keep.append(pool)
+        volumes[pool.id] = vol
+    keep.sort(key=lambda p: -states[p.id].tvl)
+    return keep, states, volumes, warnings
+
+
+def analyze_liquidity(asset: AssetResult, fetch=None, capital: float = LP_CAPITAL_REF,
+                      find=live_pools) -> LiquidityResult | None:
+    """Perfiles diario, semanal y mensual para un criptoactivo (None para acciones).
+
+    Los pools salen de la búsqueda en vivo (`find`); si no devuelve ninguno (fuentes caídas o
+    activo sin pools), se usan los pools de referencia de pools.POOLS."""
     if asset.kind != "cripto" or asset.error or not asset.last_price:
         return None
     price = asset.last_price
-    pools, note = pools_for(asset.symbol)
-    states = (fetch or _pools.fetch_states)(pools)
+    try:
+        pools, states, medians, warnings = find(asset.symbol)
+    except Exception as e:      # la búsqueda es una mejora: si falla, queda la lista de referencia
+        pools, states, medians, warnings = [], {}, {}, [f"búsqueda de pools: {type(e).__name__}"]
+    live = bool(pools)
+    if live:
+        note = NOTES.get(asset.symbol.upper(), "")
+    else:
+        pools, note = pools_for(asset.symbol)
+        states = (fetch or _pools.fetch_states)(pools)
     # Comisiones realmente pagadas por unidad de liquidez (el menor entre 7 y 30 días); si no hay
     # dato on-chain, quote_pool estima por volumen.
     real, volume = {}, {}
@@ -292,7 +337,7 @@ def analyze_liquidity(asset: AssetResult, fetch=None,
         found = [r for r in (_pools.realized_fees(pool, usd0, usd1, d) for d in (7, 30)) if r is not None]
         real[pool.id] = min(found) if found else None
         # Sin dato on-chain (Solana): mediana del volumen de 30 días, como en la habilidad /pool
-        volume[pool.id] = None if found else _pools.median_volume(pool)
+        volume[pool.id] = None if found else medians.get(pool.id) or _pools.median_volume(pool)
     tfs = asset.timeframes
     higher = {"1d": "1w", "1w": "1M", "1M": None}
     profiles = []
@@ -319,7 +364,8 @@ def analyze_liquidity(asset: AssetResult, fetch=None,
         prof.quotes = [quote_pool(p, states.get(p.id), prof.low, prof.high, price, capital,
                                   volume=volume[p.id], fee_per_liquidity=real[p.id]) for p in pools]
         profiles.append(prof)
-    res = LiquidityResult(asset.symbol, price, profiles, pools, note, capital=capital)
+    res = LiquidityResult(asset.symbol, price, profiles, pools, note, capital=capital, live=live,
+                          warnings=warnings)
     res.best = recommendation(res)
     return res
 

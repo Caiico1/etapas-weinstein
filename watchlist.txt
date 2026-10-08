@@ -10,7 +10,6 @@
 BTC
 ETH
 SOL
-ADA
 
 # Acciones y ETF desactivados (quita el # para volver a analizarlos)
 # accion:NVDA
