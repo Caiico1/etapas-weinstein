@@ -5,9 +5,13 @@ on:
   # programadas y en las horas en punto se saturan, así que se usa un minuto "raro" y dos respaldos
   # que solo trabajan si ese día todavía no se ha ejecutado la rutina.
   schedule:
-    - cron: "7 6 * * *"        # principal: 08:07 en España (verano)
-    - cron: "37 7 * * *"       # respaldo
-    - cron: "7 10 * * *"       # respaldo
+    # GitHub lanza estas ejecuciones con mucho retraso: entre el 28-sep y el 10-oct de 2026, la de
+    # las 06:07 UTC empezó entre las 11:30 y las 13:45 UTC (de 5,5 a 7,5 horas tarde). Por eso se
+    # programa justo después del cierre de la vela diaria (00:00 UTC): con ese retraso cae hacia las
+    # 08:00-09:30 en España, y si un día saliera puntual, los datos serían los mismos.
+    - cron: "7 0 * * *"        # principal
+    - cron: "37 2 * * *"       # respaldo
+    - cron: "7 5 * * *"        # respaldo
   workflow_dispatch:            # botón "Run workflow" para lanzarla a mano
     inputs:
       aviso_prueba:
