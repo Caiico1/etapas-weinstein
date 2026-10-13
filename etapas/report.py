@@ -1,6 +1,7 @@
 """Salida: tabla de consola, resumen de alineación, JSON y HTML (Plotly)."""
 import html
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -518,6 +519,15 @@ def _stage_cell(r: TimeframeResult) -> str:
             f' · extremo {fmt_price(r.est_low)} – {fmt_price(r.est_high)}</span></td>')
 
 
+def pool_button() -> str:
+    """Enlace al botón de GitHub que calcula el pool de un par (solo al publicar desde GitHub)."""
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    if not repo:
+        return ""
+    return (f'<p><a href="https://github.com/{html.escape(repo)}/actions/workflows/pool.yml">'
+            '🧮 Calcular el pool de un par (GitHub → Run workflow)</a></p>')
+
+
 def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str | None,
                 warnings: list[str], out_dir: Path, now: pd.Timestamp,
                 context: MarketContext | None = None, positions: list[dict] | None = None,
@@ -580,6 +590,7 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
 </style></head><body>
 <h1>Etapas de Weinstein · resumen</h1>
 <p><a href="guia.html">📘 Guía de lectura: qué significa cada dato y cómo interpretarlo</a></p>
+{pool_button()}
 <p class="muted">Actualizado {now:%Y-%m-%d %H:%M} UTC · solo velas cerradas · {legend}</p>
 {_context_strip(context)}
 {changes_html}

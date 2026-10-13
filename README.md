@@ -274,10 +274,15 @@ resultado lo bastante para justificar esa complejidad.
 El flujo [`.github/workflows/rutina.yml`](.github/workflows/rutina.yml) hace lo mismo que la
 tarea de Windows, pero en los servidores de GitHub, así que funciona con el PC apagado:
 
-- Se ejecuta cada día a las 06:07 UTC (08:07 en España en verano), con dos respaldos a las 07:37
-  y 10:07 UTC que solo trabajan si ese día aún no se ha ejecutado, porque GitHub no garantiza las
+- Está programada a las 00:07 UTC, justo después del cierre de la vela diaria, porque GitHub lanza
+  las ejecuciones programadas con 5,5 a 7,5 horas de retraso (medido del 28-sep al 10-oct de 2026): así
+  cae hacia las 08:00-09:30 en España. Tiene dos respaldos a las 02:37 y 05:07 UTC que solo trabajan si ese día aún no se ha ejecutado, porque GitHub no garantiza las
   ejecuciones programadas. También se ejecuta cuando se modifica `watchlist.txt` o el código, y cuando
   se pulsa **Actions → Rutina diaria de etapas → Run workflow**.
+- **Pool de un par, sin el PC**: el flujo [`.github/workflows/pool.yml`](.github/workflows/pool.yml)
+  ejecuta lo mismo que la habilidad `/pool`. Se pulsa **Actions → Pool de liquidez → Run workflow**, se
+  escriben los pares (separados por comas) y el capital en euros o dólares, y el resultado aparece en
+  el resumen de esa ejecución. El índice de la web enlaza con ese botón.
 - Pasa los tests, ejecuta la rutina y publica `out/` en **GitHub Pages**. El índice queda en la
   raíz de la web.
 - Guarda `out/historial/` en el repositorio con un commit automático, para detectar los cambios

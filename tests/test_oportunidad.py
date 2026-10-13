@@ -137,6 +137,15 @@ def test_analyze_end_to_end(fake_world):
         assert rep.proposals[0] is ok[0]
     text = op.render(rep)
     assert "Etapas del par" in text and "Todas las combinaciones evaluadas" in text
+    # La tabla de combinaciones enseña el IL y la cuenta completa: comisiones + IL − gas = neto
+    rows = [[c.strip() for c in line.strip("|").split("|")]
+            for line in text.split("## Todas las combinaciones evaluadas")[1].splitlines() if line.startswith("|")]
+    assert rows[0][4:8] == ["Comisiones/ciclo", "IL/ciclo", "Gas/reajuste", "Neto/ciclo"]
+    usd = lambda cell: float(cell.replace("$", "").replace(",", ""))
+    full = [r for r in rows[2:] if "—" not in r[4:8]]
+    assert full
+    for r in full:
+        assert usd(r[4]) + usd(r[5]) - usd(r[6]) == pytest.approx(usd(r[7]), abs=0.02)
     data = op.to_json(rep)
     assert data["par"] == "ETH/USDC" and len(data["combinaciones"]) == len(rep.opportunities)
 
@@ -199,3 +208,33 @@ def test_price_proxy_for_assets_without_history(fake_world, monkeypatch):
     rep = op.analyze("XAUT/USDT", 5000)
     assert asked == ["PAXG"] and rep.base == "XAUT"
     assert any("histórico de PAXG" in w for w in rep.warnings)
+
+
+def test_checklist_agrees_with_the_proposal_rules(fake_world):
+    rep = op.analyze("ETH/USDC", 5000)
+    assert rep.opportunities
+    for o in rep.opportunities:
+        rows, reading = op.checklist(rep, o)
+        failed = any(st == op.FAIL for _, st, _, _ in rows)
+        assert failed == bool(o.excluded)                 # un veto en el checklist ⇔ no se propone
+        assert reading.startswith("**No cumple**" if o.excluded else "**Cumple**")
+        if o.fees_cycle is not None:                      # las filas de rentabilidad repiten la cuenta
+            data = {c: st for _, st, c, _ in rows}
+            assert (data["El neto es positivo después del gas"] == op.OK) == (o.net_cycle > 0)
+            assert (data["Las comisiones del ciclo superan el IL"] == op.OK) == (
+                o.fees_cycle + o.expected_result * 5000 > 0)
+    text = op.render(rep)
+    assert ("Checklist de la propuesta 1" in text) == bool(rep.proposals)
+    assert ("qué falla en la mejor combinación de cada ciclo" in text) == (not rep.proposals)
+    assert all("checklist" in x and "lectura" in x for x in op.to_json(rep)["combinaciones"])
+
+
+def test_checklist_shown_for_best_of_each_cycle_when_nothing_is_proposed(fake_world):
+    rep = op.analyze("ETH/USDC", 5000)
+    rep.proposals = []
+    for o in rep.opportunities:
+        o.excluded = o.excluded or "resultado neto estimado negativo"
+    best = op.best_per_cycle(rep.opportunities)
+    assert [o.cycle for o in best] == ["1d", "1w", "1M"]
+    text = op.render(rep)
+    assert text.count("Lectura: **No cumple**") == 3

@@ -31,7 +31,13 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
    - Si **no hay propuesta**: dilo claramente y explica el motivo que da la salida (etapa
      desfavorable, poca liquidez o que las comisiones no compensan la pérdida frente a mantener
      los tokens). Recomendar esperar también es una respuesta válida.
-   - Resume en una frase la tabla de combinaciones evaluadas si ayuda a entender la elección.
+   - Muestra el **checklist** de cada propuesta (o, si no hay ninguna, el de la mejor combinación de
+     cada ciclo) tal cual lo da el programa, con sus ✅ ⚠️ ❌, el dato de cada fila y la lectura
+     final. No lo rellenes ni lo corrijas tú. Un ❌ es un veto; un ⚠️ es un aviso: coméntalos, sobre
+     todo «comisiones estimadas por volumen» y «ciclo superior en contra». Que todo esté en verde
+     significa que la combinación encaja en el método, no que vaya a salir bien: dilo así.
+   - Resume en una frase la tabla de combinaciones evaluadas si ayuda a entender la elección. En esa
+     tabla, «IL/ciclo» es la pérdida impermanente y Neto/ciclo = Comisiones/ciclo + IL/ciclo − Gas.
    - Recuerda qué pasa si el precio sale del rango (se queda 100 % en uno de los tokens y deja de
      cobrar comisiones) y cuándo volver a consultar (al cerrar la vela del ciclo propuesto o si el
      precio sale del rango).
