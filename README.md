@@ -298,6 +298,10 @@ python -m etapas.cribado --capital 5000 [--red base,arbitrum] [--top 5] [--solo-
 - **Rutina diaria**: si existe `cribado.txt` junto a `watchlist.txt` con una línea `CAPITAL [redes]`
   (por ejemplo `4500 base,arbitrum`), la rutina deja `out/cribado.md` y `out/cribado.json`.
 
+- **En GitHub**: pestaña Actions → «Cribado de duplas» → Run workflow (capital en EUR o USD, redes,
+  número de pares y modo solo filtro). El resultado aparece en el resumen de la ejecución
+  (`.github/workflows/cribado.yml`).
+
 Código: `etapas/cribado.py`; tests: `tests/test_cribado.py`, `tests/test_seguimiento.py`.
 
 ### Vigilancia de oportunidades (`oportunidades.txt`)

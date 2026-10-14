@@ -1,0 +1,75 @@
+name: Cribado de duplas
+
+# Lo mismo que la habilidad /pool-cribado, pero en los servidores de GitHub: se pulsa "Run workflow",
+# se escribe el capital y el resultado (qué duplas merecen una posición hoy) aparece en el resumen de
+# la ejecución. La fase 1 tarda segundos; la fase 2 (análisis completo de /pool para los mejores
+# pares) puede tardar de 5 a 35 minutos por el límite gratuito de GeckoTerminal.
+on:
+  workflow_dispatch:
+    inputs:
+      capital:
+        description: "Capital por posición"
+        required: true
+        default: "1000"
+      moneda:
+        description: "Moneda del capital"
+        type: choice
+        options: [EUR, USD]
+        default: EUR
+      red:
+        description: "Solo estas redes (opcional): ethereum, base, arbitrum, solana"
+        required: false
+        default: ""
+      top:
+        description: "Pares que pasan al análisis completo (menos = más rápido)"
+        required: true
+        default: "5"
+      solo_filtro:
+        description: "Solo la fase 1 (segundos, sin recomendación final)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  cribado:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Cribar las duplas
+        env:                    # los datos del formulario llegan como variables, nunca dentro del script
+          CAPITAL: ${{ inputs.capital }}
+          MONEDA: ${{ inputs.moneda }}
+          RED: ${{ inputs.red }}
+          TOP: ${{ inputs.top }}
+          SOLO_FILTRO: ${{ inputs.solo_filtro }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          if [ "$MONEDA" = "EUR" ]; then
+            CAMBIO=$(curl -sf "https://data-api.binance.vision/api/v3/ticker/price?symbol=EURUSDC" \
+              | python -c "import json, sys; print(json.load(sys.stdin)['price'])")
+            USD=$(python -c "import sys; print(round(float(sys.argv[1]) * float(sys.argv[2])))" "$CAPITAL" "$CAMBIO")
+            echo "Capital: $CAPITAL € = $USD \$ (1 € = $CAMBIO USDC, cambio de Binance)." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+          else
+            USD=$(python -c "import sys; print(float(sys.argv[1]))" "$CAPITAL")
+          fi
+          TOP=$(python -c "import sys; print(int(sys.argv[1]))" "$TOP")
+          RED=$(echo "$RED" | tr -d ' ')
+          ARGS=(--capital "$USD" --top "$TOP")
+          [ -n "$RED" ] && ARGS+=(--red "$RED")
+          [ "$SOLO_FILTRO" = "true" ] && ARGS+=(--solo-filtro)
+          python -m etapas.cribado "${ARGS[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
