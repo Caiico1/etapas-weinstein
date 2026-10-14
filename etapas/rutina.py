@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import agentes, vigilancia
+from . import agentes, cribado, vigilancia
 from .analysis import AssetResult, analyze_symbol, parse_symbol
 from .config import DISCLAIMER, ORDER, TIMEFRAMES
 from .contexto import MarketContext, headlines_for, load_context
@@ -258,6 +258,13 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None,
         watched.append(vigilancia.check(w))
     prev_watch = load_previous_watches(hist_dir, today)
     changes += vigilancia.alerts(prev_watch, watched)
+    # Cribado de duplas (opcional: solo si existe cribado.txt; deja out/cribado.md y cribado.json)
+    crib = cribado.load_config(watchlist.parent / "cribado.txt")
+    if crib:
+        print("Cribado de duplas...", flush=True)
+        screen = cribado.run(*crib)
+        cribado.save(screen, out_dir)
+        log.extend(f"cribado: {w}" for w in screen.warnings)
     watch_state = {i["clave"]: i["estado"] for i in watched if not i.get("error")}
     if not notifies:
         watch_state = {k: prev_watch[k] for k in watch_state if k in prev_watch}

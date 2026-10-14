@@ -130,7 +130,7 @@ def test_analyze_end_to_end(fake_world):
             assert o.quote.low <= rep.ranges[o.cycle][0] and o.quote.high >= rep.ranges[o.cycle][1]
         if not o.excluded:
             assert o.level != "desfavorable" and o.net_cycle > 0 and o.net_safe > 0
-            assert o.net_cycle == pytest.approx(o.fees_cycle + o.expected_result * 5000 - o.gas_usd)
+            assert o.net_cycle == pytest.approx(o.fees_cycle + o.expected_result * 5000 - o.gas_usd - o.swap_cycle)
     ok = sorted((o for o in rep.opportunities if not o.excluded), key=lambda o: -o.net_apr)
     assert rep.proposals == op.choose(rep.opportunities)
     if ok:
@@ -140,12 +140,12 @@ def test_analyze_end_to_end(fake_world):
     # La tabla de combinaciones enseña el IL y la cuenta completa: comisiones + IL − gas = neto
     rows = [[c.strip() for c in line.strip("|").split("|")]
             for line in text.split("## Todas las combinaciones evaluadas")[1].splitlines() if line.startswith("|")]
-    assert rows[0][4:8] == ["Comisiones/ciclo", "IL/ciclo", "Gas/reajuste", "Neto/ciclo"]
+    assert rows[0][4:9] == ["Comisiones/ciclo", "IL/ciclo", "Gas/reajuste", "Swap/ciclo", "Neto/ciclo"]
     usd = lambda cell: float(cell.replace("$", "").replace(",", ""))
-    full = [r for r in rows[2:] if "—" not in r[4:8]]
+    full = [r for r in rows[2:] if "—" not in r[4:9]]
     assert full
     for r in full:
-        assert usd(r[4]) + usd(r[5]) - usd(r[6]) == pytest.approx(usd(r[7]), abs=0.02)
+        assert usd(r[4]) + usd(r[5]) - usd(r[6]) - usd(r[7]) == pytest.approx(usd(r[8]), abs=0.03)
     data = op.to_json(rep)
     assert data["par"] == "ETH/USDC" and len(data["combinaciones"]) == len(rep.opportunities)
 
@@ -238,3 +238,63 @@ def test_checklist_shown_for_best_of_each_cycle_when_nothing_is_proposed(fake_wo
     assert [o.cycle for o in best] == ["1d", "1w", "1M"]
     text = op.render(rep)
     assert text.count("Lectura: **No cumple**") == 3
+    assert "mantén el capital en USDC" in text                     # regla del capital parado
+    assert op.to_json(rep)["capital_parado"].startswith("Mientras tanto")
+
+
+# ---------------------------------------------------------------- stop-loss, costes y avisos
+
+def test_backtest_measures_the_stop_loss():
+    cfg = TIMEFRAMES["1d"]
+    r = analyze_candles(Candles(_walk(), None, "test"), cfg)
+    bt = op.backtest(r, 300)
+    assert 0 <= bt.stop_hit < 0.06                       # cuantil 99 %: salta muy pocas veces
+    assert bt.stop_hit < 1 - bt.inside                   # mucho menos que las salidas del rango
+    assert bt.mean_with_stop is not None
+    cross = op.backtest(r, 300, cross=True)              # entre volátiles, stop también por arriba
+    assert cross.stop_hit >= bt.stop_hit
+
+
+def test_stop_levels_never_inside_the_range():
+    assert op.stop_levels(95, 105, 97, 103, cross=True) == (95, 105)
+    assert op.stop_levels(95, 105, 90, 110, cross=False) == (90, None)
+    # Nunca más de un 10 % más allá del borde (el cuantil 99 % mensual puede quedar muy lejos)
+    lo, hi = op.stop_levels(100, 200, 50, 400, cross=True)
+    assert lo == pytest.approx(90) and hi == pytest.approx(220)
+
+
+def test_scenarios_costs_and_new_checklist_rows(fake_world):
+    rep = op.analyze("ETH/USDC", 5000)
+    priced = [o for o in rep.opportunities if o.net_cycle is not None]
+    assert priced
+    for o in priced:
+        p_min, r_min = o.scenarios["min"]
+        p_stop, r_stop = o.scenarios["stop"]
+        assert p_stop <= p_min and r_stop <= r_min < 0 < o.scenarios["max"][1]    # frente a USDC
+        assert "stop_alto" not in o.scenarios                                    # con estable, no hay
+        assert o.entry_swapped == pytest.approx(5000 * o.quote.asset_share, rel=1e-6)
+        assert o.entry_cost > 0 and o.swap_cycle >= 0
+        rows, _ = op.checklist(rep, o)
+        conds = {c: st for _, st, c, _ in rows}
+        assert "Stop-loss definido de antemano" in conds
+        assert conds["El volumen diario supera el TVL del pool"] in (op.OK, op.WARN)
+        assert conds["Los tokens no dependen de un custodio ni de un puente"] == op.OK      # WETH y USDC
+        assert conds["La estable tiene respaldo 1:1 en efectivo y letras del Tesoro"] == op.OK
+        # Los criterios nuevos son avisos: nunca vetan
+        assert all(st != op.FAIL for b, st, _, _ in rows if b in ("Eficiencia", "Riesgo"))
+    text = op.render(rep)
+    if rep.proposals:
+        assert "**Stop-loss**" in text and "**Fondeo**" in text and "Escenarios sin comisiones" in text
+
+
+def test_usdt_and_custodied_tokens_are_flagged(fake_world, monkeypatch):
+    pool = Pool("arbitrum-uniswap-w", "BTC/USDT", "Uniswap v3", "arbitrum",
+                "0x0000000000000000000000000000000000000002", "WBTC/USDT", 0.0005, 10, 8, 6, True)
+    monkeypatch.setattr(op, "discover", lambda b, q: ([pool], []))
+    price = fake_world
+    monkeypatch.setattr(P, "fetch_states", lambda pools: {pool.id: PoolState(price, 10 ** 19, 0.25, 5e7, 5e7)})
+    rep = op.analyze("BTC/USDT", 5000)
+    o = next(o for o in rep.opportunities if o.net_cycle is not None)
+    conds = {c: (st, d) for _, st, c, d in op.checklist(rep, o)[0]}
+    assert conds["La estable tiene respaldo 1:1 en efectivo y letras del Tesoro"][0] == op.WARN
+    assert "BitGo" in conds["Los tokens no dependen de un custodio ni de un puente"][1]

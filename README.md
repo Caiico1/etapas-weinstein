@@ -225,9 +225,31 @@ volumen diario: con 5.000 $ en un pool pequeño, la estimación depende demasiad
      1,5 veces según el pool, y un pool v3 llegó a proponerse con comisiones sobreestimadas.
 5. **Gas** de un reajuste por ciclo: 900.000 unidades de gas al precio actual de cada red (más 0,05 $
    de margen en Base y Arbitrum), o 0,001 SOL en Solana.
-6. **Neto por ciclo** = comisiones × fracción de ciclos dentro + resultado esperado frente a mantener
-   × capital − gas. **Margen de seguridad**: solo se propone lo que sigue siendo positivo con una
-   pérdida frente a mantener un 25 % peor (`SAFETY_LOSS`).
+6. **Cambio de tokens al reajustar** (`Swap/ciclo`): en los ciclos en que el precio sale del rango la
+   posición queda en un solo token y reajustar obliga a cambiar ~la mitad; se cobra a la comisión del
+   pool más barato de la red + 0,05 % de deslizamiento. **Fondeo**: lo que hay que cambiar desde USDC
+   para abrir (la parte del activo; entre dos volátiles, todo) se muestra aparte, con el neto del
+   primer ciclo.
+7. **Neto por ciclo** = comisiones × fracción de ciclos dentro + resultado esperado frente a mantener
+   × capital − gas − cambio de tokens. **Margen de seguridad**: solo se propone lo que sigue siendo
+   positivo con una pérdida frente a mantener un 25 % peor (`SAFETY_LOSS`).
+8. **Stop-loss y escenarios.** Stop: el precio que el par no alcanzó en el 99 % de los ciclos
+   pasados (`STOP_QUANTILE`; el rango usa el 90 %), así que salta ante caídas fuera de lo normal y no
+   en cada salida del rango, pero nunca más de un 10 % más allá del borde (`STOP_MAX_GAP`): en el ciclo
+   mensual el cuantil 99 % llegó a quedar a −52 % del precio. Su papel es cortar la cola de pérdidas
+   frente a USDC: en la media frente a mantener apenas cambia (ETH/USDT semanal, 104 semanas: −1,31 %
+   con stop y −1,16 % sin él). Solo por abajo con una estable; por los dos lados entre dos volátiles. En
+   el histórico se mide cuántas veces saltó y el resultado medio frente a mantener con y sin stop. La
+   propuesta da el resultado **frente a USDC** (sin comisiones) si el precio toca el mínimo, el
+   máximo o el stop. Uniswap no tiene stop nativo: alerta de precio y cierre a mano, o una
+   automatización de salida.
+9. **Avisos del checklist** (⚠️, nunca vetan): volumen/TVL > 1 y comisiones del pool ≥ 0,1 % diario del
+   TVL (eficiencia); protocolo consolidado (más de 1.000 M$ de TVL y años en producción), estable con
+   respaldo 1:1 en efectivo y letras del Tesoro (USDT y DAI no) y tokens que dependen de un custodio o
+   un puente (WBTC, cbBTC, WETH de Wormhole, PAXG, XAUt). No son vetos porque las comisiones reales y
+   el neto ya miden la rentabilidad mejor que esos ratios, y un volumen/TVL alto suele venir de
+   volatilidad (más pérdida frente a mantener) o de volumen inflado. Sin propuesta, la salida da la
+   regla de **capital parado**: USDC en la red del pool mejor situado.
 
 **Qué esperar.** Con estos datos, la liquidez concentrada suele cobrar en comisiones algo parecido
 a lo que pierde frente a mantener los tokens. Los estudios sobre Uniswap v3 encuentran lo mismo:
@@ -237,6 +259,46 @@ buena parte de las posiciones pierde frente a mantener: en «Impermanent Loss in
 eso la habilidad a menudo responde
 «mejor esperar», y cuando propone algo es porque el volumen del pool compensa con margen.
 Tests: `tests/test_oportunidad.py` (sin red) y `tests/test_pools_red.py` (con `ETAPAS_TEST_RED=1`).
+
+### Seguimiento de una posición abierta
+
+```bash
+python -m etapas.seguimiento https://app.uniswap.org/positions/v4/base/12345 --capital 4500 --precio 2650
+python -m etapas.seguimiento base 12345 [--v4] --capital 4500 --precio 2650 [--cobradas 12.5] [--json]
+```
+
+Lee la posición de la blockchain (Uniswap v3 y v4 en Ethereum, Base y Arbitrum; sin cartera ni
+claves) y compara las **comisiones** con lo que ha **variado** la posición: estado del rango, tokens y
+su valor, comisiones pendientes, resultado frente a dejar el capital en USDC y frente a mantener los
+dos tokens (reconstruidos con el capital y el precio de entrada). v3: `positions(id)` del
+NonfungiblePositionManager y `feeGrowthInside` del pool; comprobado al wei contra `collect()`
+simulado desde el dueño en posiciones reales. v4: `getPoolAndPositionInfo(id)` del PositionManager y
+`getPositionInfo` / `getFeeGrowthInside` de StateView; la liquidez leída coincide con
+`getPositionLiquidity` en posiciones reales. Las comisiones ya cobradas no se ven sin recorrer el
+historial: se indican con `--cobradas`. Código: `etapas/seguimiento.py`.
+
+## Habilidad /pool-cribado: qué duplas merecen la pena hoy
+
+**`/pool-cribado`** (o «¿qué pools son rentables ahora con 5.000 $?») busca los pares sin que haya
+que decirlos (`.claude/skills/pool-cribado/SKILL.md`):
+
+```bash
+python -m etapas.cribado --capital 5000 [--red base,arbitrum] [--top 5] [--solo-filtro] [--guardar out]
+```
+
+- **Fase 1** (segundos, una petición a DefiLlama Yields): todos los pools de Uniswap v3, v4 y Orca
+  con TVL ≥ 1 M$. Pasan a la fase 2 los pares con algún pool de tokens verificados, sin hook, con al
+  menos 90 días de historial (efecto Lindy), comisiones/TVL ≥ 0,1 % diario (volumen medio de 7 días ×
+  comisión; `--min-comisiones`) y volumen ≤ 20 × TVL (más suele ser volumen de bots o inflado).
+- **Fase 2**: el análisis completo de `/pool` para los 5 mejores; se recomiendan solo los que pasan
+  todos sus vetos, ordenados por neto anual con margen. Tarda minutos: GeckoTerminal, que usa /pool,
+  limita en la práctica a unas 5-6 peticiones por minuto.
+- También lista, solo como información, los pools entre estables (con el aviso de respaldo) y los
+  pools de tokens fuera de la lista verificada, con sus avisos.
+- **Rutina diaria**: si existe `cribado.txt` junto a `watchlist.txt` con una línea `CAPITAL [redes]`
+  (por ejemplo `4500 base,arbitrum`), la rutina deja `out/cribado.md` y `out/cribado.json`.
+
+Código: `etapas/cribado.py`; tests: `tests/test_cribado.py`, `tests/test_seguimiento.py`.
 
 ### Vigilancia de oportunidades (`oportunidades.txt`)
 
