@@ -12,10 +12,13 @@ Para cada ciclo (diario, semanal, mensual) y cada pool verificado del par:
      últimos 7 y 30 días (el menor), leído de la blockchain (pools.realized_fees). Si la red no tiene nodo con
      histórico (Solana) o falla, estimación con la mediana del volumen diario de 30 días y la
      liquidez activa actual, ya descontada la comisión del protocolo.
-  5. Gas de un reajuste por ciclo.
+  5. Gas de un reajuste por ciclo y cambio de tokens esperado al reajustar (cuando el precio sale
+     del rango hay que cambiar ~la mitad de la posición).
+  6. Stop-loss: precio que el par no alcanzó en el STOP_QUANTILE de los ciclos pasados, con lo que
+     se perdería frente a USDC al tocarlo y su comportamiento histórico (cuántas veces saltó).
 Resultado neto por ciclo = comisiones × fracción de ciclos dentro + resultado medio frente a
-mantener × capital − gas. Se proponen las dos mejores combinaciones (de ciclos distintos si
-es posible) entre las que no tienen etapa desfavorable y dan un resultado neto positivo.
+mantener × capital − gas − cambio de tokens. Se proponen las dos mejores combinaciones (de ciclos
+distintos si es posible) entre las que no tienen etapa desfavorable y dan un resultado neto positivo.
 """
 import argparse
 import json
@@ -32,7 +35,8 @@ from .config import DISCLAIMER, LP_QUANTILE, TIMEFRAMES
 from .data import STABLES, DataError, canonical_pair, fetch_candles, fetch_pair_candles
 from .descubrir import discover, supported_symbols
 from .indicators import expected_range
-from .liquidez import PoolQuote, composition, divergence, lp_range, quote_pool, verdict
+from .liquidez import (PoolQuote, amounts_per_liquidity, composition, divergence, lp_range, position_value,
+                       quote_pool, verdict)
 from .pools import Pool
 
 CYCLES = [("1d", "Diario", 1.0), ("1w", "Semanal", 7.0), ("1M", "Mensual", 30.44)]
@@ -54,6 +58,29 @@ ALIASES = {"WETH": "ETH", "WBTC": "BTC", "CBBTC": "BTC", "WSOL": "SOL", "USDT0":
 # Activos sin histórico suficiente que siguen el mismo precio que otro: XAUt y PAXG son una onza
 # de oro cada uno (XAUT cotiza en Binance solo desde marzo de 2026).
 PRICE_PROXY = {"XAUT": "PAXG"}
+# Stop-loss: precio que el par no alcanzó en el 99 % de los ciclos pasados (el rango usa el 90 %).
+# Así salta solo ante caídas fuera de lo normal y no en cada salida del rango.
+STOP_QUANTILE = 0.99
+# ... pero nunca más de un 10 % más allá del borde del rango: en el ciclo mensual el cuantil 99 % queda
+# a veces a −50 % del precio, demasiado lejos para cortar pérdidas.
+STOP_MAX_GAP = 0.10
+SWAP_SLIPPAGE = 0.0005                                # deslizamiento supuesto al cambiar tokens
+# Criterios de eficiencia del pool (avisos, no vetos: las comisiones reales ya los miden mejor)
+VOL_TVL_REF = 1.0                                     # volumen diario mayor que el TVL
+FEES_TVL_REF = 0.001                                  # comisiones del pool ≥ 0,1 % del TVL al día
+# Estables sin respaldo 1:1 en efectivo y deuda pública a corto plazo
+STABLE_BACKING = {
+    "USDT": "Tether: parte de las reservas en BTC, oro y préstamos, no solo efectivo y letras del Tesoro",
+    "DAI": "respaldada por préstamos con colateral cripto, no por efectivo",
+}
+STABLE_TOKENS = {"USDC", "USDT", "DAI"}
+# Tokens que dependen de un custodio o de un puente (riesgo distinto del de precio)
+TOKEN_CUSTODY = {"WBTC": "custodiado por BitGo", "cbBTC": "custodiado por Coinbase",
+                 "WETH (Wormhole)": "puenteado con Wormhole", "PAXG": "oro custodiado por Paxos",
+                 "XAUt": "oro custodiado por Tether"}
+# Protocolos admitidos: más de 1.000 M$ de TVL y años en producción, incluidos mercados bajistas
+CONSOLIDATED_DEX = {"Uniswap v3": "Uniswap v3, desde 2021", "Uniswap v4": "Uniswap desde 2018, v4 desde 2025",
+                    "Orca": "Orca desde 2021, Whirlpools desde 2022"}
 
 
 @dataclass
@@ -62,6 +89,8 @@ class Backtest:
     mean_result: float | None     # resultado medio frente a mantener (negativo = pérdida)
     samples: int
     per_width: float | None = None   # resultado medio por unidad de semianchura del rango (log)
+    stop_hit: float | None = None    # fracción de ciclos en que se habría tocado el stop-loss
+    mean_with_stop: float | None = None   # resultado medio frente a mantener saliendo en el stop
 
     def expected(self, low: float, high: float) -> float | None:
         """Resultado esperado frente a mantener para un rango [low, high]. El método ajusta la
@@ -89,6 +118,14 @@ class Opportunity:
     net_apr: float | None = None
     base_amount: float | None = None
     quote_amount: float | None = None
+    swap_cycle: float | None = None        # cambio de tokens esperado por ciclo al reajustar ($)
+    entry_swapped: float | None = None     # dólares que hay que cambiar desde USDC para abrir
+    entry_cost: float | None = None        # coste de ese cambio ($)
+    stop_low: float | None = None          # stop-loss por abajo (precio del par)
+    stop_high: float | None = None         # ... y por arriba, solo entre dos volátiles
+    scenarios: dict = field(default_factory=dict)   # resultado frente a USDC (fracción) en cada precio
+    vol_tvl: float | None = None           # volumen diario (mediana 30 días) / TVL
+    fees_tvl: float | None = None          # comisiones diarias de todo el pool / TVL
     excluded: str = ""
 
 
@@ -103,6 +140,7 @@ class Report:
     stages: dict = field(default_factory=dict)
     ranges: dict = field(default_factory=dict)
     backtests: dict = field(default_factory=dict)
+    stops: dict = field(default_factory=dict)
     opportunities: list[Opportunity] = field(default_factory=list)
     proposals: list[Opportunity] = field(default_factory=list)
     illiquid: list[str] = field(default_factory=list)
@@ -138,25 +176,56 @@ def parse_pair(text: str) -> tuple[str, str, list[str]]:
 # ---------------------------------------------------------------- piezas
 
 
-def backtest(r: TimeframeResult, samples: int) -> Backtest:
+def stop_levels(lo: float, hi: float, s_lo: float, s_hi: float, cross: bool) -> tuple[float, float | None]:
+    """Stop-loss por abajo (y por arriba entre dos volátiles), nunca dentro del rango ni más de
+    STOP_MAX_GAP más allá de su borde. Con una estable no hay stop por arriba: al salir por ahí la
+    posición ya queda en la estable."""
+    low = max(min(s_lo, lo), lo * (1 - STOP_MAX_GAP))
+    high = min(max(s_hi, hi), hi * (1 + STOP_MAX_GAP)) if cross else None
+    return low, high
+
+
+def backtest(r: TimeframeResult, samples: int, cross: bool = False) -> Backtest:
     """Aplica el método del rango a cada uno de los últimos `samples` ciclos con los datos que había
-    al empezar cada uno (fuera de muestra) y mide qué pasó en ese ciclo."""
+    al empezar cada uno (fuera de muestra) y mide qué pasó en ese ciclo. También mide el stop-loss:
+    cuántas veces se habría tocado y el resultado frente a mantener saliendo en él (la posición se
+    cierra al precio del stop y se queda así hasta el cierre del ciclo)."""
     if r.status != "ok" or r.candles is None or r.history is None:
         return Backtest(None, None, 0)
     cfg = TIMEFRAMES[r.timeframe]
     df, atr = r.candles, r.history["atr"]
-    inside, results, scaled = [], [], []
+    inside, results, scaled, hits, stopped = [], [], [], [], []
     for t in range(max(0, len(df) - 1 - samples), len(df) - 1):
         lo, hi = expected_range(df.iloc[:t + 1], atr.iloc[:t + 1], LP_QUANTILE, cfg.range_lookback)
         if pd.isna(lo) or pd.isna(hi) or lo <= 0:
             continue
+        s_lo, s_hi = expected_range(df.iloc[:t + 1], atr.iloc[:t + 1], STOP_QUANTILE, cfg.range_lookback)
         c, nxt = df["close"].iloc[t], df.iloc[t + 1]
         inside.append(nxt["low"] >= lo and nxt["high"] <= hi)
         results.append(divergence(c, nxt["close"], lo, hi))
         scaled.append(results[-1] / (math.log(hi / lo) / 2))
+        stop_lo, stop_hi = stop_levels(lo, hi, s_lo, s_hi, cross)
+        hit = (stop_lo if stop_lo > 0 and nxt["low"] <= stop_lo else
+               stop_hi if stop_hi is not None and nxt["high"] >= stop_hi else None)
+        hits.append(hit is not None)
+        if hit is None:
+            stopped.append(results[-1])
+        else:                       # sale al precio del stop y se compara con mantener al cierre
+            x0, y0 = amounts_per_liquidity(c, lo, hi)
+            stopped.append(position_value(hit, lo, hi) / (x0 * nxt["close"] + y0) - 1)
     if len(inside) < MIN_BACKTEST:
         return Backtest(None, None, len(inside))
-    return Backtest(float(np.mean(inside)), float(np.mean(results)), len(inside), float(np.mean(scaled)))
+    return Backtest(float(np.mean(inside)), float(np.mean(results)), len(inside), float(np.mean(scaled)),
+                    float(np.mean(hits)), float(np.mean(stopped)))
+
+
+def stop_range(r: TimeframeResult, center: float) -> tuple[float, float] | None:
+    """Precios que el par no alcanzó, por cada lado, en el STOP_QUANTILE de los ciclos pasados."""
+    if r.status != "ok" or r.candles is None or r.history is None:
+        return None
+    lo, hi = expected_range(r.candles, r.history["atr"], STOP_QUANTILE, TIMEFRAMES[r.timeframe].range_lookback,
+                            center=center)
+    return None if pd.isna(lo) or pd.isna(hi) else (float(lo), float(hi))
 
 
 def gas_costs(chains: set[str]) -> tuple[dict[str, float], list[str]]:
@@ -225,7 +294,8 @@ def analyze(pair: str, capital: float = 5000.0, chains=None) -> Report:
         up = asset.timeframes.get(HIGHER[key]) if HIGHER[key] else None
         rep.stages[key] = verdict(r, up, base, quote)
         rep.ranges[key] = lp_range(r, rep.price)
-        rep.backtests[key] = backtest(r, BACKTEST[key])
+        rep.backtests[key] = backtest(r, BACKTEST[key], cross=quote not in STABLES)
+        rep.stops[key] = stop_range(r, rep.price)
 
     found, warn = discover(base, quote)
     rep.warnings += warn
@@ -260,6 +330,11 @@ def analyze(pair: str, capital: float = 5000.0, chains=None) -> Report:
                             f"incompleto; vuelve a ejecutarlo en unos minutos")
     gas, warn = gas_costs({p.chain for p, _, _, _ in liquid})
     rep.warnings += warn
+    # Cambiar tokens: en el pool más barato de la red, más un deslizamiento prudente
+    swap_rate = {}
+    for pool, _, _, _ in liquid:
+        swap_rate[pool.chain] = min(swap_rate.get(pool.chain, 1.0), pool.fee + SWAP_SLIPPAGE)
+    cross = quote not in STABLES
 
     for key, name, days in CYCLES:
         level, reasons = rep.stages[key]
@@ -268,6 +343,11 @@ def analyze(pair: str, capital: float = 5000.0, chains=None) -> Report:
             q = (quote_pool(pool, st, rng[0], rng[1], rep.price, capital, rep.quote_usd, vol, real)
                  if rng else PoolQuote(pool, error="sin rango: historial insuficiente"))
             o = Opportunity(key, name, days, level, reasons, pool, q, bt, gas.get(pool.chain))
+            if st.tvl:
+                # Comisiones de todo el pool al día: lo cobrado por unidad de liquidez × liquidez activa
+                pool_fees = (real * st.liquidity if real is not None and st.liquidity
+                             else vol * pool.fee * (1 - st.protocol_cut))
+                o.vol_tvl, o.fees_tvl = vol / st.tvl, pool_fees / st.tvl
             if rng is None:
                 o.excluded = "sin rango: historial insuficiente"
             elif key == "1d" and pool.chain in NO_DAILY_ON:
@@ -279,14 +359,27 @@ def analyze(pair: str, capital: float = 5000.0, chains=None) -> Report:
             elif o.gas_usd is None:
                 o.excluded = "sin precio del gas: no se puede calcular el neto"
             else:
+                share = composition(q.pool_price, q.low, q.high)
+                rate = swap_rate[pool.chain]
+                # Al salir del rango la posición queda en un solo token: reajustar cambia ~la mitad
+                o.swap_cycle = (1 - bt.inside) * 0.5 * capital * rate
+                # Desde USDC: se compra la parte del activo (entre dos volátiles, los dos tokens)
+                o.entry_swapped = capital if cross else capital * share
+                o.entry_cost = o.entry_swapped * rate
                 o.fees_cycle = q.fee_day * days * bt.inside
                 o.expected_result = bt.expected(q.low, q.high)
-                o.net_cycle = o.fees_cycle + o.expected_result * capital - o.gas_usd
-                o.net_safe = o.fees_cycle + SAFETY_LOSS * o.expected_result * capital - o.gas_usd
+                o.net_cycle = o.fees_cycle + o.expected_result * capital - o.gas_usd - o.swap_cycle
+                o.net_safe = o.fees_cycle + SAFETY_LOSS * o.expected_result * capital - o.gas_usd - o.swap_cycle
                 o.net_apr = o.net_cycle / capital * 365 / days
-                share = composition(q.pool_price, q.low, q.high)
                 o.base_amount = capital * share / (q.pool_price * rep.quote_usd)
                 o.quote_amount = capital * (1 - share) / rep.quote_usd
+                v0 = position_value(q.pool_price, q.low, q.high)
+                if rep.stops.get(key):
+                    o.stop_low, o.stop_high = stop_levels(q.low, q.high, *rep.stops[key], cross)
+                for label, price in (("min", q.low), ("max", q.high), ("stop", o.stop_low),
+                                     ("stop_alto", o.stop_high)):
+                    if price:
+                        o.scenarios[label] = (price, position_value(price, q.low, q.high) / v0 - 1)
                 if level == "desfavorable":
                     o.excluded = "etapa desfavorable"
                 elif level == "sin datos":
@@ -338,6 +431,13 @@ def _stage_line(rep: Report, key: str) -> str:
         return f"sin datos ({r.message})"
     trans = f" (en transición {r.transition})" if r.transition else ""
     return f"etapa {r.stage} · {r.stage_name}{trans}, confianza {r.confidence_label}"
+
+
+def _scen_txt(rep: Report, o: Opportunity, key: str) -> str:
+    """'−4,1 %, −205,00 $ frente a USDC' para un escenario de precio (sin comisiones)."""
+    price, ret = o.scenarios[key]
+    unit = "frente a USDC" if rep.quote in STABLES else f"medido en {rep.quote}"
+    return f"{price / o.quote.pool_price - 1:+.1%} desde el precio; {ret:+.1%}, {ret * rep.capital:+,.2f} $ {unit}"
 
 
 OK, WARN, FAIL = "✅", "⚠️", "❌"
@@ -396,6 +496,28 @@ def checklist(rep: Report, o: Opportunity) -> tuple[list[tuple[str, str, str, st
     if r.status == "ok":
         rows.append(("Contexto", WARN if r.confidence_label == "baja" else OK,
                      "La lectura de la etapa es fiable", f"confianza {r.confidence_label}"))
+    if o.vol_tvl is not None:
+        rows.append(("Eficiencia", OK if o.vol_tvl > VOL_TVL_REF else WARN,
+                     "El volumen diario supera el TVL del pool",
+                     f"volumen {o.vol_tvl:.2f} veces el TVL (mediana de 30 días)"))
+        rows.append(("Eficiencia", OK if o.fees_tvl >= FEES_TVL_REF else WARN,
+                     f"Las comisiones del pool llegan al {FEES_TVL_REF:.1%} diario del TVL".replace(".", ","),
+                     f"{o.fees_tvl:.3%} del TVL al día".replace(".", ",")))
+    if o.stop_low:
+        bt_txt = (f"; en el histórico saltó en el {bt.stop_hit:.0%} de los ciclos" if bt.stop_hit is not None else "")
+        rows.append(("Riesgo", OK, "Stop-loss definido de antemano",
+                     f"cerrar si baja de {_p(o.stop_low)} {rep.quote} ({_scen_txt(rep, o, 'stop')})" + bt_txt))
+    rows.append(("Riesgo", OK if o.pool.dex in CONSOLIDATED_DEX else WARN,
+                 "Protocolo consolidado (más de 1.000 M$ de TVL y años en producción)",
+                 CONSOLIDATED_DEX.get(o.pool.dex, f"{o.pool.dex}: sin historial suficiente")))
+    toks = o.pool.pair.split("/")
+    if any(t in STABLE_TOKENS for t in toks):
+        weak = [f"{t}: {STABLE_BACKING[t]}" for t in toks if t in STABLE_BACKING]
+        rows.append(("Riesgo", WARN if weak else OK, "La estable tiene respaldo 1:1 en efectivo y letras del Tesoro",
+                     "; ".join(weak) or "USDC: efectivo y letras del Tesoro a corto plazo"))
+    custody = [f"{t} {TOKEN_CUSTODY[t]}" for t in toks if t in TOKEN_CUSTODY]
+    rows.append(("Riesgo", WARN if custody else OK, "Los tokens no dependen de un custodio ni de un puente",
+                 "; ".join(custody) or "ninguno"))
     if o.excluded and not any(st == FAIL for _, st, _, _ in rows):
         rows.append(("Veto", FAIL, "El programa puede evaluar esta combinación", o.excluded))
     fails = [c for _, st, c, _ in rows if st == FAIL]
@@ -443,6 +565,7 @@ def render(rep: Report) -> str:
                 "suficiente y resultado neto positivo incluso con el margen de seguridad. Con los datos de "
                 "hoy, las comisiones no compensan lo que se pierde frente a mantener los tokens: mejor "
                 "esperar y volver a consultar.", ""]
+        out += [idle_capital(rep), ""]
         best = best_per_cycle(rep.opportunities)
         if best:
             out += ["## Checklist: qué falla en la mejor combinación de cada ciclo", ""]
@@ -460,14 +583,14 @@ def render(rep: Report) -> str:
         out.append(f"| {name} | {_stage_line(rep, key)} | {level} | {rtxt} | {btxt} |")
     out += ["", "## Todas las combinaciones evaluadas", "",
             "| Ciclo | Pool | Comisiones/día | Fuente | Comisiones/ciclo | IL/ciclo | Gas/reajuste | "
-            "Neto/ciclo | Neto anual | Estado |",
-            "|---|---|---|---|---|---|---|---|---|---|"]
+            "Swap/ciclo | Neto/ciclo | Neto anual | Estado |",
+            "|---|---|---|---|---|---|---|---|---|---|---|"]
     for o in sorted(rep.opportunities, key=lambda o: (o.net_apr is None, -(o.net_apr or 0))):
         star = "**propuesta**" if o in rep.proposals else (o.excluded or "válida")
         il = None if o.expected_result is None else o.expected_result * rep.capital
         out.append(f"| {o.name} | {o.pool.label} | {_usd(o.quote.fee_day)} | "
                    f"{ {'real': 'real', 'volumen': 'volumen'}.get(o.quote.fee_source, '—') } | "
-                   f"{_usd(o.fees_cycle)} | {_usd(il)} | {_usd(o.gas_usd)} | "
+                   f"{_usd(o.fees_cycle)} | {_usd(il)} | {_usd(o.gas_usd)} | {_usd(o.swap_cycle)} | "
                    f"{_usd(o.net_cycle)} | {_pct(o.net_apr)} | {star} |")
     if rep.illiquid:
         out += ["", f"Pools descartados por poca liquidez (TVL < {MIN_TVL / 1e3:,.0f} k$ o volumen < "
@@ -483,9 +606,14 @@ def render(rep: Report) -> str:
                 "de 30 días cuando no hay dato on-chain. Se cobran solo con el precio dentro. En la tabla, "
                 "«Comisiones/ciclo» = comisiones por día × días del ciclo × fracción de ciclos dentro; «IL/ciclo» "
                 "(pérdida impermanente) = resultado esperado frente a mantener × capital, casi siempre negativo; "
-                "y Neto/ciclo = Comisiones/ciclo + IL/ciclo − Gas/reajuste. Solo se propone lo que sigue siendo positivo con una pérdida un "
-                f"{SAFETY_LOSS - 1:.0%} peor. Checklist: ordena esas mismas condiciones; un ❌ es un veto (la "
-                "combinación no se propone) y un ⚠️ es un aviso que no la impide. Que se cumplan todas indica "
+                "«Swap/ciclo» = cambio de tokens esperado al reajustar (la mitad de la posición, en los ciclos en "
+                f"que el precio sale del rango, a la comisión del pool más barato de la red + {SWAP_SLIPPAGE:.2%} de "
+                "deslizamiento); y Neto/ciclo = Comisiones/ciclo + IL/ciclo − Gas/reajuste − Swap/ciclo. Solo se "
+                "propone lo que sigue siendo positivo con una pérdida un "
+                f"{SAFETY_LOSS - 1:.0%} peor. Stop-loss: precio que el par no alcanzó en el {STOP_QUANTILE:.0%} de "
+                f"los ciclos pasados, como mucho un {STOP_MAX_GAP:.0%} más allá del borde del rango. Checklist: ordena esas mismas condiciones; un ❌ es un veto (la "
+                "combinación no se propone) y un ⚠️ es un aviso que no la impide (los criterios de eficiencia y de "
+                "riesgo de tokens son avisos: las comisiones reales y el neto ya miden la rentabilidad). Que se cumplan todas indica "
                 "que la combinación encaja en el método, no que vaya a salir bien. "
                 "Son estimaciones: el volumen y la liquidez del pool cambian cada día.",
             "", f"_{DISCLAIMER}_"]
@@ -529,14 +657,60 @@ def _proposal(rep: Report, o: Opportunity, i: int) -> list[str]:
            if qt.fee_source == "real"
            else "estimadas por volumen, sin dato on-chain")
         + "), resultado frente a mantener "
-        f"{o.expected_result * rep.capital:+,.2f} $, gas {_usd(o.gas_usd)} → **neto {_usd(o.net_cycle)}**, "
+        f"{o.expected_result * rep.capital:+,.2f} $, gas {_usd(o.gas_usd)}, cambio de tokens al reajustar "
+        f"{_usd(o.swap_cycle)} → **neto {_usd(o.net_cycle)}**, "
         f"equivalente a {_pct(o.net_apr)} anual. Con una pérdida un {SAFETY_LOSS - 1:.0%} peor: "
         f"{_usd(o.net_safe)} por ciclo.",
+        f"- **Fondeo**: ten el capital en USDC en {pool.chain.capitalize()} hasta abrir. Para abrir hay que "
+        f"cambiar unos {_usd(o.entry_swapped)} "
+        f"{'a ' + base_tok if q in STABLES else 'a los dos tokens'}: coste estimado {_usd(o.entry_cost)}, "
+        f"así que el neto del primer ciclo queda en {_usd(o.net_cycle - o.entry_cost)}.",
+        *_risk_lines(rep, o, base_tok, quote_tok),
         f"- **Si sale por arriba** te quedas 100 % en {quote_tok}; **por abajo**, 100 % en {base_tok}. En "
         f"ambos casos deja de cobrar comisiones: vuelve a ejecutar la habilidad y reajusta. Revisa como "
         f"mínimo al cerrar cada vela {'diaria' if o.cycle == '1d' else 'semanal' if o.cycle == '1w' else 'mensual'}.",
+        f"- **Seguimiento** una vez abierta: `python -m etapas.seguimiento {pool.chain} <número de la posición> "
+        f"--capital {rep.capital:g} --precio {_p(qt.pool_price)}` compara las comisiones cobradas con lo que "
+        f"ha variado la posición.",
         "",
     ]
+
+
+def _risk_lines(rep: Report, o: Opportunity, base_tok: str, quote_tok: str) -> list[str]:
+    """Escenarios frente a USDC (sin comisiones) y stop-loss."""
+    if "min" not in o.scenarios:
+        return []
+    q, bt = rep.quote, o.backtest
+    lines = [f"- **Escenarios sin comisiones**: si el precio toca el mínimo ({_p(o.scenarios['min'][0])}): "
+             f"{_scen_txt(rep, o, 'min')}; si toca el máximo ({_p(o.scenarios['max'][0])}): "
+             f"{_scen_txt(rep, o, 'max')}."]
+    if "stop" in o.scenarios:
+        txt = (f"- **Stop-loss**: cierra la posición si el precio baja de **{_p(o.stop_low)} {q}** "
+               f"({_scen_txt(rep, o, 'stop')})")
+        if "stop_alto" in o.scenarios:
+            txt += (f" o si sube de **{_p(o.stop_high)} {q}** ({_scen_txt(rep, o, 'stop_alto')})")
+        txt += (f". Es el precio que el par no alcanzó en el {STOP_QUANTILE:.0%} de los ciclos pasados: salta solo "
+                f"ante un movimiento fuera de lo normal, no en cada salida del rango (como mucho, un "
+                f"{STOP_MAX_GAP:.0%} más allá de su borde).")
+        if bt.stop_hit is not None:
+            txt += (f" En el histórico ({bt.samples} ciclos) saltó en el {bt.stop_hit:.0%}; resultado medio frente "
+                    f"a mantener con stop {bt.mean_with_stop:+.2%} por ciclo y sin stop {bt.mean_result:+.2%}.")
+        if q not in STABLES:
+            txt += f" Si el DEX muestra el precio al revés ({rep.base} por {q}): " + (
+                f"{_p(1 / o.stop_low)}" + (f" y {_p(1 / o.stop_high)}" if o.stop_high else "")) + "."
+        txt += (" Uniswap no tiene stop-loss: ponlo como alerta de precio y cierra a mano, o usa una "
+                "automatización de salida (por ejemplo, Auto-Exit de Revert Finance).")
+        lines.append(txt)
+    return lines
+
+
+def idle_capital(rep: Report) -> str:
+    """Regla de capital parado cuando no hay propuesta."""
+    ok = [o for o in rep.opportunities if o.net_apr is not None]
+    where = max(ok, key=lambda o: o.net_apr).pool.chain.capitalize() if ok else None
+    return ("**Mientras tanto**: mantén el capital en USDC" + (f" en {where}, la red del pool mejor situado," if where else "")
+            + " para no asumir la volatilidad de un token sin cobrar comisiones por ello y poder abrir la posición "
+              "sin mover fondos de red cuando aparezca la oportunidad.")
 
 
 def to_json(rep: Report) -> dict:
@@ -554,12 +728,18 @@ def to_json(rep: Report) -> dict:
                 "resultado_esperado": o.expected_result, "comisiones_ciclo": o.fees_cycle,
                 "comisiones_dia": o.quote.fee_day, "fuente_comisiones": o.quote.fee_source or None,
                 "enlace_dex": o.pool.app_url or None, "enlace_geckoterminal": o.pool.url,
-                "gas_reajuste": o.gas_usd, "neto_ciclo": o.net_cycle,
+                "gas_reajuste": o.gas_usd, "swap_ciclo": o.swap_cycle, "importe_a_cambiar": o.entry_swapped,
+                "coste_entrada": o.entry_cost, "stop_bajo": o.stop_low, "stop_alto": o.stop_high,
+                "escenarios": {k: {"precio": p, "resultado": r} for k, (p, r) in o.scenarios.items()},
+                "historico_stop_salta": o.backtest.stop_hit, "historico_resultado_con_stop": o.backtest.mean_with_stop,
+                "volumen_tvl": o.vol_tvl, "comisiones_tvl_dia": o.fees_tvl, "neto_ciclo": o.net_cycle,
                 "neto_anual": o.net_apr, "neto_ciclo_con_margen": o.net_safe, "excluida": o.excluded or None}
     return {"par": f"{rep.base}/{rep.quote}", "capital": rep.capital, "precio": rep.price,
             "error": rep.error or None, "propuestas": [opp(o) for o in rep.proposals],
             "combinaciones": [opp(o) for o in rep.opportunities], "avisos": rep.warnings,
-            "descartados_por_liquidez": rep.illiquid, "aviso": DISCLAIMER}
+            "descartados_por_liquidez": rep.illiquid,
+            "capital_parado": None if rep.proposals or rep.error else idle_capital(rep).replace("**", ""),
+            "aviso": DISCLAIMER}
 
 
 def main(argv: list[str] | None = None) -> int:

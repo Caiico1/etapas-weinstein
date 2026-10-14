@@ -1,6 +1,6 @@
 ---
 name: pool
-description: Mejores oportunidades de liquidez concentrada (Uniswap v3, Uniswap v4 y Orca) para un par de criptomonedas. Dado un par como ETH/USDC, BTC/USDT o ETH/BTC y un capital, indica el mejor ciclo (diario, semanal o mensual), el pool concreto (red, DEX, comisión y dirección), el rango exacto de precios ajustado a los ticks del pool y el depósito de cada token. Úsala cuando el usuario pida un pool, un par o una dupla para aportar liquidez, pregunte qué rango poner en Uniswap u Orca, o escriba /pool.
+description: Mejores oportunidades de liquidez concentrada (Uniswap v3, Uniswap v4 y Orca) para un par de criptomonedas. Dado un par como ETH/USDC, BTC/USDT o ETH/BTC y un capital, indica el mejor ciclo (diario, semanal o mensual), el pool concreto (red, DEX, comisión y dirección), el rango exacto de precios ajustado a los ticks del pool, el depósito de cada token, el stop-loss y los escenarios frente a USDC. También sigue una posición ya abierta (comisiones cobradas frente a lo que ha variado). Úsala cuando el usuario pida un pool, un par o una dupla para aportar liquidez, pregunte qué rango poner en Uniswap u Orca, cómo va su posición de liquidez, o escriba /pool. Si no dice qué par mirar, usa /pool-cribado.
 ---
 
 # Oportunidades de liquidez concentrada para un par
@@ -11,7 +11,9 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
 ## Pasos
 
 1. **Par y capital.** Toma el par del mensaje del usuario (por ejemplo `ETH/USDC`, `WBTC/USDC`,
-   `ETH/BTC`) y el capital en dólares. Si no da capital, usa **5000**. Si no da par, pregúntalo.
+   `ETH/BTC`) y el capital en dólares. Si no da capital, usa **5000**. Si no da par y quiere que le
+   digas cuáles merecen la pena, usa **/pool-cribado**; si no, pregúntalo. Si pregunta por una
+   posición que **ya tiene abierta**, ve a «Seguimiento de una posición abierta».
 2. **Ejecuta** desde la raíz del proyecto (tarda entre 1 y 3 minutos: consulta la blockchain,
    Binance y GeckoTerminal respetando sus límites gratuitos):
 
@@ -28,6 +30,13 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
      introducir, el **depósito** de cada token para su
      capital, la etapa y su idoneidad, el comportamiento histórico del método y la estimación
      neta por ciclo (con y sin margen de seguridad). Copia los números tal cual.
+   - De cada propuesta, además: el **fondeo** (tener USDC en esa red; cuánto hay que cambiar para
+     abrir, su coste y el neto del primer ciclo), los **escenarios sin comisiones** frente a USDC (qué
+     pasa en dólares si el precio toca el mínimo o el máximo) y el **stop-loss** (precio, pérdida en
+     dólares si salta y cuántas veces saltó en el histórico). Recuerda que Uniswap no tiene stop-loss
+     nativo: alerta de precio y cierre a mano, o una automatización de salida.
+   - Si **no hay propuesta**, da también la regla de **capital parado** que muestra la salida
+     (mantener USDC en la red del pool mejor situado).
    - Si **no hay propuesta**: dilo claramente y explica el motivo que da la salida (etapa
      desfavorable, poca liquidez o que las comisiones no compensan la pérdida frente a mantener
      los tokens). Recomendar esperar también es una respuesta válida.
@@ -36,13 +45,36 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
      final. No lo rellenes ni lo corrijas tú. Un ❌ es un veto; un ⚠️ es un aviso: coméntalos, sobre
      todo «comisiones estimadas por volumen» y «ciclo superior en contra». Que todo esté en verde
      significa que la combinación encaja en el método, no que vaya a salir bien: dilo así.
+   - Los bloques **Eficiencia** (volumen/TVL > 1; comisiones del pool ≥ 0,1 % diario del TVL) y
+     **Riesgo** (protocolo consolidado, respaldo de la estable, tokens custodiados o puenteados) son
+     solo avisos: nunca vetan, porque las comisiones reales y el neto ya miden la rentabilidad, y un
+     volumen/TVL alto suele venir de volatilidad. Comenta los ⚠️ de USDT (reservas no solo en efectivo
+     y letras del Tesoro) y de tokens custodiados (WBTC, cbBTC, oro tokenizado) o puenteados.
    - Resume en una frase la tabla de combinaciones evaluadas si ayuda a entender la elección. En esa
-     tabla, «IL/ciclo» es la pérdida impermanente y Neto/ciclo = Comisiones/ciclo + IL/ciclo − Gas.
+     tabla, «IL/ciclo» es la pérdida impermanente, «Swap/ciclo» el cambio de tokens esperado al
+     reajustar, y Neto/ciclo = Comisiones/ciclo + IL/ciclo − Gas − Swap.
    - Recuerda qué pasa si el precio sale del rango (se queda 100 % en uno de los tokens y deja de
      cobrar comisiones) y cuándo volver a consultar (al cerrar la vela del ciclo propuesto o si el
      precio sale del rango).
 4. **Errores.** Si el programa devuelve un error (par no admitido, sin datos), muéstralo tal cual
    con la lista de símbolos disponibles. No intentes calcular tú el rango por otro camino.
+
+## Seguimiento de una posición abierta
+
+Si el usuario pregunta cómo va una posición que ya tiene en Uniswap (v3 o v4, Ethereum, Base o
+Arbitrum), pídele el **número de la posición** o la **URL** de app.uniswap.org
+(`.../positions/v4/base/12345`), el **capital** que puso y el **precio** del par al abrirla, y ejecuta:
+
+```bash
+python -m etapas.seguimiento https://app.uniswap.org/positions/v4/base/12345 --capital 4500 --precio 2650
+python -m etapas.seguimiento base 12345 --v4 --capital 4500 --precio 2650 --cobradas 12.5
+```
+
+Presenta el estado (dentro o fuera del rango), los tokens y su valor, las comisiones pendientes y la
+tabla: variación de la posición sin comisiones, comisiones, resultado frente a dejarlo en USDC y
+frente a mantener los dos tokens, con la lectura final («las comisiones compensan» o no). Las
+comisiones ya cobradas antes solo cuentan si las indica con `--cobradas`. Solo lee datos públicos
+de la blockchain: no necesita su cartera. Las posiciones de Orca (Solana) no se pueden seguir aún.
 
 ## Reglas
 
@@ -66,4 +98,8 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
   elija la versión y la comisión de la propuesta (la aplicación propone v4 por defecto).
 - Las comisiones salen de lo que pagó de verdad cada pool (dato on-chain, el menor entre 7 y 30
   días); solo si no hay ese dato se estiman por volumen, y la tabla lo indica en «Fuente».
+- Stop-loss: el precio que el par no alcanzó en el 99 % de los ciclos pasados (el rango usa el 90 %),
+  como mucho un 10 % más allá del borde del rango, validado en el mismo histórico que el rango. Su
+  papel es cortar la cola de pérdidas frente a USDC; en la media frente a mantener apenas cambia. Con una estable solo hay stop por abajo; entre dos
+  volátiles, por los dos lados.
 - Detalle del método: README, sección «Habilidad /pool».
