@@ -15,7 +15,7 @@ import struct
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -354,8 +354,84 @@ def realized_fees(pool: Pool, usd0: float, usd1: float, days: int = 7) -> float 
         return None
     if t_head <= t_old:
         return None
+    return _rate(pool, (a0, a1), (b0, b1), t_old, t_head, usd0, usd1)
+
+
+def _rate(pool: Pool, old: tuple[int, int], new: tuple[int, int], t_old: int, t_new: int,
+          usd0: float, usd1: float) -> float:
+    """Dólares al día por unidad de liquidez entre dos lecturas de los acumuladores."""
     mod = 1 << 256                                   # los acumuladores dan la vuelta por diseño
-    d0, d1 = (b0 - a0) % mod, (b1 - a1) % mod
+    d0, d1 = (new[0] - old[0]) % mod, (new[1] - old[1]) % mod
     usd = d0 / 2 ** 128 / 10 ** pool.dec0 * usd0 + d1 / 2 ** 128 / 10 ** pool.dec1 * usd1
-    return usd * 86400 / (t_head - t_old)
+    return usd * 86400 / (t_new - t_old)
+
+
+@dataclass
+class FeeRates:
+    """Dólares al día que cobró cada unidad de liquidez dentro del rango, por ventanas."""
+    day: float | None = None              # últimas 24 h
+    week: float | None = None             # últimos 7 días
+    month: float | None = None            # últimos 30 días
+    weeks: list[float] = field(default_factory=list)   # cada una de las últimas 4 semanas, la más reciente primero
+
+    @property
+    def prudent(self) -> float | None:
+        """El menor entre 7 y 30 días: una semana buena no se extrapola."""
+        ok = [x for x in (self.week, self.month) if x is not None]
+        return min(ok) if ok else None
+
+    @property
+    def weakest_week(self) -> float | None:
+        return min(self.weeks) if self.weeks else None
+
+
+FEE_SNAPSHOT_DAYS = (1, 7, 14, 21, 28, 30)
+_snap_cache: dict[str, list[tuple[int, int]]] = {}
+
+
+def _snapshots(chain: str) -> list[tuple[int, int]]:
+    """[(bloque, hora)] de ahora y de hace cada uno de FEE_SNAPSHOT_DAYS días, con el mismo bloque
+    de referencia para todas las ventanas (así las semanas encajan entre sí)."""
+    if chain not in _snap_cache:
+        def stamp(n: int) -> int:
+            return int(_archive(chain, "eth_getBlockByNumber", [hex(n), False])["timestamp"], 16)
+        head = int(_archive(chain, "eth_blockNumber", []), 16) - 5
+        t_head = stamp(head)
+        far = max(FEE_SNAPSHOT_DAYS)
+        guess = head - int(far * 86400 / _BLOCK_SECONDS[chain])
+        seconds = (t_head - stamp(guess)) / (head - guess)
+        out = [(head, t_head)]
+        for d in FEE_SNAPSHOT_DAYS:
+            n = head - int(d * 86400 / seconds)
+            out.append((n, stamp(n)))
+        _snap_cache[chain] = out
+    return _snap_cache[chain]
+
+
+def fee_rates(pool: Pool, usd0: float, usd1: float) -> FeeRates | None:
+    """Lo mismo que realized_fees, en las ventanas de 24 h, 7 y 30 días y en cada una de las
+    últimas cuatro semanas (para ver la semana floja). Una ventana que no se puede leer (por
+    ejemplo, un pool creado hace menos de 30 días) queda vacía. None si no se lee ninguna."""
+    if pool.chain not in ARCHIVE_RPC:
+        return None
+    try:
+        snaps = _snapshots(pool.chain)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    growth = []
+    for block, _ in snaps:
+        try:
+            growth.append(_fee_growth(pool, block))
+        except (OSError, ValueError, KeyError, TypeError):
+            growth.append(None)
+
+    def rate(new: int, old: int) -> float | None:
+        if growth[new] is None or growth[old] is None or snaps[new][1] <= snaps[old][1]:
+            return None
+        return _rate(pool, growth[old], growth[new], snaps[old][1], snaps[new][1], usd0, usd1)
+
+    idx = {d: i + 1 for i, d in enumerate(FEE_SNAPSHOT_DAYS)}
+    weeks = [rate(idx[a] if a else 0, idx[b]) for a, b in ((0, 7), (7, 14), (14, 21), (21, 28))]
+    out = FeeRates(rate(0, idx[1]), rate(0, idx[7]), rate(0, idx[30]), [w for w in weeks if w is not None])
+    return out if any(x is not None for x in (out.day, out.week, out.month)) else None
 

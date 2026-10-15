@@ -181,20 +181,28 @@ def _verify_orca(address, bmint, qmint, bsym, bdec, qsym, qdec, pair) -> Pool | 
                 spacing, d0, d1, base0)
 
 
+# DEX que se consultan. Las habilidades empaquetadas (tools/build_skills.py) quitan "orca".
+FUENTES = ("uniswap_v3", "uniswap_v4", "orca")
+
+
 def discover(base: str, quote: str) -> tuple[list[Pool], list[str]]:
-    """Pools de Uniswap v3, Uniswap v4 (sin hook) y Orca para base/quote. Devuelve (pools, avisos)."""
+    """Pools de los DEX de FUENTES (Uniswap v3, Uniswap v4 sin hook y Orca) para base/quote.
+    Devuelve (pools, avisos)."""
     pools, warnings = [], []
     for chain in ("ethereum", "base", "arbitrum"):
+        if "uniswap_v3" in FUENTES:
+            try:
+                pools += _uniswap_pools(chain, base, quote)
+            except (OSError, ValueError, KeyError, TypeError) as e:
+                warnings.append(f"Uniswap v3 {chain}: no se pudo consultar ({type(e).__name__})")
+        if "uniswap_v4" in FUENTES:
+            try:
+                pools += _uniswap_v4_pools(chain, base, quote)
+            except (OSError, ValueError, KeyError, TypeError) as e:
+                warnings.append(f"Uniswap v4 {chain}: no se pudo consultar ({type(e).__name__})")
+    if "orca" in FUENTES:
         try:
-            pools += _uniswap_pools(chain, base, quote)
-        except (OSError, ValueError, KeyError, TypeError) as e:
-            warnings.append(f"Uniswap v3 {chain}: no se pudo consultar ({type(e).__name__})")
-        try:
-            pools += _uniswap_v4_pools(chain, base, quote)
-        except (OSError, ValueError, KeyError, TypeError) as e:
-            warnings.append(f"Uniswap v4 {chain}: no se pudo consultar ({type(e).__name__})")
-    try:
-        pools += _orca_pools(base, quote)
-    except (OSError, ValueError, KeyError, TypeError, struct.error, urllib.error.URLError) as e:
-        warnings.append(f"Orca: no se pudo consultar ({type(e).__name__})")
+            pools += _orca_pools(base, quote)
+        except (OSError, ValueError, KeyError, TypeError, struct.error, urllib.error.URLError) as e:
+            warnings.append(f"Orca: no se pudo consultar ({type(e).__name__})")
     return pools, warnings
