@@ -1,4 +1,4 @@
-"""Empaqueta las habilidades pool-liquidez y pool-cribado para subirlas a claude.ai.
+"""Empaqueta las habilidades pool-liquidez, pool-cribado y defi-rendimiento para subirlas a claude.ai.
 
     python tools/build_skills.py
 
@@ -15,8 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC, SKILLS, OUT = ROOT / "etapas", ROOT / "tools" / "skills", ROOT / "out"
-SKILL_NAMES = ("pool-liquidez", "pool-cribado")
-MODULES = ("__init__", "analysis", "classifier", "config", "cribado", "data", "descubrir", "indicators",
+SKILL_NAMES = ("pool-liquidez", "pool-cribado", "defi-rendimiento")
+MODULES = ("__init__", "aave", "analysis", "classifier", "config", "cribado", "data", "descubrir", "indicators",
            "keccak", "liquidez", "oportunidad", "pools", "seguimiento", "tema")
 
 # (módulo, texto original, texto empaquetado)
@@ -36,6 +36,7 @@ PATCHES = [
     ("oportunidad", 'prog="python -m etapas.oportunidad"', 'prog="python pool.py"'),
     ("cribado", 'prog="python -m etapas.cribado"', 'prog="python cribado.py"'),
     ("seguimiento", 'prog="python -m etapas.seguimiento"', 'prog="python seguimiento.py"'),
+    ("aave", 'prog="python -m etapas.aave"', 'prog="python aave.py"'),
 ]
 # Menciones a la orden /pool del proyecto (no a /pool-cribado ni a rutas)
 SLASH_POOL = re.compile(r"/pool(?![-\w])")

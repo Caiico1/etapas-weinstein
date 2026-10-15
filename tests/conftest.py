@@ -1,7 +1,7 @@
 """Ajustes comunes: los tests nunca consultan fuentes de noticias ni pools reales."""
 import pytest
 
-from etapas import pools, rutina
+from etapas import aave, pools, rutina
 from etapas.contexto import MarketContext
 
 
@@ -18,3 +18,5 @@ def _sin_red_de_pools(monkeypatch):
     monkeypatch.setattr(pools.time, "sleep", lambda s: None)      # sin esperas de reintento
     pools._window_cache.clear()
     pools._snap_cache.clear()
+    aave._reserve_cache.clear()
+    aave._provider_cache.clear()

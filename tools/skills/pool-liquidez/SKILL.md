@@ -52,6 +52,9 @@ muestra). Si tú calcularas o redondearas algo por tu cuenta, el usuario perder�
      que con un par (propuesta o «mejor esperar», checklist...), sin repetir lo que ya está arriba.
    - Si el usuario trae una cifra de otra herramienta (por ejemplo, un APR del 21 %), compárala con
      las ventanas de 24 h, 7 y 30 días y con el neto: explica qué cuenta cada una.
+   - La fila **«Rinde más que depositar los mismos tokens en Aave»** es un veto: la posición tiene
+     que rendir, con margen, más que depositar en Aave V3 esos tokens en su proporción. Si no hay
+     propuesta, di cuánto rinde el USDC en Aave en la red indicada (capital parado).
    - La tabla **«Comisiones, permanencia en el rango y estrategias»** da, para la mejor combinación
      de cada ciclo, esas mismas cifras: úsala si pregunta por otro ciclo o por dejarlo sin tocar.
    - Si hay **propuestas** (una o dos): para cada una, el pool (Uniswap **v3 o v4**, red, par,

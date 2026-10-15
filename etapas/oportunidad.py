@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from . import aave as A
 from . import pools as P
 from .analysis import AssetResult, TimeframeResult, analyze_symbol
 from .config import DISCLAIMER, LP_QUANTILE, TIMEFRAMES
@@ -153,6 +154,10 @@ class Opportunity:
     passive_net: float | None = None       # ... neto, con el gas de abrir
     passive_fee_apr: float | None = None
     passive_apr: float | None = None
+    net_safe_apr: float | None = None      # neto con margen de seguridad, anualizado
+    # Alternativa en Aave V3: depositar los mismos tokens que pide la posición (en su proporción)
+    aave_yields: dict = field(default_factory=dict)    # {token: APY de depósito}
+    aave_apy: float | None = None
     excluded: str = ""
 
 
@@ -456,7 +461,14 @@ def analyze(pair: str, capital: float = 5000.0, chains=None) -> Report:
                 o.net_cycle = o.fees_cycle + o.expected_result * capital - o.gas_usd - o.swap_cycle
                 o.net_safe = o.fees_cycle + SAFETY_LOSS * o.expected_result * capital - o.gas_usd - o.swap_cycle
                 o.net_apr = o.net_cycle / capital * 365 / days
+                o.net_safe_apr = o.net_safe / capital * 365 / days
                 o.fee_apr_cycle = o.fees_cycle / capital * 365 / days
+                toks = pool.pair.split("/")
+                base_tok, quote_tok = (toks[0], toks[1]) if pool.base_is_token0 else (toks[1], toks[0])
+                ya, yq = A.supply_yield(pool.chain, base_tok), A.supply_yield(pool.chain, quote_tok)
+                if ya is not None and yq is not None:
+                    o.aave_yields = {base_tok: ya, quote_tok: yq}
+                    o.aave_apy = share * ya + (1 - share) * yq
                 passive = pm.expected(q.low, q.high)
                 if pm.inside is not None and passive is not None:
                     o.passive_fees = q.fee_day * HORIZON_DAYS * pm.inside
@@ -481,6 +493,8 @@ def analyze(pair: str, capital: float = 5000.0, chains=None) -> Report:
                     o.excluded = "resultado neto estimado negativo"
                 elif o.net_safe <= 0:
                     o.excluded = "rentable solo por poco: negativo con el margen de seguridad"
+                elif o.aave_apy is not None and o.net_safe_apr <= o.aave_apy:
+                    o.excluded = "rinde menos que depositar los mismos tokens en Aave"
             rep.opportunities.append(o)
     rep.proposals = choose(rep.opportunities)
     return rep
@@ -565,6 +579,11 @@ def checklist(rep: Report, o: Opportunity) -> tuple[list[tuple[str, str, str, st
                      f"neto {_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual)"))
         rows.append(("Rentabilidad", OK if o.net_safe > 0 else FAIL,
                      f"Sigue positivo con un IL un {SAFETY_LOSS - 1:.0%} peor", f"neto {_usd(o.net_safe)} por ciclo"))
+        if o.aave_apy is not None:
+            rows.append(("Rentabilidad", OK if o.net_safe_apr > o.aave_apy else FAIL,
+                         "Rinde más que depositar los mismos tokens en Aave",
+                         f"neto con margen {_pct(o.net_safe_apr)} anual frente a {_apr2(o.aave_apy)} en Aave V3 ("
+                         + ", ".join(f"{t} {_apr2(y)}" for t, y in o.aave_yields.items()) + ")"))
         share = o.gas_usd / o.fees_cycle if o.fees_cycle > 0 else math.inf
         rows.append(("Contexto", OK if share <= GAS_SHARE_WARN else WARN,
                      "El gas de un reajuste es pequeño frente a las comisiones",
@@ -644,6 +663,10 @@ def _apr(x: float | None) -> str:
     return "—" if x is None else f"{x:.1%}"
 
 
+def _apr2(x: float | None) -> str:
+    return "—" if x is None else f"{x:.2%}"
+
+
 def headline(rep: Report) -> Opportunity | None:
     """La combinación que resume el análisis: la primera propuesta o, si no hay, la de mejor neto."""
     if rep.proposals:
@@ -699,7 +722,9 @@ def short_answer(rep: Report) -> list[str]:
     if rep.proposals:
         lines = [f"- **Mejor opción ahora: {o.pool.label}, ciclo {o.name.lower()}**. Neto estimado "
                  f"{_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual), positivo incluso con la pérdida "
-                 f"frente a mantener un {SAFETY_LOSS - 1:.0%} peor."]
+                 f"frente a mantener un {SAFETY_LOSS - 1:.0%} peor"
+                 + (f" y por encima de depositar los mismos tokens en Aave V3 ({_apr2(o.aave_apy)} anual)."
+                    if o.aave_apy is not None else ".")]
     elif o.excluded == "resultado neto estimado negativo":
         lines = [f"- **Ahora no es rentable: mejor esperar.** El pool que menos pierde es **{o.pool.label}** "
                  f"(ciclo {o.name.lower()}): neto {_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual), "
@@ -724,6 +749,11 @@ def short_answer(rep: Report) -> list[str]:
                      f"después de la pérdida frente a mantener y el gas, **{_pct(o.passive_apr)} anual**. "
                      f"**Reajustando cada ciclo**: comisiones {_apr(o.fee_apr_cycle)} anual; neto "
                      f"**{_pct(o.net_apr)} anual**.")
+    if not rep.proposals:
+        chain, y = idle_chain(rep), idle_yield(rep)
+        if chain and y:
+            lines.append(f"- **Alternativa sin riesgo de precio**: USDC depositado en Aave V3 en {chain.capitalize()} "
+                         f"rinde hoy **{_apr2(y)} anual** (tipo variable).")
     lines.append("- El APR que muestran los agregadores solo cuenta comisiones; el neto descuenta además la "
                  "pérdida frente a mantener los tokens (IL), el gas y el cambio de tokens al reajustar.")
     return ["## Respuesta corta", "", *lines, ""]
@@ -922,13 +952,28 @@ def _risk_lines(rep: Report, o: Opportunity, base_tok: str, quote_tok: str) -> l
     return lines
 
 
+def idle_chain(rep: Report) -> str | None:
+    """Red del pool mejor situado: donde conviene tener el capital parado."""
+    ok = [o for o in rep.opportunities if o.net_apr is not None]
+    return max(ok, key=lambda o: o.net_apr).pool.chain if ok else None
+
+
+def idle_yield(rep: Report) -> float | None:
+    """APY de depositar USDC en Aave V3 en la red del pool mejor situado (None si no se pudo leer)."""
+    chain = idle_chain(rep)
+    return A.supply_yield(chain, "USDC") if chain else None
+
+
 def idle_capital(rep: Report) -> str:
     """Regla de capital parado cuando no hay propuesta."""
-    ok = [o for o in rep.opportunities if o.net_apr is not None]
-    where = max(ok, key=lambda o: o.net_apr).pool.chain.capitalize() if ok else None
+    chain = idle_chain(rep)
+    where = chain.capitalize() if chain else None
+    y = idle_yield(rep)
     return ("**Mientras tanto**: mantén el capital en USDC" + (f" en {where}, la red del pool mejor situado," if where else "")
             + " para no asumir la volatilidad de un token sin cobrar comisiones por ello y poder abrir la posición "
-              "sin mover fondos de red cuando aparezca la oportunidad.")
+              "sin mover fondos de red cuando aparezca la oportunidad."
+            + (f" Depositado en Aave V3 rinde hoy **{_apr2(y)} anual** (tipo variable), sin riesgo de precio; sí "
+               f"de contrato inteligente y del respaldo de la estable." if y else ""))
 
 
 def to_json(rep: Report) -> dict:
@@ -955,7 +1000,9 @@ def to_json(rep: Report) -> dict:
                 "apr_comisiones_dentro": o.apr_windows or None, "apr_comisiones_reajustando": o.fee_apr_cycle,
                 "sin_tocar": None if o.passive_net is None else {
                     "dias": HORIZON_DAYS, "comisiones": o.passive_fees, "resultado_frente_a_mantener": o.passive_il,
-                    "neto": o.passive_net, "apr_comisiones": o.passive_fee_apr, "neto_anual": o.passive_apr}}
+                    "neto": o.passive_net, "apr_comisiones": o.passive_fee_apr, "neto_anual": o.passive_apr},
+                "neto_anual_con_margen": o.net_safe_apr, "aave_apy_mismos_tokens": o.aave_apy,
+                "aave_apy_por_token": o.aave_yields or None}
     perm = {name: {"rangos": pm.samples, "dias_dentro_mediana": pm.days_to_exit, "dentro_sin_tocar": pm.inside,
                    "salen": pm.exits, "salen_por_arriba": pm.up}
             for (key, name, _) in CYCLES if (pm := rep.permanence.get(key)) is not None}
@@ -966,6 +1013,8 @@ def to_json(rep: Report) -> dict:
             "combinaciones": [opp(o) for o in rep.opportunities], "avisos": rep.warnings,
             "descartados_por_liquidez": rep.illiquid,
             "capital_parado": None if rep.proposals or rep.error else idle_capital(rep).replace("**", ""),
+            "capital_parado_aave": None if rep.proposals or rep.error or not idle_chain(rep) else
+            {"red": idle_chain(rep), "token": "USDC", "apy": idle_yield(rep)},
             "aviso": DISCLAIMER}
 
 
