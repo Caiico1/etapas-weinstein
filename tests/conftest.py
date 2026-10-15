@@ -17,3 +17,4 @@ def _sin_red_de_pools(monkeypatch):
     monkeypatch.setattr(pools, "_http_json", offline)
     monkeypatch.setattr(pools.time, "sleep", lambda s: None)      # sin esperas de reintento
     pools._window_cache.clear()
+    pools._snap_cache.clear()
