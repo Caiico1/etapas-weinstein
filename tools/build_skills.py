@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SRC, SKILLS, OUT = ROOT / "etapas", ROOT / "tools" / "skills", ROOT / "out"
 SKILL_NAMES = ("pool-liquidez", "pool-cribado", "defi-rendimiento")
-MODULES = ("__init__", "aave", "analysis", "classifier", "config", "cribado", "data", "descubrir", "indicators",
+MODULES = ("__init__", "aave", "analysis", "classifier", "config", "cribado", "data", "descubrir", "estrategia", "indicators",
            "keccak", "liquidez", "oportunidad", "pools", "seguimiento", "tema")
 
 # (módulo, texto original, texto empaquetado)

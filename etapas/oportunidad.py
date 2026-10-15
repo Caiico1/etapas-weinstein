@@ -179,6 +179,8 @@ class Report:
     illiquid: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     error: str = ""
+    hedge_ltv: float = 0.35                # LTV de la liquidez cubierta (estrategia.HEDGE_LTV)
+    hedges: list = field(default_factory=list)   # estrategia.Hedge: estable en Aave + activo prestado
 
 
 # ---------------------------------------------------------------- par
@@ -333,8 +335,17 @@ def _quote_usd(quote: str) -> float:
 # ---------------------------------------------------------------- análisis completo
 
 
-def analyze(pair: str, capital: float = 5000.0, chains=None) -> Report:
-    """Analiza un par. `chains` limita los pools a esas redes (por ejemplo, ["base"])."""
+def analyze(pair: str, capital: float = 5000.0, chains=None, hedge_ltv: float | None = None) -> Report:
+    """Analiza un par. `chains` limita los pools a esas redes (por ejemplo, ["base"]). `hedge_ltv`:
+    LTV de la liquidez cubierta (por defecto, estrategia.HEDGE_LTV)."""
+    from . import estrategia as E                  # estrategia importa este módulo
+    rep = _analyze(pair, capital, chains)
+    rep.hedge_ltv = E.HEDGE_LTV if hedge_ltv is None else hedge_ltv
+    rep.hedges = E.evaluate(rep, rep.hedge_ltv)
+    return rep
+
+
+def _analyze(pair: str, capital: float, chains) -> Report:
     try:
         base, quote, notes = parse_pair(pair)
     except ValueError as e:
@@ -754,6 +765,8 @@ def short_answer(rep: Report) -> list[str]:
         if chain and y:
             lines.append(f"- **Alternativa sin riesgo de precio**: USDC depositado en Aave V3 en {chain.capitalize()} "
                          f"rinde hoy **{_apr2(y)} anual** (tipo variable).")
+    from . import estrategia as E
+    lines += E.short_line(rep, rep.hedges)
     lines.append("- El APR que muestran los agregadores solo cuenta comisiones; el neto descuenta además la "
                  "pérdida frente a mantener los tokens (IL), el gas y el cambio de tokens al reajustar.")
     return ["## Respuesta corta", "", *lines, ""]
@@ -814,6 +827,8 @@ def render(rep: Report, footer: bool = True) -> str:
             for o in best:
                 out += _checklist_md(rep, o, f"**Ciclo {o.name.lower()} · {o.pool.label}**")
     out += strategies_md(rep)
+    from . import estrategia as E
+    out += E.render(rep, rep.hedges)
     out += ["## Etapas del par", "",
             "| Ciclo | Etapa | Idoneidad | Rango del método | Histórico: dentro / resultado medio frente a mantener |",
             "|---|---|---|---|---|"]
@@ -977,6 +992,7 @@ def idle_capital(rep: Report) -> str:
 
 
 def to_json(rep: Report) -> dict:
+    from . import estrategia as E
     def opp(o: Opportunity) -> dict:
         rows, reading = checklist(rep, o)
         return {"checklist": [{"bloque": b, "estado": {OK: "cumple", WARN: "aviso", FAIL: "no cumple"}[st],
@@ -1010,6 +1026,7 @@ def to_json(rep: Report) -> dict:
             "error": rep.error or None,
             "respuesta_corta": None if rep.error else "\n".join(short_answer(rep)[2:]).replace("**", "").strip(),
             "permanencia_en_rango": perm, "propuestas": [opp(o) for o in rep.proposals],
+            "liquidez_cubierta": E.to_json(rep, rep.hedges) or None,
             "combinaciones": [opp(o) for o in rep.opportunities], "avisos": rep.warnings,
             "descartados_por_liquidez": rep.illiquid,
             "capital_parado": None if rep.proposals or rep.error else idle_capital(rep).replace("**", ""),
@@ -1032,6 +1049,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--red", default="", metavar="REDES",
                     help="Limita a estas redes, separadas por comas: ethereum, base, arbitrum, solana")
     ap.add_argument("--json", action="store_true", help="Salida en JSON")
+    ap.add_argument("--ltv", type=float, default=None, metavar="FRACCIÓN",
+                    help="LTV de la liquidez cubierta (deuda / garantía en Aave), por defecto 0.35; como mucho "
+                         "la mitad del LTV máximo de la garantía")
     args = ap.parse_args(argv)
     chains = [c.strip().lower() for c in args.red.split(",") if c.strip()]
     from .tema import analyze_theme, find_theme, render_theme, theme_json     # tema importa este módulo
@@ -1041,7 +1061,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(theme_json(trep), ensure_ascii=False, indent=2, default=float) if args.json
               else render_theme(trep))
         return 0
-    rep = analyze(args.par, args.capital, chains or None)
+    rep = analyze(args.par, args.capital, chains or None, args.ltv)
     print(json.dumps(to_json(rep), ensure_ascii=False, indent=2, default=float) if args.json else render(rep))
     return 1 if rep.error else 0
 
