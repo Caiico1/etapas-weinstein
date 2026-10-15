@@ -51,11 +51,28 @@ def build_module(name: str) -> str:
     return SLASH_POOL.sub("pool-liquidez", text)
 
 
+MAX_DESCRIPTION = 1024          # límite de claude.ai para el campo description de SKILL.md
+
+
+def skill_md(skill: str) -> str:
+    """SKILL.md de la habilidad, comprobando lo que claude.ai exige al subirla."""
+    text = (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8")
+    m = re.search(r"\A---\n(.*?)\n---\n", text, re.S)
+    fields = dict(re.findall(r"^(\w+): (.*)$", m.group(1), re.M)) if m else {}
+    if fields.get("name") != skill or not fields.get("description"):
+        sys.exit(f"build_skills: {skill}/SKILL.md necesita name: {skill} y description en la cabecera YAML")
+    if len(fields["description"]) > MAX_DESCRIPTION:
+        sys.exit(f"build_skills: la description de {skill}/SKILL.md tiene {len(fields['description'])} "
+                 f"caracteres (máximo {MAX_DESCRIPTION})")
+    return text
+
+
 def build(skill: str) -> Path:
     """Escribe out/<skill>.zip directamente (sin carpeta intermedia)."""
+    md = skill_md(skill)
     zip_path = OUT / f"{skill}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr(f"{skill}/SKILL.md", (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8"))
+        z.writestr(f"{skill}/SKILL.md", md)
         for f in sorted((SKILLS / "scripts").glob("*.py")):
             z.writestr(f"{skill}/scripts/{f.name}", f.read_text(encoding="utf-8"))
         for name in MODULES:
