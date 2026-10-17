@@ -6,6 +6,6 @@
 # positivo incluso con el margen de seguridad), y también cuando deja de cumplirlos.
 # Para dejar de vigilar una, bórrala o ponle # delante.
 
-BTC/USDC 4500 base
-ETH/USDC 4500
-cbBTC/WETH 4500 base
+BTC/USDC 3000
+ETH/USDC 3000
+cbBTC/WETH 3000
