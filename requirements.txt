@@ -4,3 +4,4 @@ numpy>=1.24
 plotly>=5.0
 yfinance>=0.2.50
 pytest>=7.0
+duckdb>=1.1          # solo para etapas.backtest (lee D:\MetaProDB\metapro.duckdb)

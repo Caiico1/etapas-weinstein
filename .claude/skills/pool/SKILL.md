@@ -77,6 +77,23 @@ frente a mantener los dos tokens, con la lectura final («las comisiones compens
 comisiones ya cobradas antes solo cuentan si las indica con `--cobradas`. Solo lee datos públicos
 de la blockchain: no necesita su cartera. Las posiciones de Orca (Solana) no se pueden seguir aún.
 
+## Probar una estrategia contra el histórico (backtest)
+
+Si el usuario quiere saber cómo habría ido una estrategia en el pasado («¿qué rango habría rendido
+más en ETH/USDC?», «¿compensa reajustar?», «¿y con stop-loss?»), usa el histórico horario de
+MetaProDB (`D:\MetaProDB`, leído de la blockchain; solo en este PC):
+
+```bash
+python -m etapas.backtest "WETH/USDC 0.05%" --red ethereum --desde 2025-01-01 --ancho 5,10,20 --reajuste nunca,fuera --espera 0,24 --stop 0,15
+python -m etapas.backtest 0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640 --ancho 10,20 --reajuste nunca,fuera --ventana 30 --paso 7
+```
+
+`--ventana` abre la estrategia en muchas fechas y da la mediana, el peor 10 % y el % de veces con
+ganancia: preséntalo antes que un único periodo. Muestra la tabla tal cual y di sus límites: las
+comisiones usan el feeGrowth global del pool (sobrestima con rangos muy estrechos en horas muy
+movidas) y no hay MEV ni deslizamiento. Si el pool no está en MetaProDB, dilo; se añade en
+`C:\Users\javie\Proyectos\metapro-db\pools\<red>.csv`.
+
 ## Reglas
 
 - **Nunca** inventes, redondees de otra forma ni «mejores» los números: todos salen del programa y
