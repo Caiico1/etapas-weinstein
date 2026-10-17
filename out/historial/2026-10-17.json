@@ -81,9 +81,5 @@
     }
   },
   "posiciones": {},
-  "oportunidades": {
-    "BTC/USDC 4500 base": "",
-    "ETH/USDC 4500 todas": "",
-    "BTC/ETH 4500 base": ""
-  }
+  "oportunidades": {}
 }
