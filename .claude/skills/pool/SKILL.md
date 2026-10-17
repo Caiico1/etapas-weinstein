@@ -88,6 +88,11 @@ python -m etapas.backtest "WETH/USDC 0.05%" --red ethereum --desde 2025-01-01 --
 python -m etapas.backtest 0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640 --ancho 10,20 --reajuste nunca,fuera --ventana 30 --paso 7
 ```
 
+Para comprobar **el propio método de /pool** (rango, stop y veto de etapa de cada ciclo, calculados
+con los datos de cada fecha): `--metodo 1d,1w,1M`; con `--variantes` sale también sin veto de etapa
+y sin stop, para ver qué aporta cada filtro. Se puede combinar con rangos fijos (`--ancho`) en la
+misma tabla. No aplica los vetos de neto estimado ni de Aave.
+
 `--ventana` abre la estrategia en muchas fechas y da la mediana, el peor 10 % y el % de veces con
 ganancia: preséntalo antes que un único periodo. Muestra la tabla tal cual y di sus límites: las
 comisiones usan el feeGrowth global del pool (sobrestima con rangos muy estrechos en horas muy
