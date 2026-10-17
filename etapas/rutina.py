@@ -160,6 +160,9 @@ def add_liquidity(asset: AssetResult, log: list[str]) -> None:
     except Exception as e:  # la liquidez es un añadido: la etapa y el informe siguen igual
         log.append(f"{asset.key}: no se pudo calcular la liquidez ({type(e).__name__}: {str(e)[:120]})")
     if asset.liquidity is not None:
+        log.extend(f"{asset.key} pools: {w}" for w in asset.liquidity.warnings)
+        if asset.liquidity.pools and not asset.liquidity.live:
+            log.append(f"{asset.key}: la búsqueda de pools en vivo no devolvió ninguno; se usan los de referencia")
         for prof in asset.liquidity.profiles:
             for q in prof.quotes:
                 if q.error and q.fee_day is None and "on-chain" in q.error:

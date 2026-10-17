@@ -97,5 +97,10 @@ LP_QUANTILE = 0.9
 LP_CAPITAL_REF = 1000
 # Si el precio de un pool se aleja más que esto del de mercado, no se estiman comisiones
 LP_MAX_POOL_DEVIATION = 0.02
+# Búsqueda de pools en vivo: monedas estables frente a las que se buscan, y liquidez mínima
+LP_QUOTES = ("USDC", "USDT")
+LP_MIN_TVL = 1_000_000                # con menos, unos miles de dólares pesan demasiado en el pool
+LP_MIN_VOLUME = 50_000                # volumen diario mínimo (mediana de 30 días)
+LP_NO_DAILY_ON = {"ethereum"}         # el ciclo diario no se propone en Ethereum (coste del gas)
 # Posiciones abiertas: aviso si el precio está a menos de esta fracción de la anchura de un borde
 LP_EDGE_WARN = 0.10
