@@ -26,7 +26,8 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
    separadas por comas: ethereum, base, arbitrum, solana).
 3. **Presenta el resultado** al usuario, en español:
    - Si hay **propuestas** (una o dos): para cada una, el pool (DEX y **versión v3 o v4**, red,
-     par, comisión, dirección o identificador y el enlace a Uniswap), el **mínimo y el máximo** a
+     par, comisión, **dirección o identificador completo**, sin acortar, y el enlace a Uniswap;
+     la «Respuesta corta» también lo trae en la línea «Dirección del pool»), el **mínimo y el máximo** a
      introducir, el **depósito** de cada token para su
      capital, la etapa y su idoneidad, el comportamiento histórico del método y la estimación
      neta por ciclo (con y sin margen de seguridad). Copia los números tal cual.

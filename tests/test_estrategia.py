@@ -152,6 +152,22 @@ def test_output_section_and_json(rich, aave):
     assert len(data) == len(rep.hedges)
     one = next(d for d in data if d["neto_ciclo"] is not None)
     assert one["factor_salud"] == pytest.approx(0.78 / 0.35) and one["historico_liquidacion"]["dias_entrada"] > 0
+    assert one["direccion"] == next(h for h in rep.hedges if h.net_cycle is not None).opp.pool.address
+
+
+def test_recommended_pool_address_is_shown(rich, aave):
+    from etapas import cribado as C
+    rep = op.analyze("ETH/USDC", 5000)
+    assert rep.proposals
+    addr = op.headline(rep).pool.address
+    assert f"**Dirección del pool** ({op.headline(rep).pool.label}): `{addr}`" in "\n".join(op.short_answer(rep))
+    hedge = E.best(rep.hedges)
+    if not hedge.excluded:
+        assert f"`{hedge.opp.pool.address}`" in "\n".join(E.render(rep, rep.hedges))
+    s = C.Screen(5000, ["arbitrum"], 0.001, reports={"ETH/USDC": rep})
+    text = C.render(s)
+    assert "**Direcciones de los pools recomendados**" in text
+    assert all(f"`{o.pool.address}`" in text for o in rep.proposals)
 
 
 def test_cli_ltv(rich, aave, capsys):

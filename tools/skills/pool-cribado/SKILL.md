@@ -36,7 +36,10 @@ que cada cifra sale de datos verificados.
      `arbitrum-one.public.blastapi.io`. Funciona siempre en Claude Code, en su ordenador.
 3. **Presenta el resultado** en español:
    - **Duplas recomendadas**: la tabla tal cual (par, ciclo, pool, rango, neto, neto anual, con
-     margen, Vol/TVL, comisiones/TVL y número de avisos). Explica que han superado todos los vetos del
+     margen, Vol/TVL, comisiones/TVL y número de avisos) y, de cada dupla recomendada, la
+     **dirección del pool** completa (en v4, el identificador) y su enlace a Uniswap, tal cual los
+     da la lista «Direcciones de los pools recomendados» (campos `direccion` y `enlace_dex` de
+     `recomendadas` con `--json`). Explica que han superado todos los vetos del
      método y que, para el detalle de una (depósito, stop-loss, escenarios frente a USDC, fondeo y
      checklist), hay que usar la habilidad **pool-liquidez** con ese par y capital; ofrécete a hacerlo.
    - Si **no hay ninguna**, dilo claramente con los motivos por par y la regla de capital parado:

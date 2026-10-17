@@ -28,7 +28,7 @@ from . import aave as A
 from .data import STABLES
 from .liquidez import composition, position_value
 from .oportunidad import (CYCLES, HORIZON_DAYS, L2_DATA_FEE_USD, REBALANCE_GAS, SAFETY_LOSS, Opportunity,
-                          Report)
+                          Report, address_line)
 
 HEDGE_LTV = 0.35              # LTV usado por defecto: deuda / garantía al abrir
 LTV_SHARE = 0.5               # ... y nunca más de la mitad del LTV máximo de la garantía
@@ -280,6 +280,7 @@ def render(rep: Report, hedges: list[Hedge]) -> list[str]:
                 f"- **Pool**: aporta esos {_num(h.borrow_amount)} {h.debt} y {_usd(h.lp_stable)} de {h.collateral} al "
                 f"rango {_num(o.quote.low)} – {_num(o.quote.high)} {q} (posición de {_usd(h.lp_value)}). No hay que "
                 f"comprar {b}: sale del préstamo.",
+                *([] if h.excluded else [address_line(o.pool)]),
                 f"- **Factor de salud inicial {h.health:.2f}** (umbral de liquidación {h.threshold:.0%} / LTV "
                 f"{h.ltv_used:.0%}). **Liquidación si {b} sube a {_num(h.liq_price)} {q}** "
                 f"({h.liq_price / o.quote.pool_price - 1:+.0%}); el liquidador se queda la garantía con un "
@@ -323,7 +324,8 @@ def render(rep: Report, hedges: list[Hedge]) -> list[str]:
 def to_json(rep: Report, hedges: list[Hedge]) -> list[dict]:
     def one(h: Hedge) -> dict:
         o = h.opp
-        return {"ciclo": o.name, "pool": o.pool.label, "red": o.pool.chain, "garantia_token": h.collateral,
+        return {"ciclo": o.name, "pool": o.pool.label, "direccion": o.pool.address, "red": o.pool.chain,
+                "enlace_dex": o.pool.app_url or None, "garantia_token": h.collateral,
                 "deuda_token": h.debt, "ltv_objetivo": h.ltv_target, "ltv_usado": h.ltv_used, "ltv_maximo": h.ltv_max,
                 "umbral_liquidacion": h.threshold, "bonus_liquidacion": h.bonus, "apy_deposito": h.supply_apy,
                 "apy_prestamo": h.borrow_apy, "valor_posicion": h.lp_value, "garantia": h.deposit,

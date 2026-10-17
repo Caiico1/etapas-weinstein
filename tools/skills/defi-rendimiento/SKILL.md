@@ -59,6 +59,8 @@ de los pools, de comisiones realmente cobradas y de un método validado sobre el
    `liquidez_cubierta` en JSON). El usuario deposita la estable en Aave como garantía, pide prestado
    el activo que necesita la posición y aporta los dos al pool: lo que tiene del activo lo debe, así
    que el precio no le afecta al abrir. Presenta, copiando las cifras de la mejor combinación:
+   - la **dirección del pool** completa (en v4, el identificador) si la combinación se propone
+     (línea «Dirección del pool»; `direccion` en JSON), y también la del pool de la «Respuesta corta»;
    - cuánto depositar, cuánto pedir prestado, la estable que va al pool y el **LTV usado** (por
      defecto 35 %, nunca más de la mitad del máximo; `--ltv` lo cambia si el usuario lo pide);
    - el **factor de salud inicial** y el **precio de liquidación** (solo si el activo sube: la

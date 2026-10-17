@@ -721,6 +721,12 @@ def _permanence_txt(rep: Report, o: Opportunity) -> str:
     return txt
 
 
+def address_line(pool: P.Pool) -> str:
+    """Dirección (en v4, identificador) del pool recomendado, con sus enlaces."""
+    return (f"- **{'Identificador' if pool.is_v4 else 'Dirección'} del pool** ({pool.label}): `{pool.address}`"
+            + (f" · Uniswap: {pool.app_url}" if pool.app_url else "") + f" · [GeckoTerminal]({pool.url})")
+
+
 def short_answer(rep: Report) -> list[str]:
     """Respuesta corta: el pool que resume el análisis, sus comisiones por ventanas, cuánto aguanta
     el rango y el resultado sin tocar frente a reajustar. Solo ordena cifras ya calculadas."""
@@ -735,7 +741,7 @@ def short_answer(rep: Report) -> list[str]:
                  f"{_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual), positivo incluso con la pérdida "
                  f"frente a mantener un {SAFETY_LOSS - 1:.0%} peor"
                  + (f" y por encima de depositar los mismos tokens en Aave V3 ({_apr2(o.aave_apy)} anual)."
-                    if o.aave_apy is not None else ".")]
+                    if o.aave_apy is not None else "."), address_line(o.pool)]
     elif o.excluded == "resultado neto estimado negativo":
         lines = [f"- **Ahora no es rentable: mejor esperar.** El pool que menos pierde es **{o.pool.label}** "
                  f"(ciclo {o.name.lower()}): neto {_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual), "

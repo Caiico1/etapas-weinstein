@@ -1,6 +1,6 @@
 ---
 name: pool-liquidez
-description: Liquidez concentrada en Uniswap v3 y v4 para un par (ETH/USDC, BTC/USDT, ETH/BTC...) o una temática (oro tokenizado, bitcoin, ether). Da una respuesta corta y el mejor pool (red, versión, comisión y enlace), el ciclo, el rango mínimo y máximo, el depósito de cada token, el stop-loss y el neto estimado, o dice que es mejor esperar. Incluye las comisiones reales en 24 h, 7 y 30 días, cuántos días aguanta el rango, por qué lado sale y el resultado sin tocar frente a reajustar; con una temática, clasifica todos sus pools por TVL, volumen y APR. También sigue una posición abierta. Úsala cuando el usuario pregunte qué pool es el más rentable, qué rango poner, dónde aportar liquidez con un par o un activo, cuánto depositar, si abrir ahora, si un APR visto en otro sitio es real o cómo va su posición, aunque no diga «pool». Si no dice par ni activo, usa pool-cribado.
+description: Liquidez concentrada en Uniswap v3 y v4 para un par (ETH/USDC, BTC/USDT, ETH/BTC...) o una temática (oro tokenizado, bitcoin, ether). Da una respuesta corta y el mejor pool (red, versión, comisión, dirección y enlace), el ciclo, el rango mínimo y máximo, el depósito de cada token, el stop-loss y el neto estimado, o dice que es mejor esperar. Incluye las comisiones reales en 24 h, 7 y 30 días, cuántos días aguanta el rango, por qué lado sale y el resultado sin tocar frente a reajustar; con una temática, clasifica todos sus pools por TVL, volumen y APR. También sigue una posición abierta. Úsala cuando el usuario pregunte qué pool es el más rentable, qué rango poner, dónde aportar liquidez con un par o un activo, cuánto depositar, si abrir ahora, si un APR visto en otro sitio es real o cómo va su posición, aunque no diga «pool». Si no dice par ni activo, usa pool-cribado.
 ---
 
 # Oportunidades de liquidez concentrada para un par
@@ -41,7 +41,9 @@ muestra). Si tú calcularas o redondearas algo por tu cuenta, el usuario perder�
    - **Empieza por la «Respuesta corta»** de la salida (campo `respuesta_corta` con `--json`), con
      sus cifras tal cual: el pool, si es rentable o mejor esperar, el APR de comisiones con el precio
      dentro del rango en 24 h → 7 d → 30 d y la semana floja, cuántos días aguanta el rango y por qué
-     lado sale, y el resultado **sin tocar** frente a **reajustando**. Deja claro que el APR de
+     lado sale, y el resultado **sin tocar** frente a **reajustando**. Si hay pool recomendado,
+     copia completa su **dirección** (en v4, el identificador) de la línea «Dirección del pool»
+     (campo `direccion` con `--json`), sin acortarla. Deja claro que el APR de
      comisiones (lo que enseñan los agregadores) no es la rentabilidad: el neto descuenta la pérdida
      frente a mantener los tokens. Si la salida avisa de que el dato de 24 h está inflado, dilo.
    - Con una **temática**: la respuesta corta dice qué par da el mejor neto y, si es otro, qué pool

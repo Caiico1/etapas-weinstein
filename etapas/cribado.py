@@ -242,6 +242,12 @@ def render(s: Screen) -> str:
                        f"{op._pct(o.net_safe / s.capital * 365 / o.days)} | "
                        f"{'—' if o.vol_tvl is None else f'{o.vol_tvl:.2f}'} | {_pct(o.fees_tvl, 3)} | "
                        f"{warns} ⚠️ |")
+        out += ["", "**Direcciones de los pools recomendados** (compruébala al abrir la posición):", ""]
+        seen = set()
+        for _, o in ranked:
+            if o.pool.id not in seen:
+                seen.add(o.pool.id)
+                out.append(op.address_line(o.pool))
         out += ["", "Para el detalle de cada una (depósito, stop-loss, escenarios y checklist), ejecuta /pool "
                     "con el par y el capital.", ""]
     else:
