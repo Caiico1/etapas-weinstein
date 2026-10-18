@@ -242,7 +242,7 @@ def pool_verdict_html(asset: AssetResult, github_link: str = "") -> str:
         w = p.width
         rng = f"rango <b>{fmt(p.low)} – {fmt(p.high)}</b> ({w[0]:+.1%} / {w[1]:+.1%})"
         q = p.main_quote
-        pool = (f'<a href="{html.escape(q.pool.url)}" target="_blank" rel="noopener">{html.escape(q.pool.label)}</a>'
+        pool = (f'<a href="{html.escape(q.pool.app_url or q.pool.url)}" target="_blank" rel="noopener">{html.escape(q.pool.label)}</a>'
                 f' · ~{q.fee_apr:.0%} APR est.' if q and q.fee_apr is not None else "")
         r = asset.timeframes.get(_PROFILE_KEY.get(p.name, ""))
         stage = (f'<span class="muted">{html.escape(stage_label(r))}</span>' if r is not None and r.status == "ok"

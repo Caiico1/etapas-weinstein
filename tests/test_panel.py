@@ -36,6 +36,16 @@ def test_pair_asset_identity_and_liquidity():
     assert all(p.level in ("favorable", "precaución", "desfavorable") for p in liq.profiles)
 
 
+def test_report_pool_links_go_to_uniswap():
+    from etapas.liquidez import PoolQuote
+    from etapas.pools import pools_for
+    from etapas.report_liquidez import _quote_cells
+    pool = next(p for p in pools_for("ETH")[0] if p.dex.startswith("Uniswap"))
+    cell = _quote_cells(PoolQuote(pool, 1.0, 2.0, 1, 2), 1000)
+    assert f'href="https://app.uniswap.org/explore/pools/{pool.chain}/{pool.address}"' in cell
+    assert "geckoterminal" not in cell
+
+
 def test_agent_prompt_file_for_pair(tmp_path):
     from etapas.agentes import write_prompt
     assert write_prompt({"activo": "ETH/BTC"}, tmp_path).name == "ETH-BTC.md"

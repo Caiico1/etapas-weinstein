@@ -80,7 +80,7 @@ def level_chip(level: str, small: bool = False) -> str:
 def _quote_cells(q: PoolQuote | None, cap: float) -> str:
     if q is None:
         return '<td colspan="4" class="muted">sin estimación (sin datos del pool)</td>'
-    return (f'<td><a href="{html.escape(q.pool.url)}" target="_blank" rel="noopener">'
+    return (f'<td><a href="{html.escape(q.pool.app_url or q.pool.url)}" target="_blank" rel="noopener">'
             f'{html.escape(q.pool.label)}</a><br><b>{fmt(q.low)} – {fmt(q.high)}</b>'
             f'<br><span class="muted">ticks {q.tick_lower} / {q.tick_upper}</span></td>'
             f'<td>{_money(q.fee_day)}</td><td>{_pct(q.fee_apr, False)}</td><td>{_days(q.breakeven_days)}</td>')
@@ -92,7 +92,7 @@ def _pools_detail(p: ProfileResult, cap: float) -> str:
         vol = f"{q.volume_24h / 1e6:,.1f} M$" if q.volume_24h else "—"
         tvl = f"{q.tvl / 1e6:,.1f} M$" if q.tvl else "—"
         err = f'<br><span class="muted">{html.escape(q.error)}</span>' if q.error else ""
-        rows.append(f'<tr><td><a href="{html.escape(q.pool.url)}" target="_blank" rel="noopener">'
+        rows.append(f'<tr><td><a href="{html.escape(q.pool.app_url or q.pool.url)}" target="_blank" rel="noopener">'
                     f'{html.escape(q.pool.label)}</a>{err}</td><td>{fmt(q.low)}</td><td>{fmt(q.high)}</td>'
                     f'<td>{q.tick_lower} / {q.tick_upper}</td><td>{fmt(q.pool_price)}</td>'
                     f'<td>{_pct(q.asset_share, False)}</td><td>{vol}</td><td>{tvl}</td>'
