@@ -7,7 +7,8 @@ import pandas as pd
 
 from .classifier import STAGE_NAMES, classify, levels
 from .config import ORDER, RANGE_QUANTILE, RANGE_QUANTILE_TYPICAL, TIMEFRAMES, TimeframeConfig
-from .data import Candles, DataError, fetch_candles, fetch_ondo_token, fetch_stock_candles
+from .data import (Candles, DataError, canonical_pair, fetch_candles, fetch_ondo_token,
+                   fetch_pair_candles, fetch_stock_candles)
 from .indicators import expected_range
 
 
@@ -74,37 +75,52 @@ def _jsonable(v):
 
 
 STOCK_PREFIXES = ("accion:", "acción:")
+PAIR_PREFIX = "par:"
 
 
 def parse_symbol(raw: str) -> tuple[str, str]:
-    """'BTC' → ('cripto', 'BTC'); 'accion:NVDA' → ('accion', 'NVDA')."""
+    """'BTC' → ('cripto', 'BTC'); 'accion:NVDA' → ('accion', 'NVDA'); 'par:ETH/BTC' → ('par', 'ETH/BTC')."""
     s = raw.strip()
     if s.lower().startswith(STOCK_PREFIXES):
         return "accion", s.split(":", 1)[1].strip().upper()
+    if s.lower().startswith(PAIR_PREFIX):
+        return "par", s.split(":", 1)[1].replace(" ", "").upper()
     return "cripto", s.upper()
 
 
 @dataclass
 class AssetResult:
-    symbol: str                        # ticker sin prefijo: BTC, NVDA, SAN.MC
+    symbol: str                        # ticker sin prefijo: BTC, NVDA, SAN.MC, ETH/BTC
     timeframes: dict[str, TimeframeResult]
     error: str = ""
-    kind: str = "cripto"               # "cripto" | "accion"
+    kind: str = "cripto"               # "cripto" | "accion" | "par"
     token: dict | None = None          # token de Ondo de la acción, si cotiza
-    liquidity: object = None           # liquidez.LiquidityResult (solo criptomonedas)
+    liquidity: object = None           # liquidez.LiquidityResult (criptomonedas y pares)
 
     @property
     def key(self) -> str:
         """Identificador en la lista y en el historial."""
-        return f"accion:{self.symbol}" if self.kind == "accion" else self.symbol
+        return f"{self.kind}:{self.symbol}" if self.kind in ("accion", "par") else self.symbol
 
     @property
     def title(self) -> str:
-        return f"{self.symbol} (acción)" if self.kind == "accion" else self.symbol
+        return {"accion": f"{self.symbol} (acción)", "par": f"{self.symbol} (par)"}.get(self.kind, self.symbol)
 
     @property
     def file_stem(self) -> str:
+        if self.kind == "par":
+            return "par_" + self.symbol.replace("/", "-")
         return f"accion_{self.symbol}" if self.kind == "accion" else self.symbol
+
+    @property
+    def base(self) -> str:
+        """Activo cuyo precio se mide: ETH en ETH/BTC; el propio símbolo en los demás."""
+        return self.symbol.split("/")[0]
+
+    @property
+    def quote(self) -> str:
+        """Moneda en que se mide el precio: BTC en ETH/BTC; USDC para criptomonedas sueltas."""
+        return self.symbol.split("/")[1] if self.kind == "par" else "USDC"
 
     @property
     def last_price(self) -> float | None:
@@ -192,8 +208,14 @@ def analyze_candles(candles: Candles, cfg: TimeframeConfig, provisional: bool = 
 
 def analyze_symbol(symbol: str, provisional: bool = True,
                    fetch: Callable | None = None) -> AssetResult:
-    """Analiza un activo: 'BTC' (cripto, vía exchanges) o 'accion:NVDA' (bolsa, vía Yahoo)."""
+    """Analiza un activo: 'BTC' (cripto, vía exchanges), 'accion:NVDA' (bolsa, vía Yahoo) o
+    'par:ETH/BTC' (precio de un criptoactivo en otro, en la orientación en que cotiza el par)."""
     kind, ticker = parse_symbol(symbol)
+    if kind == "par":
+        base, quote = ticker.split("/")
+        base, quote = canonical_pair(base, quote) if fetch is None else (base, quote)
+        ticker = f"{base}/{quote}"
+        fetch = fetch or (lambda t, cfg: fetch_pair_candles(base, quote, cfg))
     fetch = fetch or (fetch_stock_candles if kind == "accion" else fetch_candles)
     results = {}
     errors = []

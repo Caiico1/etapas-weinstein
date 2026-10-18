@@ -17,12 +17,14 @@ from .report import fmt_price, write_html, write_index
 
 _CRYPTO = re.compile(r"^[A-Z0-9]{1,15}$")
 _STOCK = re.compile(r"^[A-Z0-9][A-Z0-9.^=-]{0,19}$")
+_PAIR = re.compile(r"^[A-Z0-9]{1,15}/[A-Z0-9]{1,15}$")
 
 
 def load_watchlist(path: Path) -> tuple[list[str], list[str]]:
     """Devuelve (símbolos, avisos). Ignora comentarios (#), líneas vacías y duplicados.
 
     Criptomonedas: BTC. Acciones: accion:NVDA (ticker de Yahoo Finance, p. ej. SAN.MC).
+    Pares: par:ETH/BTC (precio de un criptoactivo en otro).
     """
     symbols, warnings = [], []
     for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -30,8 +32,8 @@ def load_watchlist(path: Path) -> tuple[list[str], list[str]]:
         if not raw:
             continue
         kind, ticker = parse_symbol(raw)
-        sym = f"accion:{ticker}" if kind == "accion" else ticker
-        if not (_STOCK if kind == "accion" else _CRYPTO).match(ticker):
+        sym = f"{kind}:{ticker}" if kind in ("accion", "par") else ticker
+        if not {"accion": _STOCK, "par": _PAIR}.get(kind, _CRYPTO).match(ticker):
             warnings.append(f"{path.name} línea {n}: '{sym}' no parece un símbolo válido; se ignora")
         elif sym in symbols:
             warnings.append(f"{path.name} línea {n}: {sym} repetido; se ignora")
@@ -153,7 +155,7 @@ def write_alerts(items: list[dict], prev_date: str | None, out_dir: Path, today:
 
 def add_liquidity(asset: AssetResult, log: list[str]) -> None:
     """Calcula la liquidez concentrada de un criptoactivo. Un fallo nunca detiene la rutina."""
-    if asset.error or asset.kind != "cripto":
+    if asset.error or asset.kind == "accion":
         return
     try:
         asset.liquidity = analyze_liquidity(asset)

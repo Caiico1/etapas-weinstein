@@ -194,6 +194,7 @@ class LiquidityResult:
     note: str = ""
     best: str = ""                        # recomendación de conjunto
     capital: float = LP_CAPITAL_REF
+    quote: str = "USDC"                   # moneda del par (BTC en ETH/BTC)
 
     def to_dict(self) -> dict:
         def q(x: PoolQuote) -> dict:
@@ -278,11 +279,16 @@ def quote_pool(pool: Pool, state: PoolState | None, low: float, high: float, mar
 
 def analyze_liquidity(asset: AssetResult, fetch=None,
                       capital: float = LP_CAPITAL_REF) -> LiquidityResult | None:
-    """Perfiles diario, semanal y mensual para un criptoactivo (None para acciones)."""
-    if asset.kind != "cripto" or asset.error or not asset.last_price:
+    """Perfiles diario, semanal y mensual para un criptoactivo o un par (None para acciones)."""
+    if asset.kind == "accion" or asset.error or not asset.last_price:
         return None
     price = asset.last_price
-    pools, note = pools_for(asset.symbol)
+    base, quote = asset.base, asset.quote
+    if quote in _STABLES:
+        pools, note = pools_for(base)
+    else:
+        # Los pools de referencia cotizan en dólares; los de un par cruzado se buscan con /pool
+        pools, note = [], f"Para los pools de {base}/{quote}: python -m etapas.oportunidad {base}/{quote}"
     states = (fetch or _pools.fetch_states)(pools)
     # Comisiones realmente pagadas por unidad de liquidez (el menor entre 7 y 30 días); si no hay
     # dato on-chain, quote_pool estima por volumen.
@@ -303,7 +309,7 @@ def analyze_liquidity(asset: AssetResult, fetch=None,
             profiles.append(prof)
             continue
         up = tfs.get(higher[key]) if higher[key] else None
-        prof.level, prof.reasons = verdict(r, up, asset.symbol)
+        prof.level, prof.reasons = verdict(r, up, base, quote)
         rng = lp_range(r, price)
         if rng is None:
             prof.reasons.append("No hay historial suficiente para calcular el rango.")
@@ -319,7 +325,7 @@ def analyze_liquidity(asset: AssetResult, fetch=None,
         prof.quotes = [quote_pool(p, states.get(p.id), prof.low, prof.high, price, capital,
                                   volume=volume[p.id], fee_per_liquidity=real[p.id]) for p in pools]
         profiles.append(prof)
-    res = LiquidityResult(asset.symbol, price, profiles, pools, note, capital=capital)
+    res = LiquidityResult(asset.symbol, price, profiles, pools, note, capital=capital, quote=quote)
     res.best = recommendation(res)
     return res
 

@@ -6,11 +6,20 @@
 # Acciones y ETF: accion: + el ticker de Yahoo Finance      → accion:NVDA, accion:SPY
 #   Bolsa española: ticker con .MC                          → accion:SAN.MC, accion:ITX.MC
 #   Si la acción tiene token de Ondo (NVDAon...), su precio aparece en el informe.
+# Pares: par: + los dos símbolos con /                      → par:ETH/BTC, par:SOL/ETH
+#   La etapa y los rangos son los del precio de uno en el otro: la fase que cuenta para un pool
+#   entre dos criptoactivos. Se analiza en la orientación en que cotiza (BTC/ETH → ETH/BTC).
 
 BTC
 ETH
 SOL
 # ADA
+# UNI
+# AAVE
+# JUP
+
+par:ETH/BTC
+# par:SOL/ETH
 
 # Acciones y ETF desactivados (quita el # para volver a analizarlos)
 # accion:NVDA

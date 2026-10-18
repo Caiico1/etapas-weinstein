@@ -87,7 +87,7 @@ def prompt_text(d: dict) -> str:
 def write_prompt(d: dict, out_dir: Path) -> Path:
     folder = out_dir / "ia"
     folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"{d['activo']}.md"
+    path = folder / f"{d['activo'].replace('/', '-')}.md"
     path.write_text(prompt_text(d), encoding="utf-8")
     return path
 
@@ -122,7 +122,7 @@ def ask_claude(d: dict, out_dir: Path) -> tuple[Path | None, str]:
     if msg.stop_reason == "refusal":
         return None, "el modelo no respondió a esta petición"
     text = "".join(b.text for b in msg.content if b.type == "text")
-    path = out_dir / "ia" / f"{d['activo']}_claude.md"
+    path = out_dir / "ia" / f"{d['activo'].replace('/', '-')}_claude.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return path, "ok"

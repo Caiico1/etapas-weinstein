@@ -14,6 +14,7 @@ from .contexto import MarketContext, fng_history, fomc_notes, headlines_for, nex
 from .explain import KEY_ZONE_NOTE, KEY_ZONE_TITLE, key_zone, meaning
 from .report_liquidez import (LIQ_CSS, index_cell, liquidity_html, liquidity_text, positions_html,
                               watches_html)
+from .report_panel import PANEL_CSS, matrix_html, pool_verdict_html, range_bars_html
 
 STAGE_COLORS = {1: "#2563eb", 2: "#16a34a", 3: "#eab308", 4: "#dc2626"}
 HEADERS = ["Marco", "Etapa", "Si cerrara hoy", "Confianza", "Transición", "Cierre de referencia",
@@ -469,12 +470,16 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False,
  .summary {{ background: #f8fafc; border-left: 4px solid #7c3aed; padding: 10px 14px; }}
  .disclaimer {{ color: #666; font-size: 13px; margin-top: 24px; }}
 {LIQ_CSS}
+{PANEL_CSS}
 </style></head><body>
 {back}<h1>Etapas de Weinstein · {html.escape(asset.title)}</h1>
 <p class="now">Precio actual: <b>{fmt_price(asset.last_price)}</b>
 <small>· {pd.Timestamp.now(tz="UTC"):%d/%m/%Y %H:%M} UTC · la etapa oficial usa solo velas cerradas
 (columna «Cierre de referencia»); «Si cerrara hoy» es provisional</small></p>
 {token_html}
+{pool_verdict_html(asset, pool_link())}
+{range_bars_html(asset)}
+<h2>Detalle por marco</h2>
 <div class="wrap"><table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table></div>
 <p class="note">{html.escape(RANGE_NOTE)}</p>
 {zone_html}
@@ -519,12 +524,17 @@ def _stage_cell(r: TimeframeResult) -> str:
             f' · extremo {fmt_price(r.est_low)} – {fmt_price(r.est_high)}</span></td>')
 
 
+def pool_link() -> str:
+    """URL del botón de GitHub que calcula el pool de un par (vacía si no se publica desde GitHub)."""
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    return f"https://github.com/{repo}/actions/workflows/pool.yml" if repo else ""
+
+
 def pool_button() -> str:
     """Enlace al botón de GitHub que calcula el pool de un par (solo al publicar desde GitHub)."""
-    repo = os.environ.get("GITHUB_REPOSITORY", "")
-    if not repo:
+    if not pool_link():
         return ""
-    return (f'<p><a href="https://github.com/{html.escape(repo)}/actions/workflows/pool.yml">'
+    return (f'<p><a href="{html.escape(pool_link())}">'
             '🧮 Calcular el pool de un par (GitHub → Run workflow)</a></p>')
 
 
@@ -586,21 +596,25 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
           padding: 0 4px; }}
  .err {{ color: #b91c1c; }}
  .disclaimer {{ color: #666; font-size: 13px; margin-top: 24px; }}
+ details summary {{ cursor: pointer; margin: 14px 0 4px; }}
 {LIQ_CSS}
+{PANEL_CSS}
 </style></head><body>
 <h1>Etapas de Weinstein · resumen</h1>
 <p><a href="guia.html">📘 Guía de lectura: qué significa cada dato y cómo interpretarlo</a></p>
 {pool_button()}
 <p class="muted">Actualizado {now:%Y-%m-%d %H:%M} UTC · solo velas cerradas · {legend}</p>
 {_context_strip(context)}
+{matrix_html(assets, changes)}
 {changes_html}
 {positions_html(positions or [])}
 {watches_html(watches or [])}
+<details><summary><b>Detalle por valor</b>: niveles, rangos, alineación y liquidez</summary>
 <div class="wrap"><table>
 <thead><tr><th>Activo</th><th>Mensual (contexto)</th><th>Semanal (tendencia)</th>
 <th>Diario (entrada)</th><th>Alineación</th><th>Liquidez: idoneidad y rango</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table></div>
-<p class="muted">{html.escape(RANGE_NOTE)}</p>
+<p class="muted">{html.escape(RANGE_NOTE)}</p></details>
 {warn_html}
 <p class="disclaimer">{DISCLAIMER}</p>
 </body></html>"""

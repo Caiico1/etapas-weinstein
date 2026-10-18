@@ -120,7 +120,8 @@ def liquidity_html(liq: LiquidityResult | None) -> str:
             f'<td>{level_chip(p.level)}</td>'
             f'<td class="typ">{fmt(p.low)}</td><td class="typ">{fmt(p.high)}</td>'
             f'<td>{w[0]:+.1%} / {w[1]:+.1%}</td>'
-            f'<td>{_pct(p.asset_share, False)} activo<br>{_pct(1 - p.asset_share, False)} estable</td>'
+            f'<td>{_pct(p.asset_share, False)} activo<br>{_pct(1 - p.asset_share, False)} '
+            f'{"estable" if liq.quote in ("USDC", "USDT", "USD", "DAI") else html.escape(liq.quote)}</td>'
             f'<td>{_pct(p.loss_low)} / {_pct(p.loss_high)}</td>'
             + (_quote_cells(p.main_quote, cap) if liq.pools else '<td colspan="4" class="muted">sin pool</td>')
             + "</tr>")
