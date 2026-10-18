@@ -193,7 +193,8 @@ def test_report_shows_liquidity(tmp_path):
     payload = json.loads(render_json([asset]))
     assert payload["activos"][0]["liquidez"]["perfiles"][2]["perfil"] == "Mensual"
     page = write_html(asset, tmp_path).read_text(encoding="utf-8")
-    assert "Liquidez concentrada (Uniswap v3 / Orca)" in page and "ticks" in page
+    assert "Liquidez concentrada (Uniswap v3 y v4 / Orca)" in page and "ticks" in page
+    assert "se muestran los de referencia" in page            # sin red: lista de referencia
     index = write_index([asset], [], None, [], tmp_path, pd.Timestamp("2026-09-28", tz="UTC"),
                         positions=[check(Position("ETH", 1, 2), asset.last_price)])
     html = index.read_text(encoding="utf-8")
@@ -266,3 +267,59 @@ def test_routine_with_liquidity_and_positions(tmp_path, monkeypatch):
     assert (out / "ia" / "ETH.md").exists()
     hist = json.loads((out / "historial" / "2026-09-28.json").read_text(encoding="utf-8"))
     assert list(hist["posiciones"].values()) == ["fuera por abajo", "sin precio"]
+
+
+# ---------------------------------------------------------------- búsqueda de pools en vivo
+
+def _live(price):
+    from etapas.pools import Pool
+    base = Pool("base-uniswap-aa", "ETH/USDC", "Uniswap v3", "base", "0x" + "aa" * 20, "WETH/USDC",
+                0.0005, 10, 18, 6, True)
+    eth = Pool("ethereum-uniswap4-bb", "ETH/USDC", "Uniswap v4", "ethereum", "0x" + "bb" * 32, "ETH/USDC",
+               0.0001, 1, 18, 6, True)
+    thin = Pool("arbitrum-uniswap-cc", "ETH/USDC", "Uniswap v3", "arbitrum", "0x" + "cc" * 20, "WETH/USDC",
+                0.003, 60, 18, 6, True)
+    quiet = Pool("base-uniswap-dd", "ETH/USDT", "Uniswap v3", "base", "0x" + "dd" * 20, "WETH/USDT",
+                 0.0005, 10, 18, 6, True)
+    states = {base.id: PoolState(price=price, liquidity=10 ** 20, volume_24h=5e7, tvl=9e7),
+              eth.id: PoolState(price=price, liquidity=10 ** 19, volume_24h=5e7, tvl=5e6),
+              thin.id: PoolState(price=price, liquidity=10 ** 17, volume_24h=5e7, tvl=3e5),
+              quiet.id: PoolState(price=price, liquidity=10 ** 19, volume_24h=1e3, tvl=2e6)}
+    return base, eth, thin, quiet, states
+
+
+def test_live_pools_filters_and_sorts(monkeypatch):
+    base, eth, thin, quiet, states = _live(2500.0)
+    by_quote = {"USDC": [eth, thin, base], "USDT": [quiet]}
+    monkeypatch.setattr(lq, "discover", lambda sym, quote: (by_quote[quote], [f"aviso {quote}"]))
+    monkeypatch.setattr(lq._pools, "fetch_states", lambda pools: states)
+    monkeypatch.setattr(lq._pools, "median_volume", lambda pool: 1e3 if pool is quiet else 4e7)
+    pools, st, vols, warn = lq.live_pools("ETH")
+    assert pools == [base, eth]                      # sin el de poco TVL ni el de poco volumen; por TVL
+    assert st is states and vols == {base.id: 4e7, eth.id: 4e7} and warn == ["aviso USDC", "aviso USDT"]
+
+
+def test_analysis_uses_live_pools_and_daily_avoids_ethereum(tmp_path):
+    asset = _asset()
+    base, eth, _, _, states = _live(asset.last_price)
+    res = lq.analyze_liquidity(asset, find=lambda s: ([base, eth], states, {base.id: 5e7, eth.id: 5e7}, []))
+    assert res.live and res.pools == [base, eth]
+    daily, weekly, monthly = res.profiles
+    assert all(len(p.quotes) == 2 for p in res.profiles)
+    assert weekly.main_quote.pool is eth and monthly.main_quote.pool is eth    # paga más por dólar
+    assert daily.main_quote.pool is base                                        # pero no en el diario
+    assert max(daily.quotes, key=lambda q: q.fee_day).pool is eth
+    asset.liquidity = res
+    page = write_html(asset, tmp_path).read_text(encoding="utf-8")
+    assert "búsqueda de hoy" in page and "Uniswap v4 · Ethereum · ETH/USDC 0,01 %" in page
+
+
+def test_live_search_failure_falls_back_to_reference_pools():
+    asset = _asset()
+    _fake_states.price = asset.last_price
+
+    def broken(symbol):
+        raise OSError("sin red")
+    res = lq.analyze_liquidity(asset, fetch=_fake_states, find=broken)
+    assert not res.live and res.pools == pools_for("ETH")[0] and res.warnings == ["búsqueda de pools: OSError"]
+    assert res.profiles[0].main_quote is not None

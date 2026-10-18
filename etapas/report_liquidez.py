@@ -21,6 +21,14 @@ LP_NOTE = ("Rango = hasta dónde llegó el precio en el 90 % de las velas pasada
            "que en Base, Arbitrum o Solana, así que para el perfil diario conviene una de estas.")
 
 
+POOLS_LIVE = ("Pools: búsqueda de hoy entre todos los de Uniswap v3, Uniswap v4 (sin hook) y Orca del "
+              "activo frente a USDC y USDT, con al menos 1 M$ de TVL y 50 k$ de volumen diario. En el perfil "
+              "diario no se destaca un pool de Ethereum si hay otro en una red barata. v3 y v4 son pools "
+              "distintos: al crear la posición, comprueba la versión y la comisión.")
+POOLS_FIXED = ("Pools: hoy la búsqueda en vivo no ha devuelto pools; se muestran los de referencia "
+               "(Uniswap v3 / Orca).")
+
+
 def fmt(x) -> str:
     if x is None:
         return "—"
@@ -48,7 +56,7 @@ def _days(x) -> str:
 def liquidity_text(liq: LiquidityResult | None) -> str:
     if liq is None:
         return ""
-    out = ["", "Liquidez concentrada (Uniswap v3 / Orca):", f"  {liq.best}"]
+    out = ["", "Liquidez concentrada (Uniswap v3 y v4 / Orca):", f"  {liq.best}"]
     if liq.note and liq.pools:
         out.append(f"  Nota: {liq.note}")
     for p in liq.profiles:
@@ -132,7 +140,9 @@ def liquidity_html(liq: LiquidityResult | None) -> str:
         details.append(f"<h3>{html.escape(p.name)} · {level_chip(p.level, small=True)}</h3>"
                        f"<ul>{reasons}{levels}</ul>{pools}")
     note = f'<p class="note">{html.escape(liq.note)}</p>' if liq.note else ""
-    return f"""<div class="liq"><h2>Liquidez concentrada (Uniswap v3 / Orca)</h2>
+    if liq.pools:
+        note += f'<p class="note">{html.escape(POOLS_LIVE if liq.live else POOLS_FIXED)}</p>'
+    return f"""<div class="liq"><h2>Liquidez concentrada (Uniswap v3 y v4 / Orca)</h2>
 <p class="summary">{html.escape(liq.best)}</p>{note}
 <div class="wrap"><table><thead><tr><th>Perfil</th><th>Idoneidad</th><th>Precio mín.</th><th>Precio máx.</th>
 <th>Anchura</th><th>Depósito</th><th>Si toca el mín. / máx.</th><th>Pool con más comisiones estimadas: rango ajustado a ticks</th>
