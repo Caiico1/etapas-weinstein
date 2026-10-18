@@ -78,13 +78,34 @@
         "confirma": 124.95,
         "invalida": 95.82
       }
+    },
+    "par:ETH/BTC": {
+      "1M": {
+        "etapa": 1,
+        "transicion": "",
+        "vela": "2026-09-01",
+        "cierre": 0.03212,
+        "confirma": 0.037505,
+        "invalida": 0.02525
+      },
+      "1w": {
+        "etapa": 1,
+        "transicion": "1→2",
+        "vela": "2026-10-05",
+        "cierre": 0.03029,
+        "confirma": 0.035609999999999996,
+        "invalida": 0.02904
+      },
+      "1d": {
+        "etapa": 3,
+        "transicion": "3→4",
+        "vela": "2026-10-17",
+        "cierre": 0.02949,
+        "confirma": 0.027054999999999996,
+        "invalida": 0.03253
+      }
     }
   },
   "posiciones": {},
-  "oportunidades": {
-    "BTC/USDC 3000 todas": "",
-    "ETH/USDC 3000 todas": "",
-    "ETH/USDT 3000 todas": "",
-    "BTC/ETH 3000 todas": ""
-  }
+  "oportunidades": {}
 }
