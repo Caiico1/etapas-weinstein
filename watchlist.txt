@@ -19,6 +19,8 @@ SOL
 # JUP
 
 par:ETH/BTC
+par:ETH/USDC
+par:BTC/USDC
 # par:SOL/ETH
 
 # Acciones y ETF desactivados (quita el # para volver a analizarlos)
@@ -28,5 +30,5 @@ par:ETH/BTC
 # accion:BE     # Bloom Energy
 # accion:QQQ    # ETF Nasdaq 100
 # accion:IAU    # ETF oro (iShares)
-# accion:GLD    # ETF oro (SPDR)
+accion:GLD    # ETF oro (SPDR)
 # accion:SLV    # ETF plata
