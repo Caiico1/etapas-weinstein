@@ -55,6 +55,20 @@ que cada cifra sale de datos verificados.
 4. **Errores.** Si DefiLlama no responde, la fase 1 queda vacía: dilo y propone reintentar en unos
    minutos o usar pool-liquidez con un par concreto.
 
+## Contraste con el histórico (solo en el PC con MetaProDB)
+
+Si existe `D:\MetaProDB\metapro.duckdb` (histórico hora a hora, desde el 17-oct-2024, de 168 pools
+Uniswap v3 y v4 en Ethereum, Base y Arbitrum, leído de la blockchain), añade para las duplas
+recomendadas cómo se comportaron en el pasado. Si no existe (claude.ai en la web, otro equipo o el
+disco desconectado), omite esta sección sin mencionarla.
+
+- Con el MCP `metaprodb` (solo lectura): comisiones/TVL de los últimos meses de cada pool
+  recomendado en `metapro.pool_day_v`, para ver si el 0,1 % diario es habitual o una semana buena.
+- Ofrece el backtest del método para la mejor, desde `C:\Users\javie\Proyectos\etapas-weinstein`:
+  `python -m etapas.backtest "<dirección del pool>" --metodo 1w,1M --variantes --ventana 60 --paso 7`.
+- Si un pool recomendado no está en MetaProDB, dilo y ofrece añadirlo a
+  `C:\Users\javie\Proyectos\metapro-db\pools\<red>.csv`.
+
 ## Reglas
 
 - Un Vol/TVL o unas comisiones/TVL altas **no** bastan para recomendar: lo que decide es el neto del

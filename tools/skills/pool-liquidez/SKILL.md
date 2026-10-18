@@ -111,6 +111,27 @@ frente a mantener los dos tokens, con la lectura final («las comisiones compens
 comisiones ya cobradas antes solo cuentan si las indica con `--cobradas`. Solo lee datos públicos de
 la blockchain: no necesita su cartera.
 
+## Contraste con el histórico (solo en el PC con MetaProDB)
+
+Si existe `D:\MetaProDB\metapro.duckdb` (histórico hora a hora, desde el 17-oct-2024, de 168 pools
+Uniswap v3 y v4 en Ethereum, Base y Arbitrum, leído de la blockchain), completa la respuesta con lo
+que pasó de verdad. Si no existe (claude.ai en la web, otro equipo o el disco desconectado), omite
+esta sección sin mencionarla.
+
+- **Datos del pool propuesto**: con el MCP `metaprodb` (solo lectura), por ejemplo comisiones/TVL
+  por mes en `metapro.pool_day_v`, o cuánto duró el precio dentro de un rango parecido.
+- **Estrategia**: ofrece o lanza el backtest desde `C:\Users\javie\Proyectos\etapas-weinstein`:
+
+```bash
+python -m etapas.backtest "<dirección del pool>" --metodo 1w,1M --variantes --ventana 60 --paso 7
+python -m etapas.backtest "<dirección del pool>" --ancho 10,20 --reajuste nunca,fuera --espera 24
+```
+
+  `--metodo` reproduce este mismo método ciclo a ciclo con los datos de cada fecha. Presenta la
+  mediana, el peor 10 % y el resultado frente a mantener; es evidencia del pasado, no garantía.
+- Si el pool no está en MetaProDB, dilo y ofrece añadirlo a
+  `C:\Users\javie\Proyectos\metapro-db\pools\<red>.csv`. Detalle: `metapro-db\MANUAL.md`.
+
 ## Límites
 
 - Las comisiones y el resultado neto son **estimaciones**: dependen del volumen y la liquidez del
