@@ -12,15 +12,16 @@
 
 BTC
 ETH
-SOL
+# SOL
 # ADA
 # UNI
 # AAVE
 # JUP
 
 par:ETH/BTC
-par:ETH/USDC
-par:BTC/USDC
+par:BTC/ETH
+#par:ETH/USDC
+#par:BTC/USDC
 # par:SOL/ETH
 
 # Acciones y ETF desactivados (quita el # para volver a analizarlos)
