@@ -4,7 +4,7 @@ import html
 
 from .liquidez import LiquidityResult, ProfileResult, PoolQuote
 
-LEVEL_COLORS = {"favorable": "#16a34a", "precaución": "#d97706", "desfavorable": "#dc2626",
+LEVEL_COLORS = {"apta": "#16a34a", "precaución": "#d97706",
                 "sin datos": "#6b7280"}
 POS_COLORS = {"dentro": "#16a34a", "cerca del mínimo": "#d97706", "cerca del máximo": "#d97706",
               "fuera por abajo": "#dc2626", "fuera por arriba": "#dc2626", "sin precio": "#6b7280"}
@@ -135,7 +135,7 @@ def liquidity_html(liq: LiquidityResult | None) -> str:
     note = f'<p class="note">{html.escape(liq.note)}</p>' if liq.note else ""
     return f"""<div class="liq"><h2>Liquidez concentrada (Uniswap v3 / Orca)</h2>
 <p class="summary">{html.escape(liq.best)}</p>{note}
-<div class="wrap"><table><thead><tr><th>Perfil</th><th>Idoneidad</th><th>Precio mín.</th><th>Precio máx.</th>
+<div class="wrap"><table><thead><tr><th>Perfil</th><th>Paso 1 (etapa)</th><th>Precio mín.</th><th>Precio máx.</th>
 <th>Anchura</th><th>Depósito</th><th>Si toca el mín. / máx.</th><th>Pool con más comisiones estimadas: rango ajustado a ticks</th>
 <th>Comisiones/día ({cap:,.0f} $)</th><th>APR est.</th><th>Pérdida en el borde = días de comisiones</th>
 </tr></thead><tbody>{''.join(rows)}</tbody></table></div>
@@ -189,11 +189,12 @@ def watches_html(items: list[dict]) -> str:
             text += f' · <a href="{html.escape(i["enlace"])}" target="_blank" rel="noopener">abrir el pool</a>'
         rows.append(f'<tr><td><b>{html.escape(i["par"])}</b><br><span class="muted">{i["capital"]:,.0f} $ · '
                     f'{html.escape(where)}</span></td><td><b style="color:{color}">'
-                    f'{"hay propuesta" if i["hay_propuesta"] else "sin propuesta"}</b><br>'
-                    f'<span class="small">{text}</span></td></tr>')
+                    f'{html.escape(i.get("decision") or ("hay propuesta" if i["hay_propuesta"] else "sin propuesta"))}'
+                    f'</b><br><span class="small">{text}</span></td></tr>')
     return ('<h2>Oportunidades de liquidez vigiladas (oportunidades.txt)</h2><div class="wrap"><table><thead><tr>'
             '<th>Par</th><th>Hoy</th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div>'
-            '<p class="muted">Hay propuesta cuando la etapa no es desfavorable, el pool tiene liquidez suficiente y '
-            'el resultado neto estimado es positivo incluso con el margen de seguridad. Son estimaciones.</p>')
+            '<p class="muted">Dos pasos: 1) la etapa lo permite (apta o precaución) y 2) es rentable (liquidez '
+            'suficiente y neto positivo incluso con el margen de seguridad y por encima de Aave). Abrir = los dos; '
+            'vigilar = falta el paso 2, con cuántas veces las comisiones de hoy harían falta. Son estimaciones.</p>')
 

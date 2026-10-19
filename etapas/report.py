@@ -612,7 +612,7 @@ def write_index(assets: list[AssetResult], changes: list[dict], prev_date: str |
 <details><summary><b>Detalle por valor</b>: niveles, rangos, alineación y liquidez</summary>
 <div class="wrap"><table>
 <thead><tr><th>Activo</th><th>Mensual (contexto)</th><th>Semanal (tendencia)</th>
-<th>Diario (entrada)</th><th>Alineación</th><th>Liquidez: idoneidad y rango</th></tr></thead>
+<th>Diario (entrada)</th><th>Alineación</th><th>Liquidez: paso 1 (etapa) y rango</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table></div>
 <p class="muted">{html.escape(RANGE_NOTE)}</p></details>
 {warn_html}

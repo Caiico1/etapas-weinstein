@@ -298,12 +298,15 @@ comprobación fuera de muestra (sep-2026), el precio se quedó dentro durante to
 82 % de las veces en BTC, ETH y SOL, en los tres marcos. Después, el rango se <b>ajusta a los ticks</b> de cada
 pool: Uniswap solo admite ciertos precios, y el ajuste se hace siempre hacia fuera, de modo que el rango nunca
 se estrecha. Esos son los números que hay que escribir en Uniswap u Orca.</p>
-<h3>Idoneidad según la etapa</h3>
+<h3>Decisión en dos pasos</h3>
 <ul>
-<li><b>Favorable</b>: etapas 1 y 3. El precio oscila en un rango, que es donde este tipo de liquidez rinde más.</li>
-<li><b>Precaución</b>: etapa 2, transiciones y etapas laterales cuando el marco superior es bajista. En etapa 2,
-si sube con fuerza, acabas todo en USDC y ganas menos que manteniendo el activo.</li>
-<li><b>Desfavorable</b>: etapa 4. Si cae, acabas todo en el activo mientras sigue cayendo.</li>
+<li><b>Paso 1, la etapa</b> (color del perfil): <b>apta</b> en casi todo; <b>precaución</b> solo en la etapa 2
+(alcista) en los perfiles semanal y mensual, que en el histórico fue la más floja para un rango (menos tiempo
+dentro y más pérdida frente a mantener). En el diario la etapa no cambió el resultado. Ninguna etapa impide abrir
+por sí sola.</li>
+<li><b>Paso 2, la rentabilidad</b> (✓): que las comisiones reales del pool compensen la pérdida frente a mantener,
+con margen de seguridad, y rindan más que dejar los mismos tokens en Aave. Solo con ✓ se abre; si no,
+«vigilar» dice cuántas veces las comisiones de hoy harían falta.</li>
 </ul>
 <h3>Resto de columnas</h3>
 <ul>

@@ -95,6 +95,8 @@ LP_PROFILES = [("1d", "Diaria", "1 día"), ("1w", "Semanal", "7 días"), ("1M", 
 LP_QUANTILE = 0.9
 # Capital de referencia para estimar comisiones (en dólares)
 LP_CAPITAL_REF = 1000
+# Capital con el que la rutina comprueba si un pool es rentable (el mismo que /pool por defecto)
+POOL_CHECK_CAPITAL = 5000
 # Si el precio de un pool se aleja más que esto del de mercado, no se estiman comisiones
 LP_MAX_POOL_DEVIATION = 0.02
 # Posiciones abiertas: aviso si el precio está a menos de esta fracción de la anchura de un borde

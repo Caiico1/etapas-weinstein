@@ -33,7 +33,7 @@ def test_pair_asset_identity_and_liquidity():
     liq = analyze_liquidity(a, fetch=lambda pools: {})
     assert liq.quote == "BTC" and liq.pools == []
     assert "etapas.oportunidad ETH/BTC" in liq.note
-    assert all(p.level in ("favorable", "precaución", "desfavorable") for p in liq.profiles)
+    assert all(p.level in ("apta", "precaución") for p in liq.profiles)
 
 
 def test_report_pool_links_go_to_uniswap():
@@ -81,3 +81,47 @@ def test_pool_verdict_card_shows_profiles_and_command():
     assert "python -m etapas.oportunidad ETH/BTC" in card and "desde GitHub" in card
     assert range_bars_html(a).count('class="bar-card"') == 3
     assert pool_verdict_html(AssetResult("NVDA", {}, kind="accion")) == ""
+
+
+def test_pool_column_separates_stage_from_profitability():
+    """Paso 1 (color) y paso 2 (✓ y decisión): el ✓ solo sale si /pool propondría la combinación."""
+    from types import SimpleNamespace as NS
+    from etapas import oportunidad as op
+    a = _pair()
+    a.liquidity = analyze_liquidity(a, fetch=lambda pools: {})
+    pool = NS(label="Uniswap v3 · Base · WETH/cbBTC 0,30 %")
+
+    def opp(cycle, excluded, net_apr, net_safe=-5.0):
+        o = op.Opportunity(cycle, cycle, 7.0, "apta", [], pool, None, op.Backtest(0.8, -0.01, 50))
+        o.excluded, o.net_apr, o.fees_cycle, o.net_safe, o.aave_apy = excluded, net_apr, 10.0, net_safe, 0.0
+        return o
+
+    a.pool_report = NS(capital=5000, opportunities=[
+        opp("1w", "resultado neto estimado negativo", -0.092),
+        opp("1M", "", 0.05, net_safe=3.0), opp("1M", "", 0.03, net_safe=2.0)])
+    out = matrix_html([a], [])
+    assert "etapa apta:" in out and "favorable" not in out
+    assert "decisión: ABRIR · mensual (+5.0%)" in out and "M✓" in out and "S✓" not in out
+    card = pool_verdict_html(a)
+    assert "✓ paso 2: abrir · +5.0% anual" in card
+    assert ("paso 2: vigilar · resultado neto estimado negativo; para abrir necesitaría unas comisiones "
+            "1,5 veces las de hoy (-9.2% anual)") in card
+    a.pool_report = NS(capital=5000, opportunities=[opp("1w", "resultado neto estimado negativo", -0.092)])
+    assert "decisión: vigilar · lo más cercano: semanal, faltan comisiones ×1,5" in matrix_html([a], [])
+    a.pool_report = NS(capital=5000, opportunities=[])
+    assert "decisión: sin pools" in matrix_html([a], [])
+    a.pool_report = None
+    assert "decisión:" not in matrix_html([a], [])
+
+
+def test_open_position_hint_uses_the_two_steps():
+    """posiciones.txt: dentro o fuera, la decisión de hoy dice si reajustar."""
+    from types import SimpleNamespace as NS
+    from etapas import oportunidad as op
+    o = op.Opportunity("1w", "Semanal", 7.0, "apta", [], NS(label="Uniswap v3 · x"), None, op.Backtest(0.8, -0.01, 50))
+    o.excluded, o.net_apr, o.fees_cycle, o.net_safe, o.aave_apy = "resultado neto estimado negativo", -0.05, 10.0, -5.0, 0.0
+    rep = NS(capital=5000, opportunities=[o])
+    assert "Hoy /pool: vigilar: no reajustes" in rutina.today_hint(rep, outside=True)
+    assert "si sale del rango, no reajustes" in rutina.today_hint(rep, outside=False)
+    o.excluded = ""
+    assert "Hoy /pool: abrir (ciclo semanal, Uniswap v3 · x): reajusta" in rutina.today_hint(rep, outside=True)

@@ -373,6 +373,7 @@ class FeeRates:
     week: float | None = None             # últimos 7 días
     month: float | None = None            # últimos 30 días
     weeks: list[float] = field(default_factory=list)   # cada una de las últimas 4 semanas, la más reciente primero
+    before: float | None = None           # los 150 días anteriores al último mes (régimen de comisiones)
 
     @property
     def prudent(self) -> float | None:
@@ -385,7 +386,7 @@ class FeeRates:
         return min(self.weeks) if self.weeks else None
 
 
-FEE_SNAPSHOT_DAYS = (1, 7, 14, 21, 28, 30)
+FEE_SNAPSHOT_DAYS = (1, 7, 14, 21, 28, 30, 180)
 _snap_cache: dict[str, list[tuple[int, int]]] = {}
 
 
@@ -432,6 +433,7 @@ def fee_rates(pool: Pool, usd0: float, usd1: float) -> FeeRates | None:
 
     idx = {d: i + 1 for i, d in enumerate(FEE_SNAPSHOT_DAYS)}
     weeks = [rate(idx[a] if a else 0, idx[b]) for a, b in ((0, 7), (7, 14), (14, 21), (21, 28))]
-    out = FeeRates(rate(0, idx[1]), rate(0, idx[7]), rate(0, idx[30]), [w for w in weeks if w is not None])
+    out = FeeRates(rate(0, idx[1]), rate(0, idx[7]), rate(0, idx[30]), [w for w in weeks if w is not None],
+                   rate(idx[30], idx[180]))
     return out if any(x is not None for x in (out.day, out.week, out.month)) else None
 

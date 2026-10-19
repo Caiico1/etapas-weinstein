@@ -61,7 +61,7 @@ def test_reajuste_recentra_y_vuelve_a_cobrar():
     assert r.fees_usd > 0
 
 
-def _cycle(df, low, high, stop_low=None, level="favorable"):
+def _cycle(df, low, high, stop_low=None, level="apta"):
     return B.Cycle(df["hour"].iloc[0], df["hour"].iloc[-1], low, high, stop_low, None, level)
 
 
@@ -78,11 +78,11 @@ def test_metodo_un_ciclo_cobra_como_un_rango_fijo():
 
 def test_metodo_veto_de_etapa_se_queda_en_la_estable():
     df = _series([T0] + [T0 + 2000] * 24, growth1=1e-6)                  # ETH sube ~22 %
-    r = B.simulate_method(POOL, df, [_cycle(df, 1800, 2200, level="desfavorable")], B.Method("1w", gas_usd=0))
+    r = B.simulate_method(POOL, df, [_cycle(df, 1800, 2200, level="sin datos")], B.Method("1w", gas_usd=0))
     assert (r.cycles, r.vetoed) == (0, 1)
     assert r.fees_usd == 0
     assert r.final == pytest.approx(10_000)                                # todo el tiempo en USDC
-    r2 = B.simulate_method(POOL, df, [_cycle(df, 1800, 2200, level="desfavorable")],
+    r2 = B.simulate_method(POOL, df, [_cycle(df, 1800, 2200, level="sin datos")],
                            B.Method("1w", gas_usd=0, use_stage=False))
     assert r2.cycles == 1                                                  # sin veto, abre
 

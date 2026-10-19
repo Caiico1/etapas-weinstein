@@ -1,6 +1,6 @@
 ---
 name: pool-liquidez
-description: Liquidez concentrada en Uniswap v3 y v4 para un par (ETH/USDC, BTC/USDT, ETH/BTC...) o una temática (oro tokenizado, bitcoin, ether). Da una respuesta corta y el mejor pool (red, versión, comisión, dirección y enlace), el ciclo, el rango mínimo y máximo, el depósito de cada token, el stop-loss y el neto estimado, o dice que es mejor esperar. Incluye las comisiones reales en 24 h, 7 y 30 días, cuántos días aguanta el rango, por qué lado sale y el resultado sin tocar frente a reajustar; con una temática, clasifica todos sus pools por TVL, volumen y APR. También sigue una posición abierta. Úsala cuando el usuario pregunte qué pool es el más rentable, qué rango poner, dónde aportar liquidez con un par o un activo, cuánto depositar, si abrir ahora, si un APR visto en otro sitio es real o cómo va su posición, aunque no diga «pool». Si no dice par ni activo, usa pool-cribado.
+description: Liquidez concentrada en Uniswap v3 y v4 para un par (ETH/USDC, BTC/USDT, ETH/BTC...) o una temática (oro tokenizado, bitcoin, ether). Decide en dos pasos —si la etapa permite abrir y si es rentable— y responde abrir, abrir con precaución o vigilar. Da una respuesta corta y el mejor pool (red, versión, comisión, dirección y enlace), el ciclo, el rango mínimo y máximo, el depósito de cada token, el stop-loss y el neto estimado. Incluye las comisiones reales en 24 h, 7 y 30 días, cuántos días aguanta el rango, por qué lado sale y el resultado sin tocar frente a reajustar; con una temática, clasifica todos sus pools por TVL, volumen y APR. También sigue una posición abierta. Úsala cuando el usuario pregunte qué pool es el más rentable, qué rango poner, dónde aportar liquidez con un par o un activo, cuánto depositar, si abrir ahora, si un APR visto en otro sitio es real o cómo va su posición, aunque no diga «pool». Si no dice par ni activo, usa pool-cribado.
 ---
 
 # Oportunidades de liquidez concentrada para un par
@@ -37,15 +37,28 @@ muestra). Si tú calcularas o redondearas algo por tu cuenta, el usuario perder�
      `data-api.binance.vision`, `api.binance.com`, `*.publicnode.com`,
      `api.geckoterminal.com` y los nodos con histórico `eth.drpc.org`, `mainnet.base.org`,
      `base.drpc.org` y `arbitrum-one.public.blastapi.io`. Funciona siempre en Claude Code, en su ordenador.
-3. **Presenta el resultado** en español:
-   - **Empieza por la «Respuesta corta»** de la salida (campo `respuesta_corta` con `--json`), con
-     sus cifras tal cual: el pool, si es rentable o mejor esperar, el APR de comisiones con el precio
+3. **Presenta el resultado** en español, siempre en **dos pasos** y en este orden (es la misma
+   lógica de toda la herramienta, para abrir, reajustar o salir):
+   - **Paso 1 · ¿La etapa permite abrir?** Copia la línea «Paso 1» (campo `paso1_etapa` con `--json`):
+     cada ciclo es «apta» o «precaución». Solo la etapa 2 (alcista) en semanal o mensual da
+     «precaución»: en el histórico fue la más floja para un rango, y su pérdida frente a mantener ya
+     se estima solo con los ciclos pasados en esa etapa. Ninguna etapa impide abrir por sí sola: no
+     digas que la etapa 4 (bajista) veta un pool, porque se midió y no rinde peor.
+   - **Paso 2 · ¿Es rentable?** Copia la línea «Paso 2» con su neto, o el motivo si no lo es.
+   - **Decisión** (campo `decision`): **abrir** (apta y rentable), **abrir con precaución** (rentable
+     con la etapa en precaución) o **vigilar** (no rentable). En «vigilar», di cuántas veces las
+     comisiones de hoy harían falta, tal como lo da la salida, y que puede dejarlo en
+     `oportunidades.txt` para que la rutina avise si cambia.
+   - Sigue con el resto de la **«Respuesta corta»** de la salida (campo `respuesta_corta` con
+     `--json`), con sus cifras tal cual: el pool, el APR de comisiones con el precio
      dentro del rango en 24 h → 7 d → 30 d y la semana floja, cuántos días aguanta el rango y por qué
      lado sale, y el resultado **sin tocar** frente a **reajustando**. Si hay pool recomendado,
      copia completa su **dirección** (en v4, el identificador) de la línea «Dirección del pool»
      (campo `direccion` con `--json`), sin acortarla. Deja claro que el APR de
      comisiones (lo que enseñan los agregadores) no es la rentabilidad: el neto descuenta la pérdida
-     frente a mantener los tokens. Si la salida avisa de que el dato de 24 h está inflado, dilo.
+     frente a mantener los tokens. Si la salida avisa de que el dato de 24 h está inflado, o de
+     **comisiones a la baja / por encima de lo habitual** (último mes frente a los 5 anteriores), dilo:
+     un backtest de una época de más comisiones sobrestima lo que el pool paga hoy.
    - Con una **temática**: la respuesta corta dice qué par da el mejor neto y, si es otro, qué pool
      paga más comisiones y cuál es su neto. Después resume la **clasificación rápida** (pool, TVL,
      volumen de 24 h y APR del pool en 24 h, 7 y 30 días) y di en qué redes se ha buscado (la salida
@@ -62,22 +75,23 @@ muestra). Si tú calcularas o redondearas algo por tu cuenta, el usuario perder�
    - Si hay **propuestas** (una o dos): para cada una, el pool (Uniswap **v3 o v4**, red, par,
      comisión y dirección o identificador), la **URL del pool en Uniswap** escrita completa y tal cual
      la da la línea «Abrir el pool en Uniswap» (campo `enlace_dex` con `--json`), el **mínimo y el máximo** a introducir (y los invertidos si el par no tiene estable), el
-     **depósito** de cada token para su capital, la etapa y su idoneidad, el comportamiento histórico
+     **depósito** de cada token para su capital, la etapa (paso 1), el comportamiento histórico
      del método y la estimación neta por ciclo, con y sin margen de seguridad. Copia los números tal cual.
    - De cada propuesta, además: el **fondeo** (tener USDC en esa red; cuánto hay que cambiar para
      abrir, su coste y el neto del primer ciclo), los **escenarios sin comisiones** frente a USDC (qué
      pasa en dólares si el precio toca el mínimo o el máximo) y el **stop-loss** (precio, pérdida en
      dólares si salta y cuántas veces saltó en el histórico). Uniswap no tiene stop-loss nativo:
      alerta de precio y cierre a mano, o una automatización de salida.
-   - Si **no hay propuesta**, dilo claramente con el motivo que da la salida: etapa desfavorable, poca
-     liquidez o que las comisiones no compensan la pérdida frente a mantener los tokens. «Mejor
-     esperar» es una respuesta válida y frecuente: en Uniswap v3, cerca de la mitad de los proveedores
+   - Si **no hay propuesta** (decisión «vigilar»), dilo claramente con el motivo que da la salida: poca
+     liquidez, comisiones que no compensan la pérdida frente a mantener los tokens o que rinde menos
+     que Aave. «Vigilar» es una respuesta válida y frecuente: en Uniswap v3, cerca de la mitad de los proveedores
      de liquidez pierden frente a mantener. Da también la regla de **capital parado** que muestra la
      salida (mantener USDC en la red del pool mejor situado).
    - Muestra el **checklist** de cada propuesta (o, si no hay ninguna, el de la mejor combinación de
      cada ciclo) tal cual lo da el programa, con sus ✅ ⚠️ ❌, el dato de cada fila y la lectura
-     final. No lo rellenes ni lo corrijas tú. Un ❌ es un veto; un ⚠️ es un aviso: coméntalos, sobre
-     todo «comisiones estimadas por volumen» y «ciclo superior en contra». Que todo esté en verde
+     final. No lo rellenes ni lo corrijas tú. Las filas «Paso 1 · Etapa» y «Paso 2 · Rentabilidad»
+     son los dos pasos. Un ❌ es un veto; un ⚠️ es un aviso: coméntalos, sobre todo «comisiones
+     estimadas por volumen» y la etapa en precaución. Que todo esté en verde
      significa que la combinación encaja en el método, no que vaya a salir bien: dilo así.
    - Los bloques **Eficiencia** (volumen/TVL > 1; comisiones del pool ≥ 0,1 % diario del TVL) y
      **Riesgo** (protocolo consolidado, respaldo de la estable, tokens custodiados o puenteados) son
@@ -110,6 +124,12 @@ tabla: variación de la posición sin comisiones, comisiones, resultado frente a
 frente a mantener los dos tokens, con la lectura final («las comisiones compensan» o no). Las
 comisiones ya cobradas antes solo cuentan si las indica con `--cobradas`. Solo lee datos públicos de
 la blockchain: no necesita su cartera.
+
+La lectura termina con **qué hacer hoy**, con los mismos dos pasos que para abrir (el programa
+analiza el par en la red de la posición; tarda 1-3 minutos, `--sin-hoy` lo omite): **mantener**
+(dentro y hoy se volvería a abrir), **mantener sin reajustar si sale** (dentro, pero hoy no se
+abriría), **reajustar** al rango que da (fuera y hoy sí se abriría) o **no reajustar** (fuera y hoy no
+se abriría: cerrar o quedarse con el token según su stop-loss). Cópiala tal cual con su paso 1.
 
 ## Contraste con el histórico (solo en el PC con MetaProDB)
 
@@ -164,7 +184,8 @@ python -m etapas.backtest "<dirección del pool>" --ancho 10,20 --reajuste nunca
 - Permanencia en el rango y estrategia sin tocar: el rango del método abierto al cierre de cada ciclo
   pasado y dejado 30 días sin tocar, sobre velas diarias (días hasta salir, tiempo dentro, lado de
   salida y resultado frente a mantener).
-- Cómo se calcula (resumen al final de la salida del programa): etapa de Weinstein del par, rango del
+- Cómo se decide y se calcula (resumen al final de la salida del programa): los dos pasos (etapa y
+  rentabilidad, con la tabla de etapas medida en el histórico), etapa de Weinstein del par, rango del
   método ajustado a ticks, comprobación histórica sin ver el futuro, comisiones realmente pagadas por
   el pool, gas y cambio de tokens de un reajuste por ciclo, margen de seguridad del 25 % sobre la
   pérdida frente a mantener y stop-loss en el precio que el par no alcanzó en el 99 % de los ciclos

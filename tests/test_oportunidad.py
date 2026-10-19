@@ -129,7 +129,7 @@ def test_analyze_end_to_end(fake_world):
             assert total == pytest.approx(5000)
             assert o.quote.low <= rep.ranges[o.cycle][0] and o.quote.high >= rep.ranges[o.cycle][1]
         if not o.excluded:
-            assert o.level != "desfavorable" and o.net_cycle > 0 and o.net_safe > 0
+            assert o.level in ("apta", "precaución") and o.net_cycle > 0 and o.net_safe > 0
             assert o.net_cycle == pytest.approx(o.fees_cycle + o.expected_result * 5000 - o.gas_usd - o.swap_cycle)
     ok = sorted((o for o in rep.opportunities if not o.excluded), key=lambda o: -o.net_apr)
     assert rep.proposals == op.choose(rep.opportunities)
@@ -152,7 +152,7 @@ def test_analyze_end_to_end(fake_world):
 
 def test_choose_prefers_another_cycle():
     def o(cycle, pool, apr):
-        x = op.Opportunity(cycle, cycle, 1, "favorable", [], pool, None, op.Backtest(0.8, -0.01, 50))
+        x = op.Opportunity(cycle, cycle, 1, "apta", [], pool, None, op.Backtest(0.8, -0.01, 50))
         x.net_apr = apr
         return x
     a, b, c = o("1w", POOL_ARB, 0.3), o("1w", POOL_ETH, 0.2), o("1M", POOL_ARB, 0.1)
@@ -166,20 +166,35 @@ def test_invalid_pair_is_reported():
     assert rep.error and "No se puede analizar" in op.render(rep)
 
 
-# ---------------------------------------------------------------- simetría ETH/BTC ↔ BTC/ETH
+# ---------------------------------------------------------------- decisión en dos pasos
 
-def test_verdict_symmetric_without_stable():
-    """Entre dos volátiles, subir o bajar cuesta lo mismo: etapas 2 y 4 dan la misma idoneidad.
-    Con una estable, la etapa 4 sigue siendo desfavorable (se acaba en el activo que cae)."""
-    from etapas.analysis import TimeframeResult
-    from etapas.liquidez import verdict
+def test_decision_two_steps():
+    """Paso 1 (etapa) y paso 2 (rentabilidad): abrir, abrir con precaución, vigilar y cuánto falta."""
+    o = op.Opportunity("1w", "Semanal", 7.0, "apta", [], None, None, op.Backtest(0.8, -0.01, 50))
+    assert op.decision(o, 5000)[0] == op.ABRIR
+    o.level = "precaución"
+    assert op.decision(o, 5000)[0] == op.PRECAUCION
+    # Comisiones 10 $, pérdida con margen + gas + swap 15 $ → neto con margen −5 $; Aave 1 % anual
+    o.excluded, o.fees_cycle, o.net_safe, o.aave_apy = "resultado neto estimado negativo", 10.0, -5.0, 0.01
+    state, why = op.decision(o, 5000)
+    bar = 0.01 * 5000 * 7 / 365
+    assert state == op.VIGILAR and op.fee_gap(o, 5000) == pytest.approx((15 + bar) / 10)
+    assert "veces las de hoy" in why
+    o.net_safe = None
+    assert op.decision(o, 5000)[0] == op.SIN_DATOS
 
-    def tf(stage):
-        return TimeframeResult("1d", "Diario", "ok", stage=stage, stage_name="x", confidence_label="alta")
-    assert verdict(tf(2), None, "ETH", "BTC")[0] == verdict(tf(4), None, "ETH", "BTC")[0] == "precaución"
-    assert verdict(tf(4), None, "ETH", "USDC")[0] == "desfavorable"
-    assert verdict(tf(1), tf(2), "ETH", "BTC")[0] == "precaución"      # marco superior en tendencia
-    assert verdict(tf(1), tf(2), "ETH", "USDC")[0] == "favorable"
+
+def test_backtest_conditioned_on_stage():
+    """En precaución la pérdida se estima solo con los ciclos abiertos en esa etapa."""
+    cfg = TIMEFRAMES["1w"]
+    df, _ = cycle_for(cfg, seed=3)
+    r = analyze_candles(Candles(df, None, "sintético"), cfg)
+    stages = r.history["stage"].to_numpy()[:-1]
+    for s in (1, 2, 3, 4):
+        bt = op.backtest(r, 500, stage=s)
+        assert bt.stage == s and bt.samples <= int((stages == s).sum())
+    full = op.backtest(r, 500)
+    assert full.stage is None and full.samples >= max(op.backtest(r, 500, stage=s).samples for s in (1, 2, 3, 4))
 
 
 def test_inverted_pair_is_analyzed_in_canonical_orientation(fake_world, monkeypatch):

@@ -54,7 +54,7 @@ def test_full_run_ranks_only_pairs_that_pass_pool(llama, monkeypatch):
     def fake_analyze(pair, capital, chains):
         rep = op.Report(*pair.split("/"), capital, 1.0, 1.0, None)
         if pair == "ETH/USD":
-            o = op.Opportunity("1w", "Semanal", 7.0, "favorable", [], None, None, op.Backtest(0.8, -0.01, 50))
+            o = op.Opportunity("1w", "Semanal", 7.0, "apta", [], None, None, op.Backtest(0.8, -0.01, 50))
             o.net_cycle, o.net_safe, o.net_apr = 20.0, 15.0, 0.2
             rep.proposals = [o]
         return rep

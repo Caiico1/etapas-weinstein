@@ -30,14 +30,19 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
      si el usuario lo pide.
    - `--json` da los mismos datos estructurados.
 4. **Presenta el resultado** en español:
-   - **Duplas recomendadas**: la tabla tal cual (par, ciclo, pool, rango, neto, neto anual, con
+   - Toda la decisión sigue los **dos pasos** de /pool: paso 1, si la etapa del ciclo permite abrir
+     («apta» o «precaución»: solo la etapa 2 en semanal o mensual; ninguna veta por sí sola) y paso 2,
+     si es rentable. Resultado: abrir, abrir con precaución o vigilar.
+   - **Duplas recomendadas**: la tabla tal cual (par, ciclo, decisión, pool, rango, neto, neto anual, con
      margen, Vol/TVL, comisiones/TVL y número de avisos) y, de cada dupla recomendada, la
      **dirección del pool** completa (en v4, el identificador) y su enlace, tal cual los da la lista
-     «Direcciones de los pools recomendados». Explica que han superado todos los vetos
-     de /pool y que para el detalle de una (depósito, stop-loss, escenarios frente a USDC, fondeo y
-     checklist) hay que ejecutar **/pool** con ese par y capital; ofrécete a hacerlo.
-   - Si **no hay ninguna**, dilo claramente con los motivos por par y la regla de capital parado:
-     mantener USDC en la red donde vaya a operar. «Esperar» es una respuesta válida y frecuente.
+     «Direcciones de los pools recomendados». Explica que han pasado los dos pasos de /pool y que
+     para el detalle de una (depósito, stop-loss, escenarios frente a USDC, fondeo y checklist) hay
+     que ejecutar **/pool** con ese par y capital; ofrécete a hacerlo.
+   - **Duplas para vigilar**: las que pasaron el filtro pero no el paso 2, con su paso 1 y el motivo
+     (cuántas veces las comisiones de hoy harían falta). Sugiere añadirlas a `oportunidades.txt`.
+   - Si **no hay ninguna para abrir**, dilo claramente con los motivos por par y la regla de capital
+     parado: mantener USDC en la red donde vaya a operar. «Vigilar» es una respuesta válida y frecuente.
    - Resume la tabla de fase 1 en dos o tres frases: qué pares pasaron el filtro y por qué otros no
      (comisiones bajas, historial corto, hook, volumen sospechoso).
    - **Fuera de la lista verificada**: preséntalo solo como información. No los recomiendes nunca:

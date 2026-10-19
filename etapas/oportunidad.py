@@ -3,8 +3,14 @@
     python -m etapas.oportunidad ETH/USDC --capital 5000
     python -m etapas.oportunidad ETH/BTC --capital 5000 --json
 
+Toda decisión sigue dos pasos (decision()): 1) ¿la etapa permite abrir? (liquidez.verdict: apta o
+precaución) y 2) ¿es rentable? (neto positivo con margen de seguridad y por encima de Aave). Abrir =
+etapa apta y rentable; abrir con precaución = rentable con la etapa en precaución; vigilar = no
+rentable, con lo que faltaría en comisiones.
+
 Para cada ciclo (diario, semanal, mensual) y cada pool verificado del par:
-  1. Idoneidad según la etapa de Weinstein del par en ese marco (liquidez.verdict).
+  1. Paso 1, la etapa de Weinstein del par en ese marco (liquidez.verdict). En «precaución», la
+     pérdida frente a mantener se estima solo con los ciclos pasados abiertos en esa misma etapa.
   2. Rango con el método validado del proyecto (liquidez.lp_range), ajustado a los ticks del pool.
   3. Comportamiento histórico del mismo método en este par, fuera de muestra: fracción de ciclos en
      que el precio no salió del rango y resultado medio frente a mantener los tokens.
@@ -18,7 +24,7 @@ Para cada ciclo (diario, semanal, mensual) y cada pool verificado del par:
      se perdería frente a USDC al tocarlo y su comportamiento histórico (cuántas veces saltó).
 Resultado neto por ciclo = comisiones × fracción de ciclos dentro + resultado medio frente a
 mantener × capital − gas − cambio de tokens. Se proponen las dos mejores combinaciones (de ciclos
-distintos si es posible) entre las que no tienen etapa desfavorable y dan un resultado neto positivo.
+distintos si es posible) entre las que dan un resultado neto positivo con el margen de seguridad.
 """
 import argparse
 import json
@@ -36,8 +42,8 @@ from .config import DISCLAIMER, LP_QUANTILE, TIMEFRAMES
 from .data import STABLES, DataError, canonical_pair, fetch_candles, fetch_pair_candles
 from .descubrir import discover, supported_symbols
 from .indicators import expected_range
-from .liquidez import (PoolQuote, amounts_per_liquidity, composition, divergence, lp_range, position_value,
-                       quote_pool, verdict)
+from .liquidez import (CAUTION_STAGES, LEVELS, PoolQuote, amounts_per_liquidity, composition, divergence,
+                       lp_range, position_value, quote_pool, verdict)
 from .pools import Pool
 
 CYCLES = [("1d", "Diario", 1.0), ("1w", "Semanal", 7.0), ("1M", "Mensual", 30.44)]
@@ -70,6 +76,7 @@ SWAP_SLIPPAGE = 0.0005                                # deslizamiento supuesto a
 HORIZON_DAYS = 30
 MIN_PERMANENCE = 12                                   # rangos pasados mínimos para dar el dato
 INFLATED_24H = 2.0                                    # aviso si las comisiones de 24 h doblan las de 30 días
+FEE_REGIME_LOW, FEE_REGIME_HIGH = 0.6, 1.6            # último mes frente a los 5 meses anteriores (aviso)
 # Criterios de eficiencia del pool (avisos, no vetos: las comisiones reales ya los miden mejor)
 VOL_TVL_REF = 1.0                                     # volumen diario mayor que el TVL
 FEES_TVL_REF = 0.001                                  # comisiones del pool ≥ 0,1 % del TVL al día
@@ -96,6 +103,7 @@ class Backtest:
     per_width: float | None = None   # resultado medio por unidad de semianchura del rango (log)
     stop_hit: float | None = None    # fracción de ciclos en que se habría tocado el stop-loss
     mean_with_stop: float | None = None   # resultado medio frente a mantener saliendo en el stop
+    stage: int | None = None         # solo ciclos abiertos en esta etapa (paso 1 en precaución)
 
     def expected(self, low: float, high: float) -> float | None:
         """Resultado esperado frente a mantener para un rango [low, high]. El método ajusta la
@@ -148,6 +156,10 @@ class Opportunity:
     fees_tvl: float | None = None          # comisiones diarias de todo el pool / TVL
     # APR de comisiones sobre el capital con el precio dentro del rango, por ventana de datos
     apr_windows: dict = field(default_factory=dict)
+    # Comisiones del último mes / las de los 150 días anteriores: < FEE_REGIME_LOW avisa de que el pool
+    # cobra hoy mucho menos que antes (un backtest de esa época las sobrestima); > FEE_REGIME_HIGH, de
+    # que cobra más de lo habitual y puede no durar
+    fee_regime: float | None = None
     fee_apr_cycle: float | None = None     # APR de comisiones reajustando cada ciclo (sin IL)
     passive_fees: float | None = None      # sin tocar HORIZON_DAYS días: comisiones ($)
     passive_il: float | None = None        # ... resultado frente a mantener ($)
@@ -221,17 +233,25 @@ def stop_levels(lo: float, hi: float, s_lo: float, s_hi: float, cross: bool) -> 
     return low, high
 
 
-def backtest(r: TimeframeResult, samples: int, cross: bool = False) -> Backtest:
+def backtest(r: TimeframeResult, samples: int, cross: bool = False, stage: int | None = None) -> Backtest:
     """Aplica el método del rango a cada uno de los últimos `samples` ciclos con los datos que había
     al empezar cada uno (fuera de muestra) y mide qué pasó en ese ciclo. También mide el stop-loss:
     cuántas veces se habría tocado y el resultado frente a mantener saliendo en él (la posición se
-    cierra al precio del stop y se queda así hasta el cierre del ciclo)."""
+    cierra al precio del stop y se queda así hasta el cierre del ciclo).
+
+    Con `stage`, solo los últimos `samples` ciclos abiertos en esa etapa, buscados en todo el
+    histórico (la etapa de cada vela del clasificador solo usa velas anteriores: no mira al futuro)."""
     if r.status != "ok" or r.candles is None or r.history is None:
-        return Backtest(None, None, 0)
+        return Backtest(None, None, 0, stage=stage)
     cfg = TIMEFRAMES[r.timeframe]
     df, atr = r.candles, r.history["atr"]
+    if stage is None:
+        steps = range(max(0, len(df) - 1 - samples), len(df) - 1)
+    else:
+        st = r.history["stage"].to_numpy()
+        steps = [t for t in range(len(df) - 1) if st[t] == stage][-samples:]
     inside, results, scaled, hits, stopped = [], [], [], [], []
-    for t in range(max(0, len(df) - 1 - samples), len(df) - 1):
+    for t in steps:
         lo, hi = expected_range(df.iloc[:t + 1], atr.iloc[:t + 1], LP_QUANTILE, cfg.range_lookback)
         if pd.isna(lo) or pd.isna(hi) or lo <= 0:
             continue
@@ -250,9 +270,9 @@ def backtest(r: TimeframeResult, samples: int, cross: bool = False) -> Backtest:
             x0, y0 = amounts_per_liquidity(c, lo, hi)
             stopped.append(position_value(hit, lo, hi) / (x0 * nxt["close"] + y0) - 1)
     if len(inside) < MIN_BACKTEST:
-        return Backtest(None, None, len(inside))
+        return Backtest(None, None, len(inside), stage=stage)
     return Backtest(float(np.mean(inside)), float(np.mean(results)), len(inside), float(np.mean(scaled)),
-                    float(np.mean(hits)), float(np.mean(stopped)))
+                    float(np.mean(hits)), float(np.mean(stopped)), stage)
 
 
 def permanence(r: TimeframeResult, daily: pd.DataFrame | None, samples: int,
@@ -378,6 +398,17 @@ def _analyze(pair: str, capital: float, chains) -> Report:
         rep.stages[key] = verdict(r, up, base, quote)
         rep.ranges[key] = lp_range(r, rep.price)
         rep.backtests[key] = backtest(r, BACKTEST[key], cross=quote not in STABLES)
+        if rep.stages[key][0] == "precaución":
+            # Paso 1 en precaución: la pérdida esperada sale solo de los ciclos abiertos en esa etapa
+            # (o en la etapa hacia la que transita), si hay suficientes
+            caution = CAUTION_STAGES.get(key, set())
+            target = int(r.transition[-1]) if r.transition and int(r.transition[-1]) in caution else r.stage
+            cond = backtest(r, BACKTEST[key], cross=quote not in STABLES, stage=target)
+            if cond.inside is not None:
+                rep.backtests[key] = cond
+            else:
+                rep.warnings.append(f"{name}: solo {cond.samples} ciclos pasados en etapa {target} (mínimo "
+                                    f"{MIN_BACKTEST}); la pérdida se estima con todo el histórico")
         rep.stops[key] = stop_range(r, rep.price)
         rep.permanence[key] = permanence(r, daily, BACKTEST[key])
 
@@ -449,6 +480,8 @@ def _analyze(pair: str, capital: float, chains) -> Report:
                 o.apr_windows = {k: v * scale for k, v in (("24 h", rates.day), ("7 d", rates.week),
                                                            ("30 d", rates.month),
                                                            ("semana floja", rates.weakest_week)) if v is not None}
+            if rates and rates.month and rates.before:
+                o.fee_regime = rates.month / rates.before
             if rng is None:
                 o.excluded = "sin rango: historial insuficiente"
             elif key == "1d" and pool.chain in NO_DAILY_ON:
@@ -496,9 +529,7 @@ def _analyze(pair: str, capital: float, chains) -> Report:
                                      ("stop_alto", o.stop_high)):
                     if price:
                         o.scenarios[label] = (price, position_value(price, q.low, q.high) / v0 - 1)
-                if level == "desfavorable":
-                    o.excluded = "etapa desfavorable"
-                elif level == "sin datos":
+                if level not in LEVELS:
                     o.excluded = "sin etapa"
                 elif o.net_cycle <= 0:
                     o.excluded = "resultado neto estimado negativo"
@@ -520,6 +551,68 @@ def choose(opps: list[Opportunity]) -> list[Opportunity]:
     second = (next((o for o in ok[1:] if o.cycle != first.cycle), None)
               or next((o for o in ok[1:] if o.pool.id != first.pool.id), None))
     return [first] + ([second] if second else [])
+
+
+# ---------------------------------------------------------------- decisión en dos pasos
+
+ABRIR, PRECAUCION, VIGILAR, SIN_DATOS = "abrir", "abrir con precaución", "vigilar", "sin datos"
+_RANK = {ABRIR: 3, PRECAUCION: 2, VIGILAR: 1, SIN_DATOS: 0}
+
+
+def fee_gap(o: Opportunity, capital: float) -> float | None:
+    """Veces las comisiones de hoy que haría falta cobrar para que la combinación se propusiera:
+    neto positivo con el margen de seguridad y por encima de lo que pagaría Aave por los mismos
+    tokens. None si no se puede calcular o si las comisiones de hoy son nulas."""
+    if o.net_safe is None or not o.fees_cycle or o.fees_cycle <= 0:
+        return None
+    bar = max(0.0, (o.aave_apy or 0.0) * capital * o.days / 365)
+    needed = o.fees_cycle - o.net_safe + bar          # net_safe = comisiones − (pérdida·margen + gas + swap)
+    return needed / o.fees_cycle
+
+
+def decision(o: Opportunity, capital: float) -> tuple[str, str]:
+    """Paso 1 (etapa) y paso 2 (rentabilidad) de una combinación: (estado, motivo)."""
+    if not o.excluded:
+        return (ABRIR, "etapa apta y rentable") if o.level == "apta" else (
+            PRECAUCION, "rentable aun estimando la pérdida solo con los ciclos de esta etapa")
+    gap = fee_gap(o, capital)
+    if gap is not None:
+        times = f"{gap:.1f}".replace(".", ",")
+        return VIGILAR, (f"{o.excluded}; para abrir necesitaría unas comisiones {times} veces las de hoy"
+                         if gap > 1 else o.excluded)
+    return SIN_DATOS, o.excluded or "sin datos"
+
+
+def decisions(rep: Report) -> dict[str, Opportunity]:
+    """{ciclo: la mejor combinación de ese ciclo según la decisión}: primero abrir, luego abrir con
+    precaución, luego vigilar; a igualdad, la de mejor neto anual."""
+    out: dict[str, Opportunity] = {}
+    for o in rep.opportunities:
+        rank = (_RANK[decision(o, rep.capital)[0]], o.net_apr is not None, o.net_apr or 0)
+        cur = out.get(o.cycle)
+        if cur is None or rank > (_RANK[decision(cur, rep.capital)[0]], cur.net_apr is not None, cur.net_apr or 0):
+            out[o.cycle] = o
+    return {k: out[k] for k, _, _ in CYCLES if k in out}
+
+
+def overall(rep: Report) -> tuple[str, Opportunity | None]:
+    """Estado del par: el mejor estado entre sus ciclos y la combinación que lo da."""
+    best = decisions(rep)
+    if not best:
+        return SIN_DATOS, None
+    o = max(best.values(), key=lambda o: (_RANK[decision(o, rep.capital)[0]], o.net_apr or -math.inf))
+    return decision(o, rep.capital)[0], o
+
+
+def step1_line(rep: Report) -> str:
+    """'diario apta · semanal precaución (etapa 2) · mensual apta'."""
+    parts = []
+    for key, name, _ in CYCLES:
+        level = rep.stages.get(key, ("sin datos", []))[0]
+        r = rep.asset.timeframes.get(key) if rep.asset else None
+        stage = f" (etapa {r.stage})" if r is not None and r.status == "ok" and level == "precaución" else ""
+        parts.append(f"{name.lower()} {level}{stage}")
+    return " · ".join(parts)
 
 
 # ---------------------------------------------------------------- salida
@@ -569,8 +662,10 @@ def checklist(rep: Report, o: Opportunity) -> tuple[list[tuple[str, str, str, st
     ordena los que ya deciden `excluded`."""
     q, bt = o.quote, o.backtest
     rows = []
-    rows.append(("Veto", {"favorable": OK, "precaución": WARN}.get(o.level, FAIL),
-                 "La etapa del ciclo no es desfavorable", f"{_stage_line(rep, o.cycle)} → {o.level}"))
+    cond = (f"; pérdida estimada solo con {bt.samples} ciclos pasados en etapa {bt.stage}"
+            if bt.stage is not None and bt.inside is not None else "")
+    rows.append(("Paso 1 · Etapa", {"apta": OK, "precaución": WARN}.get(o.level, FAIL),
+                 "La etapa permite abrir", f"{_stage_line(rep, o.cycle)} → {o.level}{cond}"))
     rows.append(("Veto", OK if q.tvl is not None and q.tvl >= MIN_TVL else WARN,
                  "El pool tiene liquidez suficiente",
                  ("TVL desconocido" if q.tvl is None else f"TVL {q.tvl / 1e6:,.1f} M$")
@@ -579,19 +674,19 @@ def checklist(rep: Report, o: Opportunity) -> tuple[list[tuple[str, str, str, st
         rows.append(("Veto", FAIL, "El gas de la red permite reajustar cada día",
                      f"en {o.pool.chain.capitalize()} no se propone el ciclo diario"))
     if o.fees_cycle is None or o.expected_result is None:
-        rows.append(("Rentabilidad", FAIL, "Se puede calcular el resultado neto", o.excluded or "faltan datos"))
+        rows.append(("Paso 2 · Rentabilidad",FAIL, "Se puede calcular el resultado neto", o.excluded or "faltan datos"))
     else:
         il = o.expected_result * rep.capital
-        rows.append(("Rentabilidad", OK if o.fees_cycle + il > 0 else FAIL,
+        rows.append(("Paso 2 · Rentabilidad",OK if o.fees_cycle + il > 0 else FAIL,
                      "Las comisiones del ciclo superan el IL",
                      f"comisiones {_usd(o.fees_cycle)} frente a IL {_usd(il)}"))
-        rows.append(("Rentabilidad", OK if o.net_cycle > 0 else FAIL,
+        rows.append(("Paso 2 · Rentabilidad",OK if o.net_cycle > 0 else FAIL,
                      "El neto es positivo después del gas",
                      f"neto {_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual)"))
-        rows.append(("Rentabilidad", OK if o.net_safe > 0 else FAIL,
+        rows.append(("Paso 2 · Rentabilidad",OK if o.net_safe > 0 else FAIL,
                      f"Sigue positivo con un IL un {SAFETY_LOSS - 1:.0%} peor", f"neto {_usd(o.net_safe)} por ciclo"))
         if o.aave_apy is not None:
-            rows.append(("Rentabilidad", OK if o.net_safe_apr > o.aave_apy else FAIL,
+            rows.append(("Paso 2 · Rentabilidad",OK if o.net_safe_apr > o.aave_apy else FAIL,
                          "Rinde más que depositar los mismos tokens en Aave",
                          f"neto con margen {_pct(o.net_safe_apr)} anual frente a {_apr2(o.aave_apy)} en Aave V3 ("
                          + ", ".join(f"{t} {_apr2(y)}" for t, y in o.aave_yields.items()) + ")"))
@@ -604,17 +699,18 @@ def checklist(rep: Report, o: Opportunity) -> tuple[list[tuple[str, str, str, st
         rows.append(("Contexto", OK if q.fee_source == "real" else WARN,
                      "Las comisiones son las que pagó de verdad el pool",
                      "dato de la blockchain" if q.fee_source == "real" else "estimadas por volumen"))
+    if o.fee_regime is not None:
+        rows.append(("Contexto", OK if FEE_REGIME_LOW <= o.fee_regime <= FEE_REGIME_HIGH else WARN,
+                     "Las comisiones de hoy están en su nivel habitual",
+                     f"último mes al {o.fee_regime:.0%} de los 5 meses anteriores" + (
+                         ": el pool cobra mucho menos que antes (un backtest de esa época las sobrestima)"
+                         if o.fee_regime < FEE_REGIME_LOW else ": cobra más de lo habitual y puede no durar"
+                         if o.fee_regime > FEE_REGIME_HIGH else "")))
     if bt.inside is not None:
         target = 2 * LP_QUANTILE - 1
         rows.append(("Contexto", OK if bt.inside >= target else WARN,
                      "En el pasado el precio se quedó dentro del rango",
                      f"{bt.inside:.0%} de {bt.samples} ciclos (el método apunta al {target:.0%})"))
-    up = rep.asset.timeframes.get(HIGHER[o.cycle]) if HIGHER[o.cycle] else None
-    if up is not None and up.status == "ok":
-        against = {4} if rep.quote in STABLES else {2, 4}
-        rows.append(("Contexto", WARN if up.stage in against else OK,
-                     "El ciclo superior no empuja el precio fuera del rango",
-                     f"{up.label.lower()} en etapa {up.stage} · {up.stage_name}"))
     r = rep.asset.timeframes[o.cycle]
     if r.status == "ok":
         rows.append(("Contexto", WARN if r.confidence_label == "baja" else OK,
@@ -736,26 +832,40 @@ def short_answer(rep: Report) -> list[str]:
                 "- **Sin propuesta**: ninguna combinación de ciclo y pool se puede evaluar (falta liquidez o "
                 "datos); ver los descartes más abajo.", ""]
     il = o.expected_result * rep.capital
+    state, why = decision(o, rep.capital)
+    lines = [f"- **Paso 1 · ¿La etapa permite abrir?** {step1_line(rep)}."]
     if rep.proposals:
-        lines = [f"- **Mejor opción ahora: {o.pool.label}, ciclo {o.name.lower()}**. Neto estimado "
-                 f"{_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual), positivo incluso con la pérdida "
-                 f"frente a mantener un {SAFETY_LOSS - 1:.0%} peor"
-                 + (f" y por encima de depositar los mismos tokens en Aave V3 ({_apr2(o.aave_apy)} anual)."
-                    if o.aave_apy is not None else "."), address_line(o.pool)]
+        lines += [f"- **Paso 2 · ¿Es rentable?** Sí: **{o.pool.label}, ciclo {o.name.lower()}**. Neto estimado "
+                  f"{_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual), positivo incluso con la pérdida "
+                  f"frente a mantener un {SAFETY_LOSS - 1:.0%} peor"
+                  + (f" y por encima de depositar los mismos tokens en Aave V3 ({_apr2(o.aave_apy)} anual)."
+                     if o.aave_apy is not None else "."),
+                  f"- **Decisión: {state.upper()}**"
+                  + (" (etapa en precaución: la pérdida ya se ha estimado solo con los ciclos de esa etapa; "
+                     "vigila más el rango y el stop)." if state == PRECAUCION else "."),
+                  address_line(o.pool)]
     elif o.excluded == "resultado neto estimado negativo":
-        lines = [f"- **Ahora no es rentable: mejor esperar.** El pool que menos pierde es **{o.pool.label}** "
-                 f"(ciclo {o.name.lower()}): neto {_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual), "
-                 f"porque las comisiones ({_usd(o.fees_cycle)}) no cubren la pérdida frente a mantener ({_usd(il)})."]
+        lines += [f"- **Paso 2 · ¿Es rentable?** No. El pool que menos pierde es **{o.pool.label}** "
+                  f"(ciclo {o.name.lower()}): neto {_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual), "
+                  f"porque las comisiones ({_usd(o.fees_cycle)}) no cubren la pérdida frente a mantener ({_usd(il)}).",
+                  f"- **Decisión: {state.upper()}**: {why}."]
     else:
-        lines = [f"- **Ahora no se propone: mejor esperar.** La mejor combinación es **{o.pool.label}** (ciclo "
-                 f"{o.name.lower()}, neto {_usd(o.net_cycle)} por ciclo, {_pct(o.net_apr)} anual), pero queda "
-                 f"descartada: {o.excluded}."]
+        lines += [f"- **Paso 2 · ¿Es rentable?** No lo suficiente. La mejor combinación es **{o.pool.label}** "
+                  f"(ciclo {o.name.lower()}, neto {_usd(o.net_cycle)} por ciclo, {_pct(o.net_apr)} anual), pero "
+                  f"queda descartada: {o.excluded}.",
+                  f"- **Decisión: {state.upper()}**: {why}."]
     if o.apr_windows:
         txt = (f"- **Comisiones con el precio dentro del rango** (APR sobre tu capital, lo que pagó de verdad "
                f"el pool): {_windows_txt(o)}.")
         if _inflated(o):
             txt += (" El dato de 24 h dobla con creces el de 30 días: es un día de volumen fuerte y no se "
                     "extrapola (el cálculo usa el menor entre 7 y 30 días).")
+        if o.fee_regime is not None and o.fee_regime < FEE_REGIME_LOW:
+            txt += (f" **Comisiones a la baja**: el último mes cobró el {o.fee_regime:.0%} de lo de los 5 meses "
+                    "anteriores; un backtest de esa época da más de lo que el pool paga hoy.")
+        elif o.fee_regime is not None and o.fee_regime > FEE_REGIME_HIGH:
+            txt += (f" **Comisiones por encima de lo habitual**: el último mes cobró el {o.fee_regime:.0%} de lo "
+                    "de los 5 meses anteriores; puede no durar.")
         lines.append(txt)
     perm = _permanence_txt(rep, o)
     if perm:
@@ -821,11 +931,11 @@ def render(rep: Report, footer: bool = True) -> str:
         for i, o in enumerate(rep.proposals, 1):
             out += _proposal(rep, o, i) + _checklist_md(rep, o, f"**Checklist de la propuesta {i}**")
     else:
-        out += ["## Sin propuesta ahora",
-                "Ninguna combinación de ciclo y pool cumple a la vez: etapa no desfavorable, liquidez "
-                "suficiente y resultado neto positivo incluso con el margen de seguridad. Con los datos de "
-                "hoy, las comisiones no compensan lo que se pierde frente a mantener los tokens: mejor "
-                "esperar y volver a consultar.", ""]
+        out += ["## Sin propuesta ahora: vigilar",
+                "Ninguna combinación de ciclo y pool pasa el paso 2: liquidez suficiente y resultado neto "
+                "positivo incluso con el margen de seguridad y por encima de Aave. Con los datos de hoy, las "
+                "comisiones no compensan lo que se pierde frente a mantener los tokens: vuelve a consultar "
+                "(o déjalo en oportunidades.txt para que la rutina avise cuando cambie).", ""]
         out += [idle_capital(rep), ""]
         best = best_per_cycle(rep.opportunities)
         if best:
@@ -836,13 +946,14 @@ def render(rep: Report, footer: bool = True) -> str:
     from . import estrategia as E
     out += E.render(rep, rep.hedges)
     out += ["## Etapas del par", "",
-            "| Ciclo | Etapa | Idoneidad | Rango del método | Histórico: dentro / resultado medio frente a mantener |",
+            "| Ciclo | Etapa | Paso 1 | Rango del método | Histórico: dentro / resultado medio frente a mantener |",
             "|---|---|---|---|---|"]
     for key, name, _ in CYCLES:
         level, _ = rep.stages[key]
         rng, bt = rep.ranges[key], rep.backtests[key]
         rtxt = f"{_p(rng[0])} – {_p(rng[1])} ({rng[0] / rep.price - 1:+.1%} / {rng[1] / rep.price - 1:+.1%})" if rng else "—"
-        btxt = (f"{bt.inside:.0%} / {bt.mean_result:+.2%} ({bt.samples} ciclos)" if bt.inside is not None
+        btxt = (f"{bt.inside:.0%} / {bt.mean_result:+.2%} ({bt.samples} ciclos"
+                + (f" en etapa {bt.stage})" if bt.stage is not None else ")") if bt.inside is not None
                 else f"insuficiente ({bt.samples} ciclos)")
         out.append(f"| {name} | {_stage_line(rep, key)} | {level} | {rtxt} | {btxt} |")
     out += ["", "## Todas las combinaciones evaluadas", "",
@@ -867,7 +978,15 @@ def render(rep: Report, footer: bool = True) -> str:
 
 
 def how_it_works() -> list[str]:
-    return ["", "**Cómo se calcula.** Rango: hasta dónde llegó el precio del par en el 90 % de los ciclos "
+    return ["", "**Cómo se decide.** Dos pasos. Paso 1, la etapa: en el ciclo semanal y el mensual, la "
+                "etapa 2 (alcista) es «precaución» porque en el histórico (fase 0, oct-2026: ~8.400 aperturas "
+                "con comisiones reales de MetaProDB y el precio desde 2019) fue la más floja para un rango; "
+                "el resto de etapas, y todas en el diario, son «aptas». Ninguna etapa impide abrir por sí "
+                "sola: en «precaución» la pérdida frente a mantener se estima solo con los ciclos pasados "
+                "abiertos en esa etapa. Paso 2, la rentabilidad: neto positivo con el margen de seguridad y "
+                "por encima de Aave. Decisión: abrir (apta y rentable), abrir con precaución (rentable en "
+                "precaución) o vigilar (no rentable; se indica cuántas veces las comisiones de hoy harían falta).",
+            "", "**Cómo se calcula.** Rango: hasta dónde llegó el precio del par en el 90 % de los ciclos "
                 "pasados, por cada lado, con la volatilidad actual. «Dentro» y «resultado medio» salen de "
                 "aplicar el mismo método a los ciclos pasados sin ver el futuro; el resultado se reescala "
                 "a la anchura actual del rango, que depende de la volatilidad de hoy. Comisiones «real»: lo "
@@ -1001,7 +1120,11 @@ def to_json(rep: Report) -> dict:
     from . import estrategia as E
     def opp(o: Opportunity) -> dict:
         rows, reading = checklist(rep, o)
-        return {"checklist": [{"bloque": b, "estado": {OK: "cumple", WARN: "aviso", FAIL: "no cumple"}[st],
+        state, why = decision(o, rep.capital)
+        return {"decision": state, "motivo_decision": why, "comisiones_necesarias_veces": fee_gap(o, rep.capital),
+                "perdida_con_ciclos_de_la_etapa": o.backtest.stage,
+                "comisiones_ultimo_mes_frente_a_5_meses_anteriores": o.fee_regime,
+                "checklist": [{"bloque": b, "estado": {OK: "cumple", WARN: "aviso", FAIL: "no cumple"}[st],
                                "condicion": c, "dato": d} for b, st, c, d in rows],
                 "lectura": reading.replace("**", ""),
                 "ciclo": o.name, "pool": o.pool.label, "direccion": o.pool.address, "red": o.pool.chain,
@@ -1028,8 +1151,13 @@ def to_json(rep: Report) -> dict:
     perm = {name: {"rangos": pm.samples, "dias_dentro_mediana": pm.days_to_exit, "dentro_sin_tocar": pm.inside,
                    "salen": pm.exits, "salen_por_arriba": pm.up}
             for (key, name, _) in CYCLES if (pm := rep.permanence.get(key)) is not None}
+    state, top = (SIN_DATOS, None) if rep.error else overall(rep)
     return {"par": f"{rep.base}/{rep.quote}", "capital": rep.capital, "precio": rep.price,
             "error": rep.error or None,
+            "decision": state, "paso1_etapa": {name: rep.stages[key][0] for key, name, _ in CYCLES
+                                               if key in rep.stages},
+            "decision_por_ciclo": {o.name: {"decision": d[0], "motivo": d[1], "pool": o.pool.label}
+                                   for o in decisions(rep).values() for d in [decision(o, rep.capital)]},
             "respuesta_corta": None if rep.error else "\n".join(short_answer(rep)[2:]).replace("**", "").strip(),
             "permanencia_en_rango": perm, "propuestas": [opp(o) for o in rep.proposals],
             "liquidez_cubierta": E.to_json(rep, rep.hedges) or None,

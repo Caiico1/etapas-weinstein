@@ -85,12 +85,20 @@ def liquidity_for_capital(p: float, a: float, b: float, capital: float) -> float
 
 # ---------------------------------------------------------------- idoneidad según la etapa
 
-LEVELS = ["favorable", "precaución", "desfavorable"]
-_STAGE_LEVEL = {1: 0, 3: 0, 2: 1, 4: 2}
-# Entre dos activos volátiles (ETH/BTC) no hay una moneda «de cuenta»: salir por arriba o por abajo
-# cuesta lo mismo frente a mantener los dos, así que las etapas 2 y 4 pesan igual. Así ETH/BTC y
-# BTC/ETH (el mismo pool visto al revés) reciben la misma idoneidad.
-_STAGE_LEVEL_CROSS = {1: 0, 3: 0, 2: 1, 4: 1}
+# Paso 1 de toda decisión de pool: ¿la etapa permite abrir? Tabla medida (fase 0, oct-2026) con
+# ~8.400 aperturas simuladas con las comisiones reales de MetaProDB (15 pools, 2024-2026) y con el
+# precio desde 2019 (8 pares), con la etapa calculada solo con las velas cerradas al abrir:
+# - E2 (alcista) es la más floja en los ciclos semanal y mensual: menos tiempo en rango, más pérdida
+#   frente a mantener y más stops (claro en 2019-2022, casi nulo en 2023-2026) → precaución.
+# - E4 (bajista) no rinde peor que la media (es la que más tiempo pasa en rango) → apta.
+# - En el ciclo diario la etapa no cambia el resultado → siempre apta.
+# - El marco superior no mejora la lectura y no se usa.
+# Ninguna etapa justifica por sí sola no abrir: decide el paso 2 (rentabilidad, en oportunidad.py),
+# que en «precaución» estima la pérdida solo con los ciclos pasados abiertos en esa misma etapa.
+# La misma tabla vale contra dólar y entre dos volátiles (medido en ETH/BTC, LINK/ETH, UNI/ETH...,
+# siempre en la orientación de data.canonical_pair).
+LEVELS = ["apta", "precaución"]
+CAUTION_STAGES = {"1w": {2}, "1M": {2}}
 _STABLES = {"USDC", "USDT", "USD", "DAI"}
 
 
@@ -112,27 +120,24 @@ def stage_effect(stage: int, base: str, quote: str) -> str:
 
 def verdict(r: TimeframeResult, higher: TimeframeResult | None, base: str,
             quote: str = "USDC") -> tuple[str, list[str]]:
-    """Idoneidad de abrir un rango en este marco: (nivel, motivos)."""
+    """Paso 1: ¿la etapa permite abrir un rango en este marco? (nivel, motivos). `higher` (marco
+    superior) se acepta por compatibilidad, pero no cambia el nivel: no mejoró la lectura."""
     if r.status != "ok":
         return "sin datos", [f"No hay etapa en el marco {r.label.lower()}: {r.message}"]
-    table = _STAGE_LEVEL if quote in _STABLES else _STAGE_LEVEL_CROSS
-    level = table[r.stage]
+    caution = CAUTION_STAGES.get(r.timeframe, set())
     reasons = [f"Etapa {r.stage} ({r.stage_name}) en {r.label.lower()}. "
                + stage_effect(r.stage, base, quote)]
-    if r.transition:
-        target = int(r.transition[-1])
-        new = math.ceil((level + table[target]) / 2)
-        reasons.append(f"En transición {r.transition}: se promedia el riesgo de la etapa actual y el "
-                       f"de la etapa {target}.")
-        level = new
-    trending_up = {4} if quote in _STABLES else {2, 4}
-    if higher is not None and higher.status == "ok" and higher.stage in trending_up and level == 0:
-        level = 1
-        side = "bajista: una ruptura por abajo" if higher.stage == 4 else "alcista: una ruptura por arriba"
-        reasons.append(f"El marco superior ({higher.label.lower()}) es {side} es más probable.")
+    level = "precaución" if r.stage in caution else "apta"
+    if r.transition and int(r.transition[-1]) in caution and level == "apta":
+        level = "precaución"
+        reasons.append(f"En transición {r.transition}: hacia la etapa {r.transition[-1]}, la más floja "
+                       f"para un rango en este marco.")
+    if level == "precaución":
+        reasons.append("En el histórico, los rangos abiertos en esta etapa pasaron menos tiempo dentro y "
+                       "perdieron más frente a mantener: la rentabilidad se estima solo con esos ciclos.")
     if r.confidence_label == "baja":
         reasons.append("La confianza en la etapa es baja: la lectura puede cambiar pronto.")
-    return LEVELS[level], reasons
+    return level, reasons
 
 
 # ---------------------------------------------------------------- resultados
@@ -335,14 +340,13 @@ def recommendation(res: LiquidityResult) -> str:
     ok = [p for p in res.profiles if p.level in LEVELS and p.low is not None]
     if not ok:
         return "Sin datos suficientes para recomendar un perfil."
-    fav = [p.name.lower() for p in ok if p.level == "favorable"]
-    if fav:
-        txt = "Perfiles con etapa favorable: " + ", ".join(fav) + "."
-    elif all(p.level == "desfavorable" for p in ok):
-        txt = "Ningún perfil es adecuado ahora: tendencia bajista en todos los marcos. Mejor esperar."
+    apt = [p.name.lower() for p in ok if p.level == "apta"]
+    if apt:
+        txt = ("Paso 1, etapa apta: " + ", ".join(apt) + ". Falta el paso 2: que las comisiones reales "
+               "compensen la pérdida frente a mantener.")
     else:
-        txt = ("Ningún perfil es claramente favorable: si abres un rango, hazlo con precaución y "
-               "vigilándolo más de lo habitual.")
+        txt = ("Paso 1: todos los perfiles en precaución (etapa alcista en semanal y mensual). El paso 2 "
+               "estima la rentabilidad solo con los ciclos pasados en esa etapa.")
     if not res.pools:
         txt += " " + res.note
     return txt

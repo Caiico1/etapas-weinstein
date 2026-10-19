@@ -106,15 +106,51 @@ def _matrix_cell(r: TimeframeResult, changed: bool) -> str:
             f'<span class="msub">confianza {html.escape(r.confidence_label)}</span>{prov}</td>')
 
 
-def _pool_mini(liq: LiquidityResult | None) -> str:
+def cycle_decisions(rep) -> dict:
+    """{marco: (Opportunity, estado, motivo)} con la decisión en dos pasos de oportunidad.decision
+    para la mejor combinación de cada ciclo. Vacío sin análisis."""
+    if rep is None:
+        return {}
+    from . import oportunidad as op       # oportunidad importa medio paquete: solo cuando hace falta
+    return {k: (o, *op.decision(o, rep.capital)) for k, o in op.decisions(rep).items()}
+
+
+def _gap_txt(o, rep) -> str:
+    from . import oportunidad as op
+    gap = op.fee_gap(o, rep.capital)
+    return f"comisiones ×{gap:.1f}".replace(".", ",") if gap and gap > 1 else ""
+
+
+def _pool_mini(liq: LiquidityResult | None, rep=None) -> str:
     if liq is None:
         return '<td class="mpool muted">—</td>'
-    chips = "".join(
-        f'<span class="lvl-s" style="background:{LEVEL_COLORS.get(p.level, "#6b7280")}" '
-        f'title="{html.escape(p.name)}: {html.escape(p.level)}">{p.name[0]}</span>' for p in liq.profiles)
-    fav = [p.name.lower() for p in liq.profiles if p.level == "favorable" and p.low is not None]
-    text = ("favorable: " + ", ".join(fav)) if fav else "ninguno favorable"
-    return f'<td class="mpool">{chips}<span class="msub">{html.escape(text)}</span></td>'
+    dec = cycle_decisions(rep)
+    names = {k: n.lower() for n, k in _PROFILE_KEY.items()}
+    chips = []
+    for p in liq.profiles:
+        o, state, why = dec.get(_PROFILE_KEY.get(p.name, ""), (None, "", ""))
+        go = state in ("abrir", "abrir con precaución")
+        tip = f"{p.name}: paso 1 {p.level}" + ("" if rep is None else f"; paso 2: {state or 'sin pools'}"
+                                               + (f" ({why})" if why else ""))
+        chips.append(f'<span class="lvl-s" style="background:{LEVEL_COLORS.get(p.level, "#6b7280")}" '
+                     f'title="{html.escape(tip)}">{p.name[0]}{"✓" if go else ""}</span>')
+    apt = [p.name.lower() for p in liq.profiles if p.level == "apta" and p.low is not None]
+    caution = [p.name.lower() for p in liq.profiles if p.level == "precaución" and p.low is not None]
+    lines = ["etapa apta: " + (", ".join(apt) if apt else "ninguna")
+             + (f"; precaución: {', '.join(caution)}" if caution else "")]
+    if rep is not None:
+        go = [f"{names[k]} ({o.net_apr:+.1%})" for k, (o, s, _) in dec.items() if s in ("abrir", "abrir con precaución")]
+        if go:
+            state = "ABRIR" if any(s == "abrir" for _, s, _ in dec.values()) else "ABRIR CON PRECAUCIÓN"
+            lines.append(f"decisión: {state} · " + ", ".join(go))
+        elif dec:
+            k, (o, _, _) = max(dec.items(), key=lambda kv: kv[1][0].net_apr if kv[1][0].net_apr is not None else -9)
+            gap = _gap_txt(o, rep)
+            lines.append(f"decisión: vigilar · lo más cercano: {names[k]}" + (f", faltan {gap}" if gap else ""))
+        else:
+            lines.append("decisión: sin pools con liquidez suficiente")
+    text = "".join(f'<span class="msub">{html.escape(t)}</span>' for t in lines)
+    return f'<td class="mpool">{"".join(chips)}{text}</td>'
 
 
 def matrix_html(assets: list[AssetResult], changes: list[dict]) -> str:
@@ -137,7 +173,7 @@ def matrix_html(assets: list[AssetResult], changes: list[dict]) -> str:
         cells = "".join(_matrix_cell(tfs[k], (a.key, k) in changed) for k in ORDER)
         rows.append(f'<tr data-f="{tags}"><td class="msym"><a href="etapas_{a.file_stem}.html">'
                     f'{html.escape(a.symbol)}</a><span class="msub">{fmt(a.last_price)}{kind}</span></td>'
-                    f'{cells}{_pool_mini(a.liquidity)}</tr>')
+                    f'{cells}{_pool_mini(a.liquidity, a.pool_report)}</tr>')
     heads = "".join(f"<th>{TIMEFRAMES[k].label}</th>" for k in ORDER)
     filters = "".join(
         f'<button data-f="e{s}"><span class="dot" style="background:{STAGE_COLORS[s]}"></span>'
@@ -147,8 +183,12 @@ def matrix_html(assets: list[AssetResult], changes: list[dict]) -> str:
             f'<div class="wrap"><table class="matrix"><thead><tr><th>Valor</th>{heads}'
             f'<th>Pool (D · S · M)</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
             '<p class="muted">Etapa con velas cerradas; «si cerrara hoy» solo aparece cuando la vela en curso '
-            'la cambiaría. «nuevo»: cambió desde la ejecución anterior. Pool: idoneidad de un rango '
-            'diario (D), semanal (S) y mensual (M). Pulsa un botón para filtrar.</p>' + FILTER_JS)
+            'la cambiaría. «nuevo»: cambió desde la ejecución anterior. Pool, en dos pasos: el color es el '
+            'paso 1, si la etapa permite un rango diario (D), semanal (S) y mensual (M) (verde apta, naranja '
+            'precaución); ✓ y «decisión» son el paso 2, si /pool lo propondría hoy (neto positivo con margen '
+            'de seguridad y por encima de depositar los mismos tokens en Aave). Abre un pool solo con ✓; '
+            '«vigilar» dice cuántas veces las comisiones de hoy harían falta. Pulsa un botón para filtrar.</p>'
+            + FILTER_JS)
 
 
 # ---------------------------------------------------------------- barras de rango
@@ -226,15 +266,24 @@ def pool_command(asset: AssetResult) -> str:
 
 
 def pool_verdict_html(asset: AssetResult, github_link: str = "") -> str:
-    """Tarjeta «¿Pool ahora?»: idoneidad, rango y mejor pool por perfil, y cómo pedir el análisis
+    """Tarjeta «¿Pool ahora?»: paso 1 (etapa), paso 2 (rentable), rango y mejor pool por perfil, y cómo pedir el análisis
     completo del par (comisiones reales, gas, stop-loss y neto)."""
     liq = asset.liquidity
     if liq is None:
         return ""
+    dec = cycle_decisions(asset.pool_report)
     rows = []
     for p in liq.profiles:
         color = LEVEL_COLORS.get(p.level, "#6b7280")
-        chip = f'<span class="lvl" style="background:{color}">{html.escape(p.level)}</span>'
+        chip = f'<span class="lvl" style="background:{color}">paso 1: etapa {html.escape(p.level)}</span>'
+        if asset.pool_report is not None:
+            o, state, why = dec.get(_PROFILE_KEY.get(p.name, ""), (None, "", "no hay pools con liquidez suficiente"))
+            if state in ("abrir", "abrir con precaución"):
+                chip += (f'<span class="lvl" style="background:#16a34a">✓ paso 2: {state} · {o.net_apr:+.1%} anual · '
+                         f'{html.escape(o.pool.label)}</span>')
+            else:
+                net = f" ({o.net_apr:+.1%} anual)" if o is not None and o.net_apr is not None else ""
+                chip += f'<span class="muted">paso 2: {html.escape(state or "vigilar")} · {html.escape(why)}{net}</span>'
         if p.low is None:
             rows.append(f'<div class="pool-row"><span class="pname">{html.escape(p.name)}</span>{chip}'
                         f'<span class="muted">sin rango</span></div>')

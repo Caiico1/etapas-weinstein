@@ -3,7 +3,8 @@
 Agentes (deterministas: reglas explícitas y auditables, sin coste):
   - Etapas: etapa de Weinstein por marco (classifier.py).
   - Rangos: mínimo y máximo por perfil, ajustados a los ticks de cada pool (liquidez.py).
-  - Riesgo: idoneidad de cada perfil según la etapa y el marco superior (liquidez.verdict).
+  - Riesgo: paso 1, si la etapa de cada perfil permite abrir (liquidez.verdict); el coordinador añade
+    el paso 2, si es rentable, y la decisión (oportunidad.decision) cuando la rutina la ha calculado.
   - Contexto: sentimiento, Reserva Federal y titulares (contexto.py). No cambia nada: informa.
   - Vigilante: estado de las posiciones abiertas de posiciones.txt (posiciones.py).
   - Coordinador: el dictamen final en JSON.
@@ -27,11 +28,13 @@ IA_MODEL = "claude-opus-5"
 
 INSTRUCCIONES = """Eres un analista de liquidez concentrada en finanzas descentralizadas (Uniswap v3, Orca).
 Recibes el dictamen de un equipo de agentes que ya ha calculado todo: etapa de Weinstein por marco
-temporal, rangos de precio por perfil (diario, semanal y mensual), idoneidad de cada perfil,
-estimación de comisiones y contexto de mercado.
+temporal, rangos de precio por perfil (diario, semanal y mensual), paso 1 de cada perfil (si la etapa
+permite abrir: apta o precaución), paso 2 (si es rentable) y la decisión (abrir, abrir con precaución
+o vigilar), estimación de comisiones y contexto de mercado.
 
 Tu tarea:
-1. Explica en español claro, para alguien que no es técnico, qué perfil encaja mejor ahora y por qué.
+1. Explica en español claro, para alguien que no es técnico, la decisión en dos pasos: primero si la
+   etapa permite abrir y después si es rentable. Sin el paso 2 no recomiendes abrir ningún perfil.
 2. Para cada perfil, resume el rango (mín. y máx. ajustados a ticks del pool con más comisiones estimadas), qué
    pasa si el precio sale por arriba o por abajo y cuántos días de comisiones hacen falta para
    compensar la pérdida en el borde.
@@ -72,10 +75,17 @@ def dictamen(asset: AssetResult, liq: LiquidityResult | None, ctx: MarketContext
     if liq is not None:
         ld = liq.to_dict()
         d["agentes"]["rangos"] = ld["perfiles"]
-        d["agentes"]["riesgo"] = {p["perfil"]: {"idoneidad": p["idoneidad"], "motivos": p["motivos"]}
+        d["agentes"]["riesgo"] = {p["perfil"]: {"paso1_etapa": p["idoneidad"], "motivos": p["motivos"]}
                                   for p in ld["perfiles"]}
         d["coordinador"] = {"recomendacion": liq.best, "nota_pools": liq.note or None,
                             "capital_referencia_usd": liq.capital}
+    if asset.pool_report is not None:
+        from . import oportunidad as op
+        d["coordinador"] = d.get("coordinador", {}) | {
+            "decision": op.overall(asset.pool_report)[0],
+            "paso2_por_ciclo": {o.name: dict(zip(("decision", "motivo"), op.decision(o, asset.pool_report.capital)),
+                                             pool=o.pool.label, neto_anual=o.net_apr)
+                                for o in op.decisions(asset.pool_report).values()}}
     return d
 
 

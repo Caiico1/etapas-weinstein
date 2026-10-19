@@ -48,7 +48,12 @@ de los pools, de comisiones realmente cobradas y de un método validado sobre el
      Modo de Aislamiento (con su techo de deuda).
 3. **Presenta `pool.py`** como en pool-liquidez: primero la «Respuesta corta», el checklist y las
    tablas, copiando las cifras. Además:
-   - La fila **«Rinde más que depositar los mismos tokens en Aave»**: compara el neto con margen de
+   - Siempre en **dos pasos**, en este orden: **paso 1**, si la etapa del ciclo permite abrir («apta»
+     o «precaución»; solo la etapa 2 en semanal o mensual pide precaución y ninguna veta por sí
+     sola), y **paso 2**, si es rentable. La **decisión** es abrir, abrir con precaución o vigilar
+     (con cuántas veces las comisiones de hoy harían falta). La liquidez cubierta sigue la misma
+     regla: solo se plantea sobre una combinación que pase los dos pasos.
+   - La fila **«Rinde más que depositar los mismos tokens en Aave»** (parte del paso 2): compara el neto con margen de
      seguridad con lo que pagaría Aave por los mismos tokens, en la misma proporción. Es el listón
      correcto porque el neto se mide frente a mantener esos tokens; si no lo supera, la posición
      no se propone aunque su neto sea positivo.

@@ -11,7 +11,7 @@ Estrategias (combinables en rejilla):
   reajuste  nunca | fuera: recentrar el rango cuando el precio lleva `espera` horas fuera
   stop      cerrar a moneda estable si el valor cae X % por debajo del capital invertido
   método    el de /pool (--metodo 1d,1w,1M): en cada ciclo, rango del método, stop-loss del método
-            y veto si la etapa es desfavorable, todo calculado solo con las velas cerradas antes
+            y la etapa (paso 1; sin datos de etapa no abre), todo calculado solo con las velas cerradas antes
             de abrir (--variantes: también sin veto de etapa y sin stop)
 Costes: gas por apertura/reajuste/cierre y comisión del pool por el token que hay que cambiar.
 
@@ -83,7 +83,7 @@ class Result:
     stopped: bool
     max_drawdown_pct: float
     cycles: int = 0              # método: ciclos abiertos
-    vetoed: int = 0              # método: ciclos sin abrir (etapa desfavorable o sin rango)
+    vetoed: int = 0              # método: ciclos sin abrir (sin etapa o sin rango)
     stops: int = 0               # método: ciclos cerrados en el stop-loss
 
 
@@ -280,9 +280,9 @@ ALIASES = {"WETH": "ETH", "WBTC": "BTC", "CBBTC": "BTC", "USDT0": "USDT", "USD�
 class Method:
     """La estrategia de /pool: en cada ciclo (diario, semanal o mensual) abre el rango del método
     (cuantil LP_QUANTILE de los movimientos pasados en ATR), con el stop-loss del método, y no abre
-    si la etapa del ciclo es desfavorable. Todo se calcula solo con las velas cerradas antes de
-    abrir. No aplica los demás vetos de /pool (neto estimado, margen de seguridad, Aave), que
-    dependen de las comisiones de ese momento."""
+    si no hay etapa (el paso 1 ya no veta ninguna etapa: ver liquidez.verdict). Todo se calcula solo
+    con las velas cerradas antes de abrir. No aplica el paso 2 de /pool (neto estimado, margen de
+    seguridad, Aave), que depende de las comisiones de ese momento."""
     timeframe: str               # 1d | 1w | 1M
     gas_usd: float = 5.0
     use_stage: bool = True
@@ -306,7 +306,7 @@ class Cycle:
     high: float
     stop_low: float | None
     stop_high: float | None
-    level: str                   # favorable | precaución | desfavorable | sin datos | sin rango
+    level: str                   # apta | precaución | sin datos | sin rango
 
 
 def pair_of(pool: dict) -> tuple[str, str, bool]:
@@ -423,7 +423,7 @@ def simulate_method(pool: dict, df: pd.DataFrame, cycles: list[Cycle], m: Method
         i1 = min(idx.searchsorted(cy.end.to_datetime64()), n - 1)
         if i0 >= n - 1 or i1 <= i0:
             continue
-        ok_level = cy.level in ("favorable", "precaución") or not m.use_stage
+        ok_level = cy.level in ("apta", "precaución") or not m.use_stage
         if not ok_level or cy.low <= 0:
             vetoed += 1
             h0, h1, c = to_quote(i0, h0, h1)                    # no se abre: se espera en la cotización

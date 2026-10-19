@@ -96,6 +96,7 @@ class AssetResult:
     kind: str = "cripto"               # "cripto" | "accion" | "par"
     token: dict | None = None          # token de Ondo de la acción, si cotiza
     liquidity: object = None           # liquidez.LiquidityResult (criptomonedas y pares)
+    pool_report: object = None         # oportunidad.Report: neto real de cada ciclo (rentable o no)
 
     @property
     def key(self) -> str:

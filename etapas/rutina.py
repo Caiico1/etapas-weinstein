@@ -8,7 +8,7 @@ import pandas as pd
 
 from . import agentes, cribado, vigilancia
 from .analysis import AssetResult, analyze_symbol, parse_symbol
-from .config import DISCLAIMER, ORDER, TIMEFRAMES
+from .config import DISCLAIMER, ORDER, POOL_CHECK_CAPITAL, TIMEFRAMES
 from .contexto import MarketContext, headlines_for, load_context
 from .guia import write_guide
 from .liquidez import analyze_liquidity
@@ -153,14 +153,17 @@ def write_alerts(items: list[dict], prev_date: str | None, out_dir: Path, today:
     return out_dir / "alertas.md"
 
 
-def add_liquidity(asset: AssetResult, log: list[str]) -> None:
-    """Calcula la liquidez concentrada de un criptoactivo. Un fallo nunca detiene la rutina."""
+def add_liquidity(asset: AssetResult, log: list[str], reports: dict | None = None) -> None:
+    """Calcula la liquidez concentrada de un criptoactivo y, si se pasa `reports` (caché por par),
+    el neto real de cada ciclo con etapas.oportunidad. Un fallo nunca detiene la rutina."""
     if asset.error or asset.kind == "accion":
         return
     try:
         asset.liquidity = analyze_liquidity(asset)
     except Exception as e:  # la liquidez es un añadido: la etapa y el informe siguen igual
         log.append(f"{asset.key}: no se pudo calcular la liquidez ({type(e).__name__}: {str(e)[:120]})")
+    if reports is not None:
+        add_pool_report(asset, log, reports)
     if asset.liquidity is not None:
         for prof in asset.liquidity.profiles:
             for q in prof.quotes:
@@ -169,17 +172,54 @@ def add_liquidity(asset: AssetResult, log: list[str]) -> None:
                     break
 
 
+def add_pool_report(asset: AssetResult, log: list[str], reports: dict) -> None:
+    """Rentabilidad real del par (comisiones cobradas, pérdida frente a mantener, gas, margen de
+    seguridad y Aave), la misma que da /pool. BTC y par:BTC/USDC comparten el análisis."""
+    from .oportunidad import _analyze   # oportunidad importa medio paquete: solo cuando hace falta
+    from .data import canonical_pair
+    pair = "/".join(canonical_pair(asset.base, asset.quote))
+    if pair not in reports:
+        rep = None
+        try:
+            rep = _analyze(pair, POOL_CHECK_CAPITAL, None)
+            if rep.error:
+                log.append(f"{asset.key}: rentabilidad del pool sin calcular ({rep.error[:120]})")
+                rep = None
+        except Exception as e:
+            log.append(f"{asset.key}: rentabilidad del pool sin calcular ({type(e).__name__}: {str(e)[:120]})")
+        reports[pair] = rep
+    asset.pool_report = reports[pair]
+
+
 def position_status(path: Path, assets: list[AssetResult], log: list[str]) -> list[dict]:
     """Estado de cada posición de posiciones.txt con el precio actual de su activo."""
     positions, warnings = load_positions(path)
     log.extend(warnings)
     prices = {a.symbol: a.last_price for a in assets if not a.error and a.kind == "cripto"}
+    reports = {a.symbol: a.pool_report for a in assets if not a.error and a.kind == "cripto" and a.pool_report}
     out = []
     for pos in positions:
         if pos.symbol not in prices:
             log.append(f"posiciones.txt: {pos.symbol} no está en la lista de seguimiento; añádelo para vigilarlo")
-        out.append(check_position(pos, prices.get(pos.symbol)))
+        item = check_position(pos, prices.get(pos.symbol))
+        rep = reports.get(pos.symbol)
+        if rep is not None and item["estado"] != "sin precio":
+            item["texto"] += today_hint(rep, item["estado"].startswith("fuera"))
+        out.append(item)
     return out
+
+
+def today_hint(rep, outside: bool) -> str:
+    """Los dos pasos de /pool de hoy aplicados a una posición abierta: la misma lógica para seguir,
+    reajustar o salir que para abrir."""
+    from . import oportunidad as op
+    state, o = op.overall(rep)
+    go = state in (op.ABRIR, op.PRECAUCION)
+    where = f" (ciclo {o.name.lower()}, {o.pool.label})" if o is not None and go else ""
+    if outside:
+        return (f". Hoy /pool: {state}{where}: " + ("reajusta al rango que propone" if go else
+                "no reajustes; cierra o quédate con el token según tu stop-loss"))
+    return f". Hoy /pool: {state}{where}" + ("" if go else ": si sale del rango, no reajustes")
 
 
 def position_alerts(prev: dict, items: list[dict]) -> list[dict]:
@@ -218,7 +258,7 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None,
         return 1
 
     context = load_context(now)
-    assets = []
+    assets, pool_reports = [], {}
     for sym in symbols:
         print(f"Analizando {sym}...", flush=True)
         asset = analyze_symbol(sym)
@@ -226,7 +266,7 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None,
         if asset.error:
             log.append(f"{asset.key}: {asset.error}")
         else:
-            add_liquidity(asset, log)
+            add_liquidity(asset, log, pool_reports)
             write_html(asset, out_dir, index_link=True, context=context)
 
     hist_dir = out_dir / "historial"

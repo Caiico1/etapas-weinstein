@@ -61,23 +61,27 @@ def check(watch: Watch, analyze=None) -> dict:
             "capital": watch.capital, "redes": list(watch.chains), "error": bool(rep.error)}
     if rep.error:
         return base | {"estado": "", "hay_propuesta": False, "texto": rep.error}
+    step1 = f"paso 1 (etapa): {op.step1_line(rep)}. "
     if rep.proposals:
         o = rep.proposals[0]
         q = o.quote
+        state = op.decision(o, rep.capital)[0]
         return base | {
-            "estado": f"{o.name} · {o.pool.label}", "hay_propuesta": True,
-            "texto": (f"propuesta: ciclo {o.name.lower()} en {o.pool.label}, rango {op._p(q.low)} – {op._p(q.high)}, "
-                      f"neto estimado {o.net_cycle:+,.2f} $ por ciclo ({o.net_apr:+.1%} anual; con margen "
-                      f"{o.net_safe:+,.2f} $)"),
+            "estado": f"{o.name} · {o.pool.label}" + (" · precaución" if state == op.PRECAUCION else ""),
+            "hay_propuesta": True, "decision": state,
+            "texto": (f"{state.upper()}: {step1}Paso 2: ciclo {o.name.lower()} en {o.pool.label}, rango "
+                      f"{op._p(q.low)} – {op._p(q.high)}, neto estimado {o.net_cycle:+,.2f} $ por ciclo "
+                      f"({o.net_apr:+.1%} anual; con margen {o.net_safe:+,.2f} $)"),
             "enlace": o.pool.app_url or o.pool.url}
     scored = [o for o in rep.opportunities if o.net_cycle is not None]
     if not scored:
         why = "; ".join(rep.warnings) or "ningún pool con liquidez suficiente"
-        return base | {"estado": "", "hay_propuesta": False, "texto": f"sin propuesta: {why}"}
+        return base | {"estado": "", "hay_propuesta": False, "decision": op.SIN_DATOS, "texto": f"sin propuesta: {why}"}
     best = max(scored, key=lambda o: o.net_apr)
-    return base | {"estado": "", "hay_propuesta": False,
-                   "texto": (f"sin propuesta. Lo más cercano: ciclo {best.name.lower()} en {best.pool.label}, neto "
-                             f"estimado {best.net_cycle:+,.2f} $ por ciclo ({best.excluded})")}
+    return base | {"estado": "", "hay_propuesta": False, "decision": op.VIGILAR,
+                   "texto": (f"vigilar: {step1}Paso 2, lo más cercano: ciclo {best.name.lower()} en "
+                             f"{best.pool.label}, neto estimado {best.net_cycle:+,.2f} $ por ciclo "
+                             f"({op.decision(best, rep.capital)[1]})")}
 
 
 def alerts(prev: dict, items: list[dict]) -> list[dict]:

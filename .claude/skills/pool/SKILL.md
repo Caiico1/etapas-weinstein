@@ -24,12 +24,20 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
    Con `--json` obtienes los mismos datos en JSON, si los necesitas para responder a una pregunta
    concreta. Si el usuario pide una red concreta («en Base»), añade `--red base` (admite varias
    separadas por comas: ethereum, base, arbitrum, solana).
-3. **Presenta el resultado** al usuario, en español:
+3. **Presenta el resultado** al usuario, en español, siempre en **dos pasos** y en este orden (la
+   misma lógica de toda la herramienta, para abrir, reajustar o salir):
+   - **Paso 1 · ¿La etapa permite abrir?** La línea «Paso 1» tal cual: cada ciclo «apta» o
+     «precaución». Solo la etapa 2 (alcista) en semanal o mensual da «precaución» (en el histórico
+     fue la más floja para un rango, y su pérdida ya se estima solo con los ciclos de esa etapa).
+     Ninguna etapa veta por sí sola: no digas que la etapa 4 impide abrir, porque se midió y no rinde peor.
+   - **Paso 2 · ¿Es rentable?** La línea «Paso 2» con su neto o el motivo.
+   - **Decisión**: abrir, abrir con precaución o vigilar (con cuántas veces las comisiones de hoy
+     harían falta, y la opción de dejarlo en `oportunidades.txt` para que la rutina avise).
    - Si hay **propuestas** (una o dos): para cada una, el pool (DEX y **versión v3 o v4**, red,
      par, comisión, **dirección o identificador completo**, sin acortar, y el enlace a Uniswap;
      la «Respuesta corta» también lo trae en la línea «Dirección del pool»), el **mínimo y el máximo** a
      introducir, el **depósito** de cada token para su
-     capital, la etapa y su idoneidad, el comportamiento histórico del método y la estimación
+     capital, la etapa (paso 1), el comportamiento histórico del método y la estimación
      neta por ciclo (con y sin margen de seguridad). Copia los números tal cual.
    - De cada propuesta, además: el **fondeo** (tener USDC en esa red; cuánto hay que cambiar para
      abrir, su coste y el neto del primer ciclo), los **escenarios sin comisiones** frente a USDC (qué
@@ -38,13 +46,13 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
      nativo: alerta de precio y cierre a mano, o una automatización de salida.
    - Si **no hay propuesta**, da también la regla de **capital parado** que muestra la salida
      (mantener USDC en la red del pool mejor situado).
-   - Si **no hay propuesta**: dilo claramente y explica el motivo que da la salida (etapa
-     desfavorable, poca liquidez o que las comisiones no compensan la pérdida frente a mantener
-     los tokens). Recomendar esperar también es una respuesta válida.
+   - Si **no hay propuesta** (vigilar): dilo claramente y explica el motivo que da la salida (poca
+     liquidez, comisiones que no compensan la pérdida frente a mantener los tokens o que rinde menos
+     que Aave). Recomendar vigilar también es una respuesta válida.
    - Muestra el **checklist** de cada propuesta (o, si no hay ninguna, el de la mejor combinación de
      cada ciclo) tal cual lo da el programa, con sus ✅ ⚠️ ❌, el dato de cada fila y la lectura
      final. No lo rellenes ni lo corrijas tú. Un ❌ es un veto; un ⚠️ es un aviso: coméntalos, sobre
-     todo «comisiones estimadas por volumen» y «ciclo superior en contra». Que todo esté en verde
+     todo «comisiones estimadas por volumen», «comisiones a la baja» y la etapa en precaución. Que todo esté en verde
      significa que la combinación encaja en el método, no que vaya a salir bien: dilo así.
    - Los bloques **Eficiencia** (volumen/TVL > 1; comisiones del pool ≥ 0,1 % diario del TVL) y
      **Riesgo** (protocolo consolidado, respaldo de la estable, tokens custodiados o puenteados) son

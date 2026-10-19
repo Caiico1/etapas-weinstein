@@ -93,16 +93,31 @@ en las que el precio se quedó dentro todo el periodo:
 *tick spacing* del pool. El rango se ajusta **hacia fuera** (nunca se estrecha), teniendo en
 cuenta el orden de los tokens y sus decimales. El resultado es el rango que hay que introducir.
 
-**Idoneidad según la etapa** (del marco del perfil):
+**Decisión en dos pasos** (la misma en /pool, el cribado, la rutina, la vigilancia de
+`oportunidades.txt`, el seguimiento de posiciones y las skills; `oportunidad.decision`):
 
-| Etapa | Idoneidad | Por qué |
-|---|---|---|
-| 1 y 3 | favorable | el precio oscila en un rango: es donde la liquidez concentrada rinde más |
-| 2 | precaución | si sale por arriba, acabas 100 % en USDC y ganas menos que manteniendo el activo |
-| 4 | desfavorable | si sale por abajo, acabas 100 % en un activo que sigue cayendo |
+1. **¿La etapa permite abrir?** (`liquidez.verdict`, del marco del perfil):
 
-En una transición "X→Y" se toma el punto medio del riesgo de X y de Y, redondeando hacia el
-lado prudente. Una etapa favorable con el marco superior en etapa 4 baja a precaución.
+   | Etapa | Diario | Semanal | Mensual |
+   |---|---|---|---|
+   | 1, 3 y 4 | apta | apta | apta |
+   | 2 (alcista) o transición hacia 2 | apta | precaución | precaución |
+
+   Tabla medida (fase 0, oct-2026), no supuesta: ~8.400 aperturas del método simuladas una a una
+   con las comisiones reales hora a hora de MetaProDB (15 pools de Arbitrum, Base y Ethereum,
+   oct-2024 a oct-2026) y el precio de Binance desde 2019 (8 pares), con la etapa calculada solo con
+   las velas cerradas al abrir. La etapa 2 fue la más floja en semanal y mensual (en rango el 70 % y
+   el 63 % de los ciclos, frente al 85-97 %; más pérdida frente a mantener y stops en el 9-13 % de los
+   ciclos), sobre todo en 2019-2022. La etapa 4 —antes un veto— rindió igual o mejor que la media.
+   En el diario la etapa no cambia el resultado, y el marco superior no mejora la lectura (ya no se
+   usa). Ninguna etapa impide abrir por sí sola: en «precaución», la pérdida frente a mantener se
+   estima solo con los ciclos pasados abiertos en esa etapa (`oportunidad.backtest(stage=…)`), si
+   hay al menos 24.
+2. **¿Es rentable?** Liquidez suficiente y neto positivo con el margen de seguridad y por encima de
+   depositar los mismos tokens en Aave.
+
+Resultado: **abrir** (apta y rentable), **abrir con precaución** (rentable en precaución) o
+**vigilar** (no rentable; dice cuántas veces las comisiones de hoy harían falta).
 
 **Por pool** (fórmulas del whitepaper de Uniswap v3):
 - *Depósito*: qué parte va en el activo y qué parte en la moneda estable.
@@ -196,10 +211,9 @@ volumen diario: con 5.000 $ en un pool pequeño, la estimación depende demasiad
 
 **Cálculo, por ciclo (diario, semanal, mensual) y pool**:
 
-1. Etapa del **par** (ETH/BTC se analiza como precio de ETH en BTC) e idoneidad (etapa 4 = descartado).
-   Entre dos activos volátiles no hay moneda «de cuenta»: salir del rango por arriba o por abajo
-   cuesta lo mismo frente a mantener ambos, así que las etapas 2 y 4 valen «precaución». Además,
-   esos pares se analizan siempre en la orientación en que cotizan (ETH/BTC aunque se pida BTC/ETH),
+1. Paso 1, etapa del **par** (ETH/BTC se analiza como precio de ETH en BTC): apta o precaución, con
+   la tabla de arriba, la misma con estable y entre dos volátiles. Los pares entre volátiles se
+   analizan siempre en la orientación en que cotizan (ETH/BTC aunque se pida BTC/ETH),
    porque el método del rango mide en precio: así el mismo pool da siempre el mismo rango, que la
    propuesta muestra también invertido.
 2. Rango del método validado, ajustado a los ticks del pool. El ciclo diario no se propone en Ethereum.

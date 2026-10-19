@@ -114,22 +114,26 @@ def _tf(stage, transition="", conf="alta", key="1d"):
                            transition=transition, confidence_label=conf)
 
 
-@pytest.mark.parametrize("stage, level", [(1, "favorable"), (3, "favorable"),
-                                          (2, "precaución"), (4, "desfavorable")])
-def test_verdict_by_stage(stage, level):
-    assert lq.verdict(_tf(stage), None, "ETH")[0] == level
+@pytest.mark.parametrize("key, stage, level", [
+    ("1d", 1, "apta"), ("1d", 2, "apta"), ("1d", 3, "apta"), ("1d", 4, "apta"),       # en diario no cambia nada
+    ("1w", 1, "apta"), ("1w", 2, "precaución"), ("1w", 3, "apta"), ("1w", 4, "apta"),
+    ("1M", 2, "precaución"), ("1M", 4, "apta")])
+def test_verdict_by_stage(key, stage, level):
+    """Tabla medida en la fase 0: solo la etapa 2 en semanal y mensual pide precaución."""
+    for quote in ("USDC", "BTC"):                       # la misma tabla con estable y entre volátiles
+        assert lq.verdict(_tf(stage, key=key), None, "ETH", quote)[0] == level
 
 
-@pytest.mark.parametrize("stage, trans, level", [("1", "1→2", "precaución"), ("3", "3→4", "precaución"),
-                                                 ("4", "4→1", "precaución"), ("2", "2→3", "precaución")])
-def test_verdict_transitions(stage, trans, level):
-    assert lq.verdict(_tf(int(stage), trans), None, "ETH")[0] == level
+@pytest.mark.parametrize("key, stage, trans, level", [("1w", 1, "1→2", "precaución"), ("1w", 3, "3→4", "apta"),
+                                                      ("1w", 2, "2→3", "precaución"), ("1d", 1, "1→2", "apta")])
+def test_verdict_transitions(key, stage, trans, level):
+    assert lq.verdict(_tf(stage, trans, key=key), None, "ETH")[0] == level
 
 
-def test_verdict_higher_timeframe_and_confidence():
+def test_verdict_ignores_higher_timeframe_and_flags_confidence():
     level, reasons = lq.verdict(_tf(1, conf="baja"), _tf(4, key="1w"), "ETH")
-    assert level == "precaución"
-    assert any("marco superior" in r for r in reasons) and any("confianza" in r for r in reasons)
+    assert level == "apta"
+    assert not any("marco superior" in r for r in reasons) and any("confianza" in r for r in reasons)
     assert lq.verdict(TimeframeResult("1d", "Diario", "error", "sin red"), None, "ETH")[0] == "sin datos"
 
 
@@ -197,7 +201,7 @@ def test_report_shows_liquidity(tmp_path):
     index = write_index([asset], [], None, [], tmp_path, pd.Timestamp("2026-09-28", tz="UTC"),
                         positions=[check(Position("ETH", 1, 2), asset.last_price)])
     html = index.read_text(encoding="utf-8")
-    assert "Liquidez: idoneidad y rango" in html and "Mis posiciones de liquidez" in html
+    assert "Liquidez: paso 1 (etapa) y rango" in html and "Mis posiciones de liquidez" in html
 
 
 # ---------------------------------------------------------------- posiciones
@@ -260,7 +264,7 @@ def test_routine_with_liquidity_and_positions(tmp_path, monkeypatch):
     out = tmp_path / "out"
     assert rutina.run(lista, out, now=pd.Timestamp("2026-09-28 06:00", tz="UTC")) == 0
     index = (out / "index.html").read_text(encoding="utf-8")
-    assert "fuera por abajo" in index and "Liquidez: idoneidad y rango" in index
+    assert "fuera por abajo" in index and "Liquidez: paso 1 (etapa) y rango" in index
     assert "XRP no está en la lista" in index
     assert "fuera del rango por abajo" in (out / "alertas.md").read_text(encoding="utf-8")
     assert (out / "ia" / "ETH.md").exists()

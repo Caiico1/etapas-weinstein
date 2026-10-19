@@ -204,6 +204,8 @@ class Tracking:
     price_effect: float | None = None      # valor − capital: lo que ha variado la posición sin comisiones
     notes: list[str] = field(default_factory=list)
     error: str = ""
+    # Hoy, en dos pasos (oportunidad.decision) para el par en la misma red: ¿se volvería a abrir?
+    today: dict | None = None              # {"decision", "paso1", "motivo", "ciclo", "pool"}
 
 
 def track(chain: str, token_id: int, version: str = "v3", capital: float | None = None,
@@ -277,9 +279,53 @@ def track(chain: str, token_id: int, version: str = "v3", capital: float | None 
     return t
 
 
+def add_today(t: Tracking, analyze=None) -> None:
+    """Los dos pasos de /pool con los datos de hoy, para el par en la red de la posición: la misma
+    lógica para entrar que para seguir, reajustar o salir. Un fallo no impide el seguimiento."""
+    if t.error or not t.pair:
+        return
+    from . import oportunidad as op
+    try:
+        rep = (analyze or op.analyze)(t.pair, t.capital or 5000.0, [t.chain])
+    except Exception as e:      # el análisis de hoy es un añadido
+        t.notes.append(f"No se pudo hacer el análisis de hoy ({type(e).__name__}).")
+        return
+    if rep.error:
+        t.notes.append(f"Análisis de hoy: {rep.error}")
+        return
+    state, o = op.overall(rep)
+    t.today = {"decision": state, "paso1": op.step1_line(rep),
+               "motivo": op.decision(o, rep.capital)[1] if o else "sin pools con liquidez suficiente",
+               "ciclo": o.name.lower() if o else None, "pool": o.pool.label if o else None,
+               "rango": [o.quote.low, o.quote.high] if o and o.quote and o.quote.low else None}
+
+
+def action(t: Tracking) -> str:
+    """Qué hacer con la posición según los dos pasos de hoy y si está dentro o fuera."""
+    if t.today is None:
+        return ""
+    d, inside = t.today, t.status == "dentro"
+    go = d["decision"] in ("abrir", "abrir con precaución")
+    where = f"ciclo {d['ciclo']} en {d['pool']}" if d["ciclo"] else ""
+    if inside and go:
+        txt = f"**Mantener**: hoy /pool también la abriría ({d['decision']}, {where})."
+    elif inside:
+        txt = (f"**Mantener mientras siga dentro, sin reajustar si sale**: hoy /pool no la abriría "
+               f"({d['decision']}: {d['motivo']}).")
+    elif go:
+        rng = d.get("rango")
+        txt = (f"**Reajustar**: está fuera y hoy /pool sí abriría ({d['decision']}, {where}"
+               + (f", rango {_n(rng[0], 4)} – {_n(rng[1], 4)}" if rng else "") + ").")
+    else:
+        txt = (f"**No reajustar**: está fuera y hoy /pool no la abriría ({d['decision']}: {d['motivo']}). "
+               f"Cierra o quédate con el token que tienes, según tu stop-loss y tu exposición.")
+    return f"{txt} Paso 1 (etapa): {d['paso1']}."
+
+
 def verdict(t: Tracking) -> str:
     if t.vs_usdc is None:
-        return "Indica --capital (y --precio de entrada) para comparar las comisiones con la variación."
+        txt = "Indica --capital (y --precio de entrada) para comparar las comisiones con la variación."
+        return txt + (" " + action(t) if t.today else "")
     loss = -min(t.price_effect, 0)
     if t.vs_usdc >= 0:
         txt = ("**Las comisiones compensan** la variación del token: la posición vale más que el capital "
@@ -287,7 +333,9 @@ def verdict(t: Tracking) -> str:
     else:
         txt = (f"**Las comisiones no compensan** todavía la variación: faltan {-t.vs_usdc:,.2f} $ para "
                f"volver al capital inicial.")
-    if t.status.startswith("fuera"):
+    if t.today:
+        txt += " " + action(t)
+    elif t.status.startswith("fuera"):
         txt += (" La posición está fuera de rango y no cobra comisiones: vuelve a ejecutar /pool para "
                 "decidir si reajustar o cerrar (y revisa tu stop-loss).")
     return txt
@@ -365,6 +413,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--precio", type=float, help="Precio del par al abrirla (en la moneda de cotización)")
     ap.add_argument("--cobradas", type=float, default=0.0, help="Comisiones ya cobradas antes, en dólares")
     ap.add_argument("--json", action="store_true", help="Salida en JSON")
+    ap.add_argument("--sin-hoy", action="store_true",
+                    help="No hace el análisis de hoy del par (los dos pasos de /pool), que tarda 1-3 minutos")
     args = ap.parse_args(argv)
     try:
         chain, token_id, version = parse_target(args.posicion, args.v4)
@@ -372,6 +422,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"**No se puede seguir la posición**: {e}")
         return 1
     t = track(chain, token_id, version, args.capital, args.precio, args.cobradas)
+    if not args.sin_hoy:
+        add_today(t)
     print(json.dumps(to_json(t), ensure_ascii=False, indent=2, default=float) if args.json else render(t))
     return 1 if t.error else 0
 

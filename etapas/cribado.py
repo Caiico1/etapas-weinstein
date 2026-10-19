@@ -229,15 +229,19 @@ def render(s: Screen) -> str:
                   "completo (sin --solo-filtro) o /pool con el par.", ""]
     elif ranked:
         out += ["## Duplas recomendadas", "",
-                "Cumplen todos los vetos de /pool (etapa, liquidez, neto positivo con margen de seguridad), "
-                "ordenadas por el neto anual con el margen de seguridad.", "",
-                "| # | Par | Ciclo | Pool | Rango | Neto/ciclo | Neto anual | Con margen | Vol/TVL | Comis./TVL día | Avisos |",
-                "|---|---|---|---|---|---|---|---|---|---|---|"]
+                "Pasan los dos pasos de /pool: la etapa lo permite (paso 1; «precaución» = etapa 2 en semanal "
+                "o mensual, con la pérdida estimada solo con los ciclos de esa etapa) y son rentables (paso 2: "
+                "neto positivo con margen de seguridad y por encima de Aave). Ordenadas por el neto anual con "
+                "el margen de seguridad.", "",
+                "| # | Par | Ciclo | Decisión | Pool | Rango | Neto/ciclo | Neto anual | Con margen | Vol/TVL | "
+                "Comis./TVL día | Avisos |",
+                "|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for i, (pair, o) in enumerate(ranked, 1):
             rep = s.reports[pair]
             rows, _ = op.checklist(rep, o)
             warns = sum(1 for _, st, _, _ in rows if st == op.WARN)
-            out.append(f"| {i} | {rep.base}/{rep.quote} | {o.name} | {o.pool.label} | {op._p(o.quote.low)} – "
+            out.append(f"| {i} | {rep.base}/{rep.quote} | {o.name} | {op.decision(o, rep.capital)[0]} | "
+                       f"{o.pool.label} | {op._p(o.quote.low)} – "
                        f"{op._p(o.quote.high)} | {op._usd(o.net_cycle)} | {op._pct(o.net_apr)} | "
                        f"{op._pct(o.net_safe / s.capital * 365 / o.days)} | "
                        f"{'—' if o.vol_tvl is None else f'{o.vol_tvl:.2f}'} | {_pct(o.fees_tvl, 3)} | "
@@ -250,14 +254,20 @@ def render(s: Screen) -> str:
                 out.append(op.address_line(o.pool))
         out += ["", "Para el detalle de cada una (depósito, stop-loss, escenarios y checklist), ejecuta /pool "
                     "con el par y el capital.", ""]
+        watch = {p: rep for p, rep in s.reports.items() if not rep.proposals}
+        if watch:
+            out += ["## Duplas para vigilar", "",
+                    "Pasaron el filtro pero hoy no pasan el paso 2 (rentabilidad):", ""]
+            out += [f"- **{p}**: {_why(rep)}" for p, rep in watch.items()] + [""]
     else:
-        out += ["## Ninguna dupla recomendable ahora", ""]
+        out += ["## Ninguna dupla para abrir ahora: vigilar", ""]
         if not s.shortlist:
             out.append("Ningún par verificado cumple a la vez TVL ≥ 1 M$ y el criterio de comisiones sin volumen "
                        "sospechoso.")
         elif s.reports:
-            out.append("Los pares que pasaron el filtro no superan los vetos de /pool (etapa desfavorable o "
-                       "comisiones que no compensan la pérdida frente a mantener). Motivos:")
+            out.append("Los pares que pasaron el filtro no superan el paso 2 de /pool: las comisiones no compensan "
+                       "la pérdida frente a mantener con el margen de seguridad, o rinden menos que Aave. Paso 1 "
+                       "(etapa) y motivo por ciclo:")
         out += [""] + [f"- **{p}**: {_why(rep)}" for p, rep in s.reports.items()]
         out += ["", "**Mientras tanto**: mantén el capital en USDC en la red donde quieras operar; no asumas la "
                     "volatilidad de un token sin cobrar comisiones por ello.", ""]
@@ -301,10 +311,12 @@ def render(s: Screen) -> str:
 def _why(rep: op.Report) -> str:
     if rep.error:
         return rep.error
-    best = op.best_per_cycle(rep.opportunities)
+    best = op.decisions(rep)
     if not best:
         return "sin pools con liquidez suficiente"
-    return "; ".join(f"{o.name.lower()}: {o.excluded}" for o in best if o.excluded) or "sin propuesta"
+    step1 = f"paso 1: {op.step1_line(rep)}. Paso 2: "
+    return step1 + "; ".join(f"{o.name.lower()}: {state} ({why})"
+                             for o in best.values() for state, why in [op.decision(o, rep.capital)])
 
 
 def to_json(s: Screen) -> dict:

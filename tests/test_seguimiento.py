@@ -54,6 +54,27 @@ def test_out_of_range_and_closed():
     assert closed.status.startswith("cerrada")
 
 
+@pytest.mark.parametrize("price, state, expected", [
+    (2500, "abrir", "**Mantener**"), (2500, "vigilar", "sin reajustar si sale"),
+    (1900, "abrir con precaución", "**Reajustar**"), (1900, "vigilar", "**No reajustar**")])
+def test_action_follows_the_two_steps(price, state, expected):
+    """La misma lógica que para abrir: mantener, reajustar o no reajustar según los dos pasos de hoy."""
+    t = S.track("arbitrum", 1, capital=100, reader=_reader(price))
+    t.today = {"decision": state, "paso1": "diario apta · semanal precaución (etapa 2) · mensual apta",
+               "motivo": "resultado neto estimado negativo", "ciclo": "semanal", "pool": "Uniswap v3 · x",
+               "rango": [2300.0, 2700.0]}
+    txt = S.verdict(t)
+    assert expected in txt and "Paso 1 (etapa)" in txt and "fuera de rango y no cobra" not in txt
+
+
+def test_add_today_uses_the_pair_on_the_same_chain():
+    from types import SimpleNamespace as NS
+    seen = []
+    t = S.track("arbitrum", 1, capital=100, reader=_reader(2500))
+    S.add_today(t, analyze=lambda pair, cap, chains: seen.append((pair, cap, chains)) or NS(error="sin red"))
+    assert seen == [(t.pair, 100, ["arbitrum"])] and t.today is None and any("sin red" in n for n in t.notes)
+
+
 def test_parse_target_accepts_uniswap_urls():
     assert S.parse_target(["https://app.uniswap.org/positions/v4/base/12345"], False) == ("base", 12345, "v4")
     assert S.parse_target(["https://app.uniswap.org/positions/v3/ethereum/9"], False) == ("ethereum", 9, "v3")

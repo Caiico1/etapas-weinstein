@@ -26,7 +26,7 @@ def test_load_watches(tmp_path):
 
 def _report(proposal: bool):
     rep = op.Report("BTC", "USDC", 5000, 85000.0, 1.0, None)
-    o = op.Opportunity("1w", "Semanal", 7.0, "favorable", [], POOL,
+    o = op.Opportunity("1w", "Semanal", 7.0, "apta", [], POOL,
                        PoolQuote(POOL, 78000.0, 91000.0, 1, 2, 85000.0), op.Backtest(0.87, -0.005, 104))
     o.net_cycle, o.net_safe, o.net_apr = (12.0, 5.0, 0.125) if proposal else (-4.25, -10.7, -0.044)
     o.excluded = "" if proposal else "resultado neto estimado negativo"
@@ -58,7 +58,7 @@ def test_alerts_only_on_change():
     yes, no = check(w, lambda *a: _report(True)), check(w, lambda *a: _report(False))
     assert alerts({}, [no]) == []                                        # nunca hubo propuesta: silencio
     first = alerts({}, [yes])
-    assert len(first) == 1 and first[0]["tipo"] == "oportunidad" and "propuesta: ciclo semanal" in first[0]["texto"]
+    assert len(first) == 1 and first[0]["tipo"] == "oportunidad" and "ABRIR: paso 1 (etapa)" in first[0]["texto"]
     assert alerts({w.key: yes["estado"]}, [yes]) == []                   # sigue igual: sin aviso
     gone = alerts({w.key: yes["estado"]}, [no])
     assert len(gone) == 1 and "ya no cumple" in gone[0]["texto"]
@@ -74,8 +74,8 @@ def test_routine_watches(tmp_path, monkeypatch):
     out = tmp_path / "out"
     assert rutina.run(tmp_path / "watchlist.txt", out, now=pd.Timestamp("2026-10-04 06:00", tz="UTC")) == 0
     index = (out / "index.html").read_text(encoding="utf-8")
-    assert "Oportunidades de liquidez vigiladas" in index and "hay propuesta" in index
-    assert "propuesta: ciclo semanal" in (out / "alertas.md").read_text(encoding="utf-8")
+    assert "Oportunidades de liquidez vigiladas" in index and "abrir" in index
+    assert "ABRIR: paso 1 (etapa)" in (out / "alertas.md").read_text(encoding="utf-8")
     hist = json.loads((out / "historial" / "2026-10-04.json").read_text(encoding="utf-8"))
     assert hist["oportunidades"] == {"BTC/USDC 5000 base": "Semanal · " + POOL.label}
     # Al día siguiente, con la misma propuesta, no hay aviso nuevo
@@ -98,6 +98,6 @@ def test_non_notifying_run_does_not_consume_the_alert(tmp_path, monkeypatch):
     assert hist["oportunidades"] == {}                                   # no se da por avisada
     monkeypatch.setenv("ETAPAS_AVISA", "1")
     assert rutina.run(tmp_path / "watchlist.txt", out, now=pd.Timestamp("2026-10-05 06:00", tz="UTC")) == 0
-    assert "propuesta: ciclo semanal" in (out / "alertas.md").read_text(encoding="utf-8")
+    assert "ABRIR: paso 1 (etapa)" in (out / "alertas.md").read_text(encoding="utf-8")
     hist = json.loads((out / "historial" / "2026-10-05.json").read_text(encoding="utf-8"))
     assert hist["oportunidades"] == {"BTC/USDC 5000 base": "Semanal · " + POOL.label}
