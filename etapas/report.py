@@ -484,7 +484,7 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False,
 <p class="note">{html.escape(RANGE_NOTE)}</p>
 {zone_html}
 <p class="summary">{summary}</p>
-{liquidity_html(asset.liquidity)}
+{liquidity_html(asset.liquidity, asset.pool_report)}
 {context_html(asset, context)}
 <details><summary>Métricas que justifican cada etapa</summary><ul>{details}</ul></details>
 {fig.to_html(full_html=False, include_plotlyjs="cdn")}

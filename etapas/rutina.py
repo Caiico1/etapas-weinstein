@@ -8,7 +8,7 @@ import pandas as pd
 
 from . import agentes, cribado, vigilancia
 from .analysis import AssetResult, analyze_symbol, parse_symbol
-from .config import DISCLAIMER, ORDER, POOL_CHECK_CAPITAL, TIMEFRAMES
+from .config import DISCLAIMER, ORDER, POOL_CHECK_CAPITAL, POOL_PROXY, TIMEFRAMES
 from .contexto import MarketContext, headlines_for, load_context
 from .guia import write_guide
 from .liquidez import analyze_liquidity
@@ -155,8 +155,13 @@ def write_alerts(items: list[dict], prev_date: str | None, out_dir: Path, today:
 
 def add_liquidity(asset: AssetResult, log: list[str], reports: dict | None = None) -> None:
     """Calcula la liquidez concentrada de un criptoactivo y, si se pasa `reports` (caché por par),
-    el neto real de cada ciclo con etapas.oportunidad. Un fallo nunca detiene la rutina."""
-    if asset.error or asset.kind == "accion":
+    el neto real de cada ciclo con etapas.oportunidad. Una acción o ETF solo tiene pools a través del
+    token que sigue su precio (POOL_PROXY: GLD → oro tokenizado). Un fallo nunca detiene la rutina."""
+    if asset.error:
+        return
+    if asset.kind == "accion":
+        if reports is not None and asset.symbol in POOL_PROXY:
+            add_pool_report(asset, log, reports, POOL_PROXY[asset.symbol])
         return
     try:
         asset.liquidity = analyze_liquidity(asset)
@@ -172,12 +177,13 @@ def add_liquidity(asset: AssetResult, log: list[str], reports: dict | None = Non
                     break
 
 
-def add_pool_report(asset: AssetResult, log: list[str], reports: dict) -> None:
+def add_pool_report(asset: AssetResult, log: list[str], reports: dict, pair: str | None = None) -> None:
     """Rentabilidad real del par (comisiones cobradas, pérdida frente a mantener, gas, margen de
-    seguridad y Aave), la misma que da /pool. BTC y par:BTC/USDC comparten el análisis."""
+    seguridad y Aave), la misma que da /pool. BTC y par:BTC/USDC comparten el análisis. `pair`
+    sustituye al del activo (acciones con POOL_PROXY)."""
     from .oportunidad import _analyze   # oportunidad importa medio paquete: solo cuando hace falta
     from .data import canonical_pair
-    pair = "/".join(canonical_pair(asset.base, asset.quote))
+    pair = pair or "/".join(canonical_pair(asset.base, asset.quote))
     if pair not in reports:
         rep = None
         try:

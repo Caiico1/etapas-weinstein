@@ -121,23 +121,31 @@ def _gap_txt(o, rep) -> str:
     return f"comisiones ×{gap:.1f}".replace(".", ",") if gap and gap > 1 else ""
 
 
-def _pool_mini(liq: LiquidityResult | None, rep=None) -> str:
-    if liq is None:
-        return '<td class="mpool muted">—</td>'
+def _pool_mini(liq: LiquidityResult | None, rep=None, kind: str = "") -> str:
+    if liq is not None:
+        profs = [(p.name, _PROFILE_KEY.get(p.name, ""), p.level, p.low is not None) for p in liq.profiles]
+    elif rep is not None:              # acción con POOL_PROXY: las etapas del token que sigue su precio
+        profs = [(n, k, rep.stages.get(k, ("sin datos", []))[0], rep.ranges.get(k) is not None)
+                 for n, k in _PROFILE_KEY.items()]
+    else:
+        why = "acción o ETF: sin pools on-chain" if kind == "accion" else ""
+        return f'<td class="mpool muted">—{f"<span class=msub>{why}</span>" if why else ""}</td>'
     dec = cycle_decisions(rep)
     names = {k: n.lower() for n, k in _PROFILE_KEY.items()}
     chips = []
-    for p in liq.profiles:
-        o, state, why = dec.get(_PROFILE_KEY.get(p.name, ""), (None, "", ""))
+    for name, key, level, _ in profs:
+        o, state, why = dec.get(key, (None, "", ""))
         go = state in ("abrir", "abrir con precaución")
-        tip = f"{p.name}: paso 1 {p.level}" + ("" if rep is None else f"; paso 2: {state or 'sin pools'}"
-                                               + (f" ({why})" if why else ""))
-        chips.append(f'<span class="lvl-s" style="background:{LEVEL_COLORS.get(p.level, "#6b7280")}" '
-                     f'title="{html.escape(tip)}">{p.name[0]}{"✓" if go else ""}</span>')
-    apt = [p.name.lower() for p in liq.profiles if p.level == "apta" and p.low is not None]
-    caution = [p.name.lower() for p in liq.profiles if p.level == "precaución" and p.low is not None]
+        tip = f"{name}: paso 1 {level}" + ("" if rep is None else f"; paso 2: {state or 'sin pools'}"
+                                           + (f" ({why})" if why else ""))
+        chips.append(f'<span class="lvl-s" style="background:{LEVEL_COLORS.get(level, "#6b7280")}" '
+                     f'title="{html.escape(tip)}">{name[0]}{"✓" if go else ""}</span>')
+    apt = [n.lower() for n, _, level, ok in profs if level == "apta" and ok]
+    caution = [n.lower() for n, _, level, ok in profs if level == "precaución" and ok]
     lines = ["etapa apta: " + (", ".join(apt) if apt else "ninguna")
              + (f"; precaución: {', '.join(caution)}" if caution else "")]
+    if liq is None and rep is not None:
+        lines.insert(0, f"vía {rep.base}/{rep.quote} (mismo precio)")
     if rep is not None:
         go = [f"{names[k]} ({o.net_apr:+.1%})" for k, (o, s, _) in dec.items() if s in ("abrir", "abrir con precaución")]
         if go:
@@ -173,7 +181,7 @@ def matrix_html(assets: list[AssetResult], changes: list[dict]) -> str:
         cells = "".join(_matrix_cell(tfs[k], (a.key, k) in changed) for k in ORDER)
         rows.append(f'<tr data-f="{tags}"><td class="msym"><a href="etapas_{a.file_stem}.html">'
                     f'{html.escape(a.symbol)}</a><span class="msub">{fmt(a.last_price)}{kind}</span></td>'
-                    f'{cells}{_pool_mini(a.liquidity, a.pool_report)}</tr>')
+                    f'{cells}{_pool_mini(a.liquidity, a.pool_report, a.kind)}</tr>')
     heads = "".join(f"<th>{TIMEFRAMES[k].label}</th>" for k in ORDER)
     filters = "".join(
         f'<button data-f="e{s}"><span class="dot" style="background:{STAGE_COLORS[s]}"></span>'
@@ -262,12 +270,27 @@ def range_bars_html(asset: AssetResult) -> str:
 # ---------------------------------------------------------------- veredicto de pool
 
 def pool_command(asset: AssetResult) -> str:
-    return f"python -m etapas.oportunidad {asset.base}/{asset.quote}"
+    rep = asset.pool_report
+    pair = f"{rep.base}/{rep.quote}" if rep is not None and rep.quote else f"{asset.base}/{asset.quote}"
+    return f"python -m etapas.oportunidad {pair}"
+
+
+MAX_PRODUCTIVE = 3        # pools productivos que se enlazan por ciclo
+
+
+def _net_txt(o) -> str:
+    return (f"neto {o.net_cycle:+,.2f} $ por ciclo ({o.net_apr:+.1%} anual; con margen "
+            f"{o.net_safe_apr:+.1%})" if o.net_cycle is not None else "sin neto")
 
 
 def pool_verdict_html(asset: AssetResult, github_link: str = "") -> str:
-    """Tarjeta «¿Pool ahora?»: paso 1 (etapa), paso 2 (rentable), rango y mejor pool por perfil, y cómo pedir el análisis
-    completo del par (comisiones reales, gas, stop-loss y neto)."""
+    """Tarjeta «¿Pool ahora?». Con el análisis de /pool (asset.pool_report): por ciclo, la etapa como
+    información y solo los pools productivos (los que /pool propondría: neto positivo con el margen
+    de seguridad y por encima de Aave), con su enlace; si no hay, el mejor neto sin enlace y cuánto
+    faltaría. Sin ese análisis, la etapa y el rango sin enlazar ningún pool."""
+    rep = asset.pool_report
+    if rep is not None:
+        return _verdict_from_report(asset, rep, github_link)
     liq = asset.liquidity
     if liq is None:
         return ""
@@ -290,18 +313,63 @@ def pool_verdict_html(asset: AssetResult, github_link: str = "") -> str:
             continue
         w = p.width
         rng = f"rango <b>{fmt(p.low)} – {fmt(p.high)}</b> ({w[0]:+.1%} / {w[1]:+.1%})"
-        q = p.main_quote
-        pool = (f'<a href="{html.escape(q.pool.app_url or q.pool.url)}" target="_blank" rel="noopener">{html.escape(q.pool.label)}</a>'
-                f' · ~{q.fee_apr:.0%} APR est.' if q and q.fee_apr is not None else "")
         r = asset.timeframes.get(_PROFILE_KEY.get(p.name, ""))
         stage = (f'<span class="muted">{html.escape(stage_label(r))}</span>' if r is not None and r.status == "ok"
                  else "")
         rows.append(f'<div class="pool-row"><span class="pname">{html.escape(p.name)}'
                     f' <span class="muted">{html.escape(p.horizon)}</span></span>{chip}{stage}'
-                    f'<span>{rng}</span>{pool}</div>')
+                    f'<span>{rng}</span><span class="muted">rentabilidad sin calcular: no se enlaza ningún pool</span></div>')
     best = liq.best.replace(liq.note, "").strip() if liq.note else liq.best
+    return (f'<div class="pool-card"><h2>¿Pool ahora? {html.escape(asset.base)}/{html.escape(asset.quote)}</h2>'
+            f'<p>{html.escape(best)}</p>{"".join(rows)}<p class="note">{_more(asset, github_link)}</p></div>')
+
+
+def _more(asset: AssetResult, github_link: str) -> str:
     more = f'Análisis completo del pool (comisiones reales, gas, stop-loss y neto): <code>{html.escape(pool_command(asset))}</code>'
     if github_link:
         more += f' · <a href="{html.escape(github_link)}">o desde GitHub</a>'
-    return (f'<div class="pool-card"><h2>¿Pool ahora? {html.escape(asset.base)}/{html.escape(asset.quote)}</h2>'
-            f'<p>{html.escape(best)}</p>{"".join(rows)}<p class="note">{more}</p></div>')
+    return more
+
+
+def _verdict_from_report(asset: AssetResult, rep, github_link: str) -> str:
+    from . import oportunidad as op
+    liq = asset.liquidity
+    horizons = {p.timeframe: p.horizon for p in liq.profiles} if liq is not None else {}
+    rows, n_ok = [], 0
+    for key, name, _ in op.CYCLES:
+        level = rep.stages.get(key, ("sin datos", []))[0]
+        r = rep.asset.timeframes.get(key) if rep.asset is not None else None
+        chip = (f'<span class="lvl" style="background:{LEVEL_COLORS.get(level, "#6b7280")}">etapa {html.escape(level)}</span>'
+                + (f'<span class="muted">{html.escape(stage_label(r))}</span>' if r is not None and r.status == "ok" else ""))
+        rng = rep.ranges.get(key)
+        rtxt = f"<span>rango <b>{fmt(rng[0])} – {fmt(rng[1])}</b></span>" if rng else ""
+        mine = sorted((o for o in rep.opportunities if o.cycle == key), key=lambda o: -(o.net_apr if o.net_apr is not None else -9))
+        good = [o for o in mine if not o.excluded][:MAX_PRODUCTIVE]
+        n_ok += len(good)
+        if good:
+            pools = "".join(
+                f'<div><span class="lvl" style="background:#16a34a">✓ {html.escape(op.decision(o, rep.capital)[0])}</span> '
+                f'<a href="{html.escape(o.pool.app_url or o.pool.url)}" target="_blank" rel="noopener">{html.escape(o.pool.label)}</a>'
+                f' · rango {fmt(o.quote.low)} – {fmt(o.quote.high)} · {_net_txt(o)}</div>' for o in good)
+        elif mine and mine[0].net_cycle is not None:
+            o = mine[0]
+            gap = op.fee_gap(o, rep.capital)
+            pools = (f'<div class="muted">Ningún pool productivo hoy. El mejor, {html.escape(o.pool.label)}: '
+                     f'{_net_txt(o)}' + (f"; para abrir harían falta unas comisiones {gap:.1f} veces las de hoy"
+                                         .replace(".", ",", 1) if gap and gap > 1 else "")
+                     + f' ({html.escape(o.excluded)}).</div>')
+        else:
+            pools = f'<div class="muted">Ningún pool productivo hoy: {html.escape(mine[0].excluded if mine else "sin pools con liquidez suficiente")}.</div>'
+        rows.append(f'<div class="pool-row"><span class="pname">{html.escape(name)}'
+                    f' <span class="muted">{html.escape(horizons.get(key, ""))}</span></span>{chip}{rtxt}'
+                    f'<div style="flex-basis:100%">{pools}</div></div>')
+    pair = f"{rep.base}/{rep.quote}"
+    proxy = (f' <span class="muted">(pools de {html.escape(pair)}, que sigue el mismo precio)</span>'
+             if pair not in (asset.symbol, f"{asset.base}/{asset.quote}") else "")
+    head = (f"{n_ok} pool{'es' if n_ok != 1 else ''} productivo{'s' if n_ok != 1 else ''} con {rep.capital:,.0f} $: "
+            "neto positivo incluso con la pérdida un 25 % peor y por encima de Aave. La etapa es informativa: "
+            "decides tú." if n_ok else
+            f"Ningún pool productivo hoy con {rep.capital:,.0f} $ (neto positivo con margen de seguridad y por "
+            "encima de Aave): no se enlaza ninguno.")
+    return (f'<div class="pool-card"><h2>¿Pool ahora? {html.escape(pair)}{proxy}</h2>'
+            f'<p>{html.escape(head)}</p>{"".join(rows)}<p class="note">{_more(asset, github_link)}</p></div>')

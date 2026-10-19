@@ -104,7 +104,50 @@ def _pools_detail(p: ProfileResult, cap: float) -> str:
             f'<tbody>{"".join(rows)}</tbody></table>')
 
 
-def liquidity_html(liq: LiquidityResult | None) -> str:
+def _net_cell(o) -> str:
+    if o.net_cycle is None:
+        return '<td class="muted">—</td>'
+    color = "#16a34a" if o.net_cycle > 0 else "#dc2626"
+    return (f'<td><b style="color:{color}">{o.net_cycle:+,.2f} $</b><br>'
+            f'<span class="small">{o.net_apr:+.1%} anual</span></td>')
+
+
+def _decision_cell(o, capital: float) -> str:
+    from . import oportunidad as op
+    state, why = op.decision(o, capital)
+    color = "#16a34a" if state in (op.ABRIR, op.PRECAUCION) else "#6b7280"
+    return (f'<td><b style="color:{color}">{html.escape(state)}</b>'
+            + (f'<br><span class="small">{html.escape(why)}</span>' if state not in (op.ABRIR, op.PRECAUCION) else "")
+            + "</td>")
+
+
+def _report_pools_detail(opps: list, capital: float) -> str:
+    """Todos los pools de un ciclo con el análisis de /pool: rango, comisiones, neto (ganancia o
+    pérdida esperada por ciclo y anual) y decisión, ordenados por neto."""
+    rows = []
+    for o in sorted(opps, key=lambda o: -(o.net_apr if o.net_apr is not None else -9)):
+        q = o.quote
+        tvl = f"{q.tvl / 1e6:,.1f} M$" if q.tvl else "—"
+        rows.append(f'<tr><td><a href="{html.escape(o.pool.app_url or o.pool.url)}" target="_blank" rel="noopener">'
+                    f'{html.escape(o.pool.label)}</a></td><td>{fmt(q.low)}</td><td>{fmt(q.high)}</td>'
+                    f'<td>{q.tick_lower} / {q.tick_upper}</td><td>{fmt(q.pool_price)}</td>'
+                    f'<td>{_pct(q.asset_share, False)}</td><td>{tvl}</td>'
+                    f'<td>{_money(q.fee_day)}</td><td>{_pct(q.fee_apr, False)}</td>'
+                    f'<td>{_money(o.expected_result * capital if o.expected_result is not None else None)}</td>'
+                    f'{_net_cell(o)}{_decision_cell(o, capital)}</tr>')
+    return ('<table><thead><tr><th>Pool</th><th>Mín. (tick)</th><th>Máx. (tick)</th><th>Ticks</th>'
+            '<th>Precio del pool</th><th>% en el activo</th><th>TVL</th>'
+            f'<th>Comisiones/día ({capital:,.0f} $)</th><th>APR comisiones</th><th>Pérdida frente a mantener/ciclo</th>'
+            '<th>Neto esperado por ciclo (anual)</th><th>Decisión</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table>')
+
+
+def liquidity_html(liq: LiquidityResult | None, rep=None) -> str:
+    """Sección de liquidez. Con el análisis de /pool (`rep`), los pools, comisiones y neto salen de
+    él (los mismos que da /pool, también en pares entre dos volátiles); sin él, la estimación rápida
+    de comisiones de liquidez.py."""
+    if rep is not None:
+        return _liquidity_from_report(liq, rep) if liq is not None else _proxy_pools_html(rep)
     if liq is None:
         return ""
     cap = liq.capital
@@ -141,6 +184,72 @@ def liquidity_html(liq: LiquidityResult | None) -> str:
 </tr></thead><tbody>{''.join(rows)}</tbody></table></div>
 <p class="note">{html.escape(LP_NOTE.format(cap=f"{cap:,.0f}"))}</p>
 {''.join(details)}</div>"""
+
+
+def _liquidity_from_report(liq: LiquidityResult, rep) -> str:
+    from . import oportunidad as op
+    cap = rep.capital
+    best = op.decisions(rep)
+    rows, details = [], []
+    for p in liq.profiles:
+        opps = [o for o in rep.opportunities if o.cycle == p.timeframe]
+        o = best.get(p.timeframe)
+        head = (f'<tr><td><b>{html.escape(p.name)}</b><br><span class="muted">{html.escape(p.horizon)}</span></td>'
+                f'<td>{level_chip(p.level)}</td>')
+        if p.low is None:
+            rows.append(head + f'<td colspan="9" class="muted">sin rango: {html.escape(" ".join(p.reasons))}</td></tr>')
+            continue
+        w = p.width
+        if o is None or o.quote is None or o.quote.low is None:
+            pool = '<td colspan="4" class="muted">sin pools con liquidez suficiente</td>'
+        else:
+            q = o.quote
+            pool = (f'<td><a href="{html.escape(o.pool.app_url or o.pool.url)}" target="_blank" rel="noopener">'
+                    f'{html.escape(o.pool.label)}</a><br><b>{fmt(q.low)} – {fmt(q.high)}</b>'
+                    f'<br><span class="muted">ticks {q.tick_lower} / {q.tick_upper}</span></td>'
+                    f'<td>{_money(q.fee_day)}</td>{_net_cell(o)}{_decision_cell(o, cap)}')
+        rows.append(head + f'<td class="typ">{fmt(p.low)}</td><td class="typ">{fmt(p.high)}</td>'
+                    f'<td>{w[0]:+.1%} / {w[1]:+.1%}</td>'
+                    f'<td>{_pct(p.asset_share, False)} activo<br>{_pct(1 - p.asset_share, False)} '
+                    f'{"estable" if liq.quote in ("USDC", "USDT", "USD", "DAI") else html.escape(liq.quote)}</td>'
+                    f'<td>{_pct(p.loss_low)} / {_pct(p.loss_high)}</td>{pool}</tr>')
+        reasons = "".join(f"<li>{html.escape(r)}</li>" for r in p.reasons)
+        pools = (f"<details><summary>Todos los pools ({len(opps)}), con su neto</summary>"
+                 f"{_report_pools_detail(opps, cap)}</details>" if opps else "")
+        details.append(f"<h3>{html.escape(p.name)} · {level_chip(p.level, small=True)}</h3><ul>{reasons}</ul>{pools}")
+    illiquid = (f'<p class="note">Descartados por poca liquidez: {html.escape("; ".join(rep.illiquid))}</p>'
+                if rep.illiquid else "")
+    return f"""<div class="liq"><h2>Liquidez concentrada (Uniswap v3 / v4)</h2>
+<p class="summary">{html.escape(liq.best)}</p>
+<div class="wrap"><table><thead><tr><th>Perfil</th><th>Paso 1 (etapa)</th><th>Precio mín.</th><th>Precio máx.</th>
+<th>Anchura</th><th>Depósito</th><th>Si toca el mín. / máx.</th><th>Mejor pool por neto: rango ajustado a ticks</th>
+<th>Comisiones/día ({cap:,.0f} $)</th><th>Neto esperado por ciclo (anual)</th><th>Paso 2 (decisión)</th>
+</tr></thead><tbody>{''.join(rows)}</tbody></table></div>
+<p class="note">Neto = comisiones reales del pool (el menor entre 7 y 30 días) × fracción de ciclos dentro del rango
++ pérdida frente a mantener los tokens (histórico del método en este par) − gas − cambio de tokens al reajustar, para
+{cap:,.0f} $: lo mismo que /pool. En verde, ganancia esperada; en rojo, pérdida. Decisión «abrir» = neto positivo
+incluso con la pérdida un 25 % peor y por encima de Aave.</p>
+{illiquid}{''.join(details)}</div>"""
+
+
+def _proxy_pools_html(rep) -> str:
+    """Acción o ETF con POOL_PROXY (GLD → oro tokenizado): todos los pools del token que sigue su
+    precio, por ciclo, con la etapa de ese token y el neto."""
+    from . import oportunidad as op
+    cap, parts = rep.capital, []
+    for key, name, _ in op.CYCLES:
+        opps = [o for o in rep.opportunities if o.cycle == key]
+        level = rep.stages.get(key, ("sin datos", []))[0]
+        parts.append(f"<h3>{html.escape(name)} · {level_chip(level, small=True)}</h3>"
+                     + (f"<details open><summary>Todos los pools ({len(opps)}), con su neto</summary>"
+                        f"{_report_pools_detail(opps, cap)}</details>" if opps else
+                        '<p class="muted">sin pools con liquidez suficiente</p>'))
+    illiquid = (f'<p class="note">Descartados por poca liquidez: {html.escape("; ".join(rep.illiquid))}</p>'
+                if rep.illiquid else "")
+    return (f'<div class="liq"><h2>Liquidez concentrada vía {html.escape(rep.base)}/{html.escape(rep.quote)}</h2>'
+            f'<p class="summary">No hay pools del propio valor: estos son los de {html.escape(rep.base)}, que sigue el '
+            f'mismo precio, con sus etapas y su neto para {cap:,.0f} $ (lo mismo que /pool).</p>'
+            f'{illiquid}{"".join(parts)}</div>')
 
 
 LIQ_CSS = """

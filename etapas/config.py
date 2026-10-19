@@ -93,10 +93,14 @@ LP_PROFILES = [("1d", "Diaria", "1 día"), ("1w", "Semanal", "7 días"), ("1M", 
 # supera ~1 de cada 10 velas y el precio se mantiene dentro toda la vela ~80 % de las veces
 # (comprobado fuera de muestra, ver README).
 LP_QUANTILE = 0.9
-# Capital de referencia para estimar comisiones (en dólares)
-LP_CAPITAL_REF = 1000
-# Capital con el que la rutina comprueba si un pool es rentable (el mismo que /pool por defecto)
-POOL_CHECK_CAPITAL = 5000
+# Capital de referencia del informe (en dólares): comisiones, neto y rentabilidad, el mismo que /pool
+# por defecto, para que las cifras del informe y las de /pool coincidan
+LP_CAPITAL_REF = 5000
+POOL_CHECK_CAPITAL = LP_CAPITAL_REF
+# Acciones o ETF sin pools on-chain cuyo precio sigue un token que sí los tiene: la rutina analiza los
+# pools de ese par (etapas, rango y neto del token, no del ETF). GLD es una fracción fija de onza de oro,
+# como PAXG y XAUt (el par USD reúne USDC y USDT).
+POOL_PROXY = {"GLD": "PAXG/USD"}
 # Si el precio de un pool se aleja más que esto del de mercado, no se estiman comisiones
 LP_MAX_POOL_DEVIATION = 0.02
 # Posiciones abiertas: aviso si el precio está a menos de esta fracción de la anchura de un borde
