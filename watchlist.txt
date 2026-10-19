@@ -19,7 +19,7 @@ ETH
 # JUP
 
 par:ETH/BTC
-par:BTC/ETH
+#par:BTC/ETH
 #par:ETH/USDC
 #par:BTC/USDC
 # par:SOL/ETH
