@@ -185,10 +185,5 @@
     }
   },
   "posiciones": {},
-  "oportunidades": {
-    "BTC/USDC 3000 todas": "",
-    "ETH/USDC 3000 todas": "",
-    "ETH/USDT 3000 todas": "",
-    "BTC/ETH 3000 todas": ""
-  }
+  "oportunidades": {}
 }
