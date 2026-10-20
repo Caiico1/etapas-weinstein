@@ -1,8 +1,11 @@
-"""Backtest de préstamo con garantía en Aave: matemática de la simulación con series sintéticas (sin BD)."""
+"""Backtest de Aave (préstamo con garantía y liquidez cubierta): matemática con series sintéticas (sin BD)."""
+import math
+
 import pandas as pd
 import pytest
 
 from etapas import aave_backtest as A
+from etapas import backtest as B
 from etapas.backtest import BacktestError
 
 
@@ -86,6 +89,54 @@ def test_tras_liquidar_lo_prestado_no_abarata_el_prestamo():
                    A.Loan(1.8, gas_usd=0))
     assert r.liquidations == 1
     assert r.net_cost_apr > 0                                    # el depósito de lo prestado ya no cuenta
+
+
+# --- liquidez cubierta: pool WETH/USDC sintético + USDC de garantía y WETH prestado --------------
+
+POOL ={"chain": "base", "version": "v3", "pool_id": "0x0", "label": "WETH/USDC", "fee": 500, "tick_spacing": 10,
+        "symbol0": "WETH", "symbol1": "USDC", "dec0": 18, "dec1": 6, "asset_is_token0": True}
+T0 = round(math.log(2000 / 1e12) / math.log(B.TICK_BASE))       # tick de ETH ≈ 2000 USDC
+
+
+def _covered(ticks, lt=0.78, ltv=0.75):
+    n = len(ticks)
+    eth = [B.TICK_BASE ** t * 1e12 for t in ticks]
+    return pd.DataFrame({"hour": pd.date_range("2026-01-01", periods=n, freq="h"), "tick": ticks,
+                         "sqrt_price": [B.TICK_BASE ** (t / 2) for t in ticks], "usd0": eth, "usd1": [1.0] * n,
+                         "fee_growth0": [0.0] * n, "fee_growth1": [0.0] * n, "lp_fee": [500] * n,
+                         "c_index": [1.0] * n, "c_price": [1.0] * n, "ltv": [ltv] * n, "lt": [lt] * n,
+                         "bonus": [0.05] * n, "d_index": [1.0] * n, "d_supply_index": [1.0] * n,
+                         "d_price": eth, "can_borrow": [True] * n})
+
+
+def test_cubierta_tamanos_y_precio_quieto():
+    df = _covered([T0] * 48)
+    cv = A.Covered(0.10, 2.0, gas_usd=0)
+    r = A.simulate_covered(POOL, df, cv, 10_000)
+    s = A.asset_share(POOL, df, 0.10)
+    assert 0.4 < s < 0.6
+    assert r.deposit + (1 - s) * r.lp_value == pytest.approx(10_000)        # garantía + estable del pool = capital
+    assert r.debt_usd == pytest.approx(s * r.lp_value)                       # se pide justo el activo del pool
+    assert r.debt_usd / r.deposit == pytest.approx(0.78 / 2.0)
+    assert r.hf_min == pytest.approx(2.0)
+    assert r.final_usd == pytest.approx(10_000, rel=1e-3)                    # solo el cambio de tokens del pool
+
+
+def test_cubierta_neutraliza_la_subida_dentro_del_rango():
+    up = round(math.log(1.05) / math.log(B.TICK_BASE))                       # ETH +5 %, dentro de ±10 %
+    df = _covered([T0] * 10 + [T0 + up] * 10)
+    r = A.simulate_covered(POOL, df, A.Covered(0.10, 2.0, gas_usd=0), 10_000)
+    assert abs(r.pnl_pct) < 0.005                                            # solo la pérdida frente a mantener
+    assert r.vs_unhedged_pct < -0.01                                         # el pool sin cubrir sí gana con la subida
+    assert r.hf_min == pytest.approx(2.0 / 1.05, rel=1e-3)
+    assert r.liquidations == 0
+
+
+def test_cubierta_se_liquida_si_el_activo_sube_mas_que_el_hf():
+    up = round(math.log(2.2) / math.log(B.TICK_BASE))                        # ETH ×2,2 con HF 2
+    r = A.simulate_covered(POOL, _covered([T0] * 10 + [T0 + up] * 10), A.Covered(0.10, 2.0, gas_usd=0), 10_000)
+    assert r.liquidations >= 1
+    assert r.hf_needed == pytest.approx(2.2, rel=1e-3)
 
 
 def test_hf_por_debajo_del_ltv_no_se_puede_abrir():

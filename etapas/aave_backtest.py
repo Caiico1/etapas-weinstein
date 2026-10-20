@@ -1,5 +1,5 @@
 """Backtest de estrategias de Aave V3 contra el histórico horario de MetaProDB (tablas aave_*,
-leídas de la blockchain): por ahora, el préstamo con garantía.
+leídas de la blockchain): préstamo con garantía y liquidez cubierta.
 
 Préstamo con garantía: depositas `capital` en un token (la garantía, p. ej. WETH) y pides prestado
 otro (la deuda, p. ej. USDC) hasta el factor de salud (HF) elegido. Cada hora:
@@ -15,11 +15,20 @@ hasta volver al HF inicial; se anota cuánto hizo falta aportar).
 Lo prestado: se supone depositado en Aave en el mismo mercado (cobra el APY de depósito de la deuda);
 el «coste neto» es lo pagado por el préstamo menos lo cobrado por ese depósito.
 
+Liquidez cubierta (como estrategia.py): con capital C en la estable de un pool activo/estable, se
+deposita D de la estable en Aave, se pide prestado justo el activo que pide el rango y el pool recibe
+ese activo más el resto de la estable. Con s = parte del activo en la posición y l = umbral / HF:
+V = C / (s/l + 1 − s), D = s·V / l, deuda = s·V. El HF solo depende de la garantía (estable) y de la
+deuda (activo): hay liquidación si el activo sube. El pool se simula con backtest.simulate (comisiones
+reales, reajuste opcional; sin stop: vender el activo dejaría la deuda al descubierto). Se compara
+con dejar C en la estable en Aave y con el mismo pool sin cubrir.
+
 Medida clave: sin liquidación, HF(t) = HF inicial × r(t), con r(t) independiente del HF elegido.
 Así que el HF inicial que habría aguantado una ventana es 1 / mín r(t) («HF necesario»).
 
     python -m etapas.aave_backtest WETH USDC --red base --hf 1.5,1.8,2.2 --ventana 60 --paso 7
     python -m etapas.aave_backtest cbBTC USDC --red base --hf 1.8 --gestion nunca,defender --desde 2025-01-01
+    python -m etapas.aave_backtest cubierta "WETH/USDC 0.05%" --red base --ancho 10,20 --hf 2,2.5 --ventana 60
 
 Límites: precio y HF vistos cada hora (una mecha dentro de la hora no se ve); no modela el
 cambio de tipo que provocaría tu propio préstamo ni la liquidez disponible para retirar.
@@ -34,6 +43,7 @@ from dataclasses import asdict, dataclass
 
 import pandas as pd
 
+from . import backtest as B
 from .backtest import BacktestError, _connect, _pct, windows
 
 ALIASES = {"ETH": "WETH"}
@@ -77,6 +87,7 @@ class LoanResult:
     interest_usd: float            # intereses pagados
     borrow_apr: float              # intereses / deuda media, anualizado
     carry_usd: float               # intereses cobrados por lo prestado depositado en Aave
+    collateral_yield_usd: float    # intereses cobrados por la garantía
     net_cost_apr: float            # (pagado − cobrado) / deuda media, anualizado
     final_usd: float               # garantía − deuda + lo prestado − aportado − gas
     hold_usd: float                # solo la garantía depositada, sin préstamo
@@ -130,7 +141,9 @@ def hf_needed(df: pd.DataFrame) -> float:
     return float(1 / r.min())
 
 
-def simulate(df: pd.DataFrame, loan: Loan, capital: float = 10_000.0) -> LoanResult:
+def simulate(df: pd.DataFrame, loan: Loan, capital: float = 10_000.0, keep_proceeds: bool = True) -> LoanResult:
+    """`capital` = garantía depositada. keep_proceeds: lo prestado se deja depositado en Aave y cuenta
+    en el resultado; si es False (liquidez cubierta) sale del préstamo y el resultado es garantía − deuda."""
     c_idx, c_px, lt, bonus = (df[k].to_numpy() for k in ("c_index", "c_price", "lt", "bonus"))
     d_idx, d_sidx, d_px = (df[k].to_numpy() for k in ("d_index", "d_supply_index", "d_price"))
     ltv0 = float(df["ltv"].iloc[0])
@@ -143,14 +156,15 @@ def simulate(df: pd.DataFrame, loan: Loan, capital: float = 10_000.0) -> LoanRes
         raise CannotOpen(f"HF {loan.hf:.2f} pide más del LTV permitido al abrir ({ltv0:.0%}); "
                             f"el HF mínimo para abrir es {lt[0] / ltv0:.2f}")
     sd = debt0 / d_px[0] / d_idx[0]                         # deuda escalada
-    sp = sd * d_idx[0] / d_sidx[0]                          # lo prestado, depositado en Aave (escalado)
+    sp = sd * d_idx[0] / d_sidx[0] if keep_proceeds else 0.0   # lo prestado, depositado en Aave (escalado)
     gas = 4 * loan.gas_usd
     hf_min, below, liqs, liq_usd, liq_loss, defs, added = float("inf"), 0, 0, 0.0, 0.0, 0, 0.0
-    interest = carry = debt_hours = 0.0
+    interest = carry = coll_yield = debt_hours = 0.0
 
     for i in range(len(df)):
         if i:
             interest += sd * (d_idx[i] - d_idx[i - 1]) * d_px[i]
+            coll_yield += sc * (c_idx[i] - c_idx[i - 1]) * c_px[i]
             # solo lo prestado que sigue respaldado por deuda: tras una liquidación o una defensa, el resto
             # ya no forma parte del préstamo (sigue en «final», pero no rebaja su coste)
             matched = min(sp * d_sidx[i - 1], sd * d_idx[i - 1])
@@ -189,7 +203,7 @@ def simulate(df: pd.DataFrame, loan: Loan, capital: float = 10_000.0) -> LoanRes
     h = df["hour"]
     return LoanResult(loan.name, f"{h.iloc[0]:%Y-%m-%d %H:00}", f"{h.iloc[-1]:%Y-%m-%d %H:00}", round(n / 24, 1),
                       capital, debt0, debt0 / capital, hf_min, hf_needed(df), int(below), liqs, liq_usd, liq_loss,
-                      defs, added, interest, apr(interest), carry, apr(interest - carry), final, hold,
+                      defs, added, interest, apr(interest), carry, coll_yield, apr(interest - carry), final, hold,
                       (final - hold) / capital, gas)
 
 
@@ -210,6 +224,122 @@ def summarize(rs: list[LoanResult | None], loan: Loan) -> dict | None:
             "defensas_media": float(s["defenses"].mean()), "aportado_max": float(s["added_usd"].max())}
 
 
+# --- liquidez cubierta ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Covered:
+    width: float                   # semiancho del rango del pool: 0,10 = ±10 %
+    hf: float                      # factor de salud al abrir (l = umbral / HF)
+    manage: str = "nunca"          # nunca | defender (con dinero de fuera, como en el préstamo)
+    defend_at: float = 1.3
+    rebalance: str = "nunca"       # el pool: nunca | fuera
+    wait_hours: int = 0
+    gas_usd: float = 0.05
+
+    @property
+    def name(self) -> str:
+        s = f"±{self.width:.0%} {self.rebalance} · HF {self.hf:.2f}"
+        return s + (f" def<{self.defend_at:.2f}" if self.manage == "defender" else "")
+
+
+@dataclass
+class CoveredResult:
+    strategy: str
+    start: str
+    end: str
+    days: float
+    capital: float
+    lp_value: float                # V: tamaño de la posición en el pool
+    deposit: float                 # D: estable depositada en Aave como garantía
+    debt_usd: float                # activo prestado, en USD al abrir
+    final_usd: float               # pool + garantía − deuda − aportado − gas
+    pnl_pct: float
+    fees_usd: float                # comisiones del pool
+    fees_apr: float                # sobre el capital
+    interest_usd: float            # intereses del préstamo
+    collateral_yield_usd: float    # lo que cobró la garantía
+    hf_min: float
+    hf_needed: float
+    liquidations: int
+    liquidation_loss_usd: float
+    defenses: int
+    added_usd: float
+    in_range_pct: float
+    rebalances: int
+    vs_stable_pct: float           # frente a dejar todo el capital en la estable en Aave
+    vs_unhedged_pct: float         # frente al mismo pool sin cubrir, con todo el capital
+
+
+def load_covered(key: str, chain: str | None = None, market: str | None = None,
+                 start: str | None = None, end: str | None = None) -> tuple[dict, pd.DataFrame]:
+    """El pool (backtest.load_hours) y, en las mismas horas, la estable como garantía y el activo como deuda."""
+    pool, pdf = B.load_hours(key, chain, start, end)
+    s0, s1 = pool["symbol0"] in B._STABLE, pool["symbol1"] in B._STABLE
+    if s0 == s1:
+        raise BacktestError(f"{pool['label']}: la liquidez cubierta necesita un par activo/estable")
+    stable, asset = (pool["symbol0"], pool["symbol1"]) if s0 else (pool["symbol1"], pool["symbol0"])
+    info, adf = load_pair(stable, asset, pool["chain"], market, start, end)
+    df = pdf.merge(adf, on="hour", how="inner").reset_index(drop=True)
+    if len(df) < 48:
+        raise BacktestError(f"{pool['label']}: menos de 48 horas con datos del pool y de Aave a la vez")
+    return {**pool, "asset_is_token0": s1, "market": info["market"], "collateral": info["collateral"],
+            "debt": info["debt"]}, df
+
+
+def asset_share(pool: dict, df: pd.DataFrame, width: float) -> float:
+    """Parte del valor de la posición que va en el activo al abrir el rango (como backtest.simulate)."""
+    tl, tu = B._range(int(df["tick"].iloc[0]), width, pool["tick_spacing"])
+    a0, a1 = B._amounts(df["sqrt_price"].iloc[0], B._sqrt(tl), B._sqrt(tu))
+    v0, v1 = a0 / 10 ** pool["dec0"] * df["usd0"].iloc[0], a1 / 10 ** pool["dec1"] * df["usd1"].iloc[0]
+    return (v0 if pool["asset_is_token0"] else v1) / (v0 + v1)
+
+
+def simulate_covered(pool: dict, df: pd.DataFrame, cv: Covered, capital: float = 10_000.0) -> CoveredResult:
+    lt0, ltv0 = float(df["lt"].iloc[0]), float(df["ltv"].iloc[0])
+    used = lt0 / cv.hf                                      # LTV usado
+    s = asset_share(pool, df, cv.width)
+    value = capital / (s / used + 1 - s)
+    deposit = s * value / used
+    loan = simulate(df, Loan(cv.hf, cv.manage, cv.defend_at, cv.gas_usd), deposit, keep_proceeds=False)
+    st = B.Strategy(cv.width, cv.rebalance, cv.wait_hours, None, cv.gas_usd)
+    lp = B.simulate(pool, df, st, value)
+    final = lp.final + loan.final_usd
+    stable_only = capital * df["c_index"].iloc[-1] / df["c_index"].iloc[0]
+    unhedged = B.simulate(pool, df, st, capital).final
+    years = max(loan.days, 1 / 24) / 365
+    return CoveredResult(cv.name, loan.start, loan.end, loan.days, capital, value, deposit, loan.debt_usd, final,
+                         final / capital - 1, lp.fees_usd, lp.fees_usd / capital / years, loan.interest_usd,
+                         loan.collateral_yield_usd, loan.hf_min, loan.hf_needed, loan.liquidations,
+                         loan.liquidation_loss_usd, loan.defenses, loan.added_usd, lp.in_range_pct, lp.rebalances,
+                         (final - stable_only) / capital, (final - unhedged) / capital)
+
+
+def summarize_covered(rs: list[CoveredResult | None], cv: Covered) -> dict | None:
+    blocked = sum(r is None for r in rs)
+    rs = [r for r in rs if r is not None]
+    if not rs:
+        return None
+    s = pd.DataFrame([asdict(r) for r in rs])
+    years = s["days"] / 365
+    return {"strategy": cv.name, "ventanas": len(rs), "sin_abrir": blocked,
+            "pnl_mediana": float(s["pnl_pct"].median()), "pnl_p10": float(s["pnl_pct"].quantile(0.1)),
+            "pct_positivas": float((s["pnl_pct"] > 0).mean()),
+            "vs_estable_mediana": float(s["vs_stable_pct"].median()), "vs_estable_p10": float(s["vs_stable_pct"].quantile(0.1)),
+            "vs_sin_cubrir_mediana": float(s["vs_unhedged_pct"].median()),
+            "fees_apr_mediana": float(s["fees_apr"].median()),
+            "aave_neto_apr_mediana": float(((s["collateral_yield_usd"] - s["interest_usd"]) / s["capital"] / years).median()),
+            "liquidadas": int((s["liquidations"] > 0).sum()), "hf_min_peor": float(s["hf_min"].min()),
+            "hf_necesario_max": float(s["hf_needed"].max()), "aportado_max": float(s["added_usd"].max()),
+            "en_rango_mediana": float(s["in_range_pct"].median()), "pool_pct_capital": float((s["lp_value"] / s["capital"]).median())}
+
+
+def _try_covered(pool: dict, df: pd.DataFrame, cv: Covered, capital: float) -> CoveredResult | None:
+    try:
+        return simulate_covered(pool, df, cv, capital)
+    except CannotOpen:
+        return None
+
+
 def _try(df: pd.DataFrame, loan: Loan, capital: float) -> LoanResult | None:
     try:
         return simulate(df, loan, capital)
@@ -226,20 +356,32 @@ def main(argv: list[str] | None = None) -> int:
         except (AttributeError, ValueError):
             pass
     ap = argparse.ArgumentParser(prog="python -m etapas.aave_backtest", description=__doc__.split("\n\n")[0])
-    ap.add_argument("garantia", help="token de garantía (WETH, cbBTC, wstETH...)")
-    ap.add_argument("deuda", help="token que se pide prestado (USDC, USDT, GHO...)")
-    ap.add_argument("--red", required=True, help="ethereum | base | arbitrum")
+    ap.add_argument("tokens", nargs="+", metavar="GARANTIA DEUDA | cubierta POOL",
+                    help="préstamo: token de garantía y token prestado (WETH USDC); liquidez cubierta: "
+                         "«cubierta» y el pool (dirección o parte de la etiqueta, p. ej. «WETH/USDC 0.05%%»)")
+    ap.add_argument("--red", help="ethereum | base | arbitrum (obligatoria en el préstamo)")
     ap.add_argument("--mercado", help="en Ethereum: ethereum (principal, por defecto) | lido | etherfi")
     ap.add_argument("--desde"), ap.add_argument("--hasta")
     ap.add_argument("--capital", type=float, default=10_000)
-    ap.add_argument("--hf", default="1.8", help="factor de salud al abrir, lista: 1.5,1.8,2.2")
+    ap.add_argument("--hf", default=None, help="factor de salud al abrir, lista (por defecto 1.8; en la cubierta 2)")
     ap.add_argument("--gestion", default="nunca", help="nunca | defender, lista: nunca,defender")
     ap.add_argument("--defensa", type=float, default=1.3, help="HF que dispara la defensa")
+    ap.add_argument("--ancho", default="10", help="cubierta: semiancho del rango en %%, lista: 5,10,20")
+    ap.add_argument("--reajuste", default="nunca", help="cubierta: nunca | fuera, lista")
+    ap.add_argument("--espera", type=int, default=0, help="cubierta: horas fuera de rango antes de reajustar")
     ap.add_argument("--gas", type=float, default=None, help="dólares por transacción (por defecto: 5 en Ethereum, 0,05 en L2)")
     ap.add_argument("--ventana", type=int, help="días de cada prueba: abrir en muchas fechas")
     ap.add_argument("--paso", type=int, default=7, help="días entre fechas de entrada (con --ventana)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
+    if a.tokens[0].lower() == "cubierta":
+        if len(a.tokens) != 2:
+            ap.error("uso: cubierta POOL")
+        return main_covered(a, a.tokens[1])
+    if len(a.tokens) != 2 or not a.red:
+        ap.error("préstamo: indica GARANTIA DEUDA y --red")
+    a.garantia, a.deuda = a.tokens
+    a.hf = a.hf or "1.8"
     try:
         info, df = load_pair(a.garantia, a.deuda, a.red, a.mercado, a.desde, a.hasta)
     except BacktestError as e:
@@ -297,6 +439,67 @@ def main(argv: list[str] | None = None) -> int:
               f"{r.interest_usd:>10,.0f}{r.borrow_apr:>10.2%}{r.net_cost_apr:>9.2%}{r.final_usd:>10,.0f}"
               f"{r.hold_usd:>11,.0f}{_pct(r.vs_hold_pct):>12}{r.added_usd:>9,.0f}")
     print(f"\nHF inicial que habría evitado la liquidación en este periodo sin tocar nada: {r0.hf_needed:.2f}.")
+    return 0
+
+
+def main_covered(a: argparse.Namespace, key: str) -> int:
+    try:
+        pool, df = load_covered(key, a.red, a.mercado, a.desde, a.hasta)
+    except BacktestError as e:
+        print(e, file=sys.stderr)
+        return 2
+    gas = a.gas if a.gas is not None else (5.0 if pool["chain"] == "ethereum" else 0.05)
+    grid = [Covered(float(w) / 100, float(h), g, a.defensa, r, a.espera, gas)
+            for w, r, h, g in itertools.product(a.ancho.split(","), a.reajuste.split(","),
+                                                (a.hf or "2").split(","), a.gestion.split(","))]
+    head = (f"Liquidez cubierta · {pool['label']} · {pool['chain']} {pool['version']} · {pool['pool_id']}\n"
+            f"{pool['collateral']} en Aave V3 {pool['market']} como garantía, {pool['debt']} prestado al pool · "
+            f"umbral {df['lt'].iloc[-1]:.0%}, bonus {df['bonus'].iloc[-1]:.1%} (hoy)")
+    if pool.get("aviso") and not a.json:
+        head += f"\nAviso: {pool['aviso']}"
+    try:
+        if a.ventana:
+            rows = []
+            for cv in grid:
+                rs = windows(df, lambda part, cv=cv: _try_covered(pool, part, cv, a.capital), a.ventana, a.paso)
+                if rs and (row := summarize_covered(rs, cv)):
+                    rows.append(row)
+            if a.json:
+                print(json.dumps({"pool": pool, "ventana_dias": a.ventana, "resultados": rows}, default=str, indent=1))
+                return 0
+            print(f"{head}\nVentanas de {a.ventana} días cada {a.paso} días · {df['hour'].iloc[0]:%Y-%m-%d} → "
+                  f"{df['hour'].iloc[-1]:%Y-%m-%d} · capital {a.capital:,.0f} $ · gas {gas} $/tx\n")
+            print(f"{'estrategia':<30}{'n':>4}{'mediana':>9}{'peor 10%':>10}{'>0':>5}{'vs ' + pool['collateral']:>10}"
+                  f"{'peor 10%':>10}{'vs sin cubrir':>14}{'APR com.':>9}{'Aave neto':>10}{'liquid.':>8}{'HF mín.':>8}{'en pool':>8}")
+            for r in rows:
+                print(f"{r['strategy']:<30}{r['ventanas']:>4}{_pct(r['pnl_mediana']):>9}{_pct(r['pnl_p10']):>10}"
+                      f"{r['pct_positivas']:>5.0%}{_pct(r['vs_estable_mediana']):>10}{_pct(r['vs_estable_p10']):>10}"
+                      f"{_pct(r['vs_sin_cubrir_mediana']):>14}{r['fees_apr_mediana']:>9.1%}{r['aave_neto_apr_mediana']:>+10.1%}"
+                      f"{r['liquidadas']:>8}{r['hf_min_peor']:>8.2f}{r['pool_pct_capital']:>8.0%}")
+            if rows:
+                print(f"\nHF inicial que habría evitado la liquidación (subida de {pool['debt']}) en todas las ventanas: "
+                      f"{rows[0]['hf_necesario_max']:.2f}.")
+            print(f"vs {pool['collateral']} = frente a dejar todo el capital depositado en Aave; vs sin cubrir = frente al "
+                  "mismo pool con todo el capital y sin préstamo. Aave neto = lo que cobra la garantía − intereses del "
+                  "préstamo, anual sobre el capital (+ = ingreso). En pool = tamaño de la posición sobre el capital.")
+            return 0
+        res = [simulate_covered(pool, df, cv, a.capital) for cv in grid]
+    except BacktestError as e:
+        print(e, file=sys.stderr)
+        return 2
+    if a.json:
+        print(json.dumps({"pool": pool, "resultados": [asdict(r) for r in res]}, default=str, indent=1))
+        return 0
+    r0 = res[0]
+    print(f"{head}\n{r0.start} → {r0.end} ({r0.days} días) · capital {a.capital:,.0f} $ · gas {gas} $/tx\n")
+    print(f"{'estrategia':<30}{'en pool $':>10}{'garantía $':>11}{'deuda $':>9}{'final $':>9}{'resultado':>10}"
+          f"{'comisiones':>11}{'intereses':>10}{'garantía +':>11}{'HF mín.':>8}{'liquid.':>8}{'vs ' + pool['collateral']:>10}"
+          f"{'vs sin cubrir':>14}")
+    for r in res:
+        print(f"{r.strategy:<30}{r.lp_value:>10,.0f}{r.deposit:>11,.0f}{r.debt_usd:>9,.0f}{r.final_usd:>9,.0f}"
+              f"{_pct(r.pnl_pct):>10}{r.fees_usd:>11,.0f}{r.interest_usd:>10,.0f}{r.collateral_yield_usd:>11,.0f}"
+              f"{r.hf_min:>8.2f}{r.liquidations:>8}{_pct(r.vs_stable_pct):>10}{_pct(r.vs_unhedged_pct):>14}")
+    print(f"\nHF inicial que habría evitado la liquidación en este periodo: {r0.hf_needed:.2f}.")
     return 0
 
 
