@@ -172,6 +172,48 @@ def test_carry_sin_emode_no_se_abre():
         A.simulate_carry(_carry(48, emode=""), A.Carry(1.05))
 
 
+# --- bucles direccionales -------------------------------------------------------------------------
+
+def _short(eth_prices, lt=0.78, ltv=0.75):
+    """USDC de garantía (1 $) y WETH de deuda al precio dado."""
+    n = len(eth_prices)
+    return pd.DataFrame({"hour": pd.date_range("2026-01-01", periods=n, freq="h"),
+                         "c_index": [1.0] * n, "c_price": [1.0] * n, "ltv": [ltv] * n, "lt": [lt] * n,
+                         "bonus": [0.05] * n, "d_index": [1.0] * n, "d_supply_index": [1.0] * n,
+                         "d_price": eth_prices, "can_borrow": [True] * n})
+
+
+def test_largo_multiplica_la_subida_por_la_exposicion():
+    r = A.simulate_leveraged(_series([2000.0] * 5 + [2200.0] * 5), A.Leveraged("largo", 2.0, swap_bps=0, gas_usd=0))
+    x = 2.0 / (2.0 - 0.83)
+    assert r.exposure == pytest.approx(x)
+    assert r.pnl_pct == pytest.approx(x * 0.10)
+    assert r.hold_pct == pytest.approx(0.10)
+    assert r.hf_min == pytest.approx(2.0)
+
+
+def test_corto_gana_con_la_bajada():
+    r = A.simulate_leveraged(_short([2000.0] * 5 + [1800.0] * 5), A.Leveraged("corto", 2.0, swap_bps=0, gas_usd=0))
+    x = 2.0 / (2.0 - 0.78)
+    assert r.exposure == pytest.approx(-(x - 1))
+    assert r.pnl_pct == pytest.approx((x - 1) * 0.10)
+    assert r.asset_change_pct == pytest.approx(-0.10)
+
+
+def test_largo_se_liquida_con_una_caida_mayor_que_su_margen():
+    # HF 1,5: la caída que lleva el HF a 1 es 1 − 1/1,5 ≈ 33 %
+    r = A.simulate_leveraged(_series([2000.0] * 5 + [1300.0] * 5), A.Leveraged("largo", 1.5, swap_bps=0, gas_usd=0))
+    assert r.liquidations >= 1 and r.liquidation_loss_usd > 0
+    assert r.hf_needed == pytest.approx(2000 / 1300)
+
+
+def test_cambio_cuesta_sobre_la_deuda_al_abrir_y_al_cerrar():
+    r = A.simulate_leveraged(_series([2000.0] * 10), A.Leveraged("largo", 2.0, swap_bps=10, gas_usd=0))
+    debt = 10_000 * 0.83 / (2.0 - 0.83)
+    assert r.swap_usd == pytest.approx(2 * debt * 0.001)
+    assert r.final_usd == pytest.approx(10_000 - r.swap_usd)
+
+
 def test_hf_por_debajo_del_ltv_no_se_puede_abrir():
     with pytest.raises(BacktestError):
         A.simulate(_series([2000.0] * 48), A.Loan(1.0))         # 0,83 / 1,0 > LTV 0,80
