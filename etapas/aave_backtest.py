@@ -1,5 +1,5 @@
 """Backtest de estrategias de Aave V3 contra el histórico horario de MetaProDB (tablas aave_*,
-leídas de la blockchain): préstamo con garantía y liquidez cubierta.
+leídas de la blockchain): préstamo con garantía, liquidez cubierta y carry en E-Mode.
 
 Préstamo con garantía: depositas `capital` en un token (la garantía, p. ej. WETH) y pides prestado
 otro (la deuda, p. ej. USDC) hasta el factor de salud (HF) elegido. Cada hora:
@@ -23,12 +23,21 @@ deuda (activo): hay liquidación si el activo sube. El pool se simula con backte
 reales, reajuste opcional; sin stop: vender el activo dejaría la deuda al descubierto). Se compara
 con dejar C en la estable en Aave y con el mismo pool sin cubrir.
 
+Carry en E-Mode (bucle): se deposita un token correlacionado (wstETH), se pide el otro (WETH), se
+cambia por más del primero y se vuelve a depositar, hasta el HF elegido con los parámetros de la
+categoría E-Mode de cada día (la de umbral más alto que admite ese par). Con capital C y umbral LT:
+garantía = C·h/(h − LT), deuda = C·LT/(h − LT), apalancamiento x = h/(h − LT). El rendimiento propio
+de wstETH va en el precio del oráculo de Aave (sigue el tipo de cambio wstETH/ETH). Se mide en ETH
+(la unidad del carry) y se compara con tener solo wstETH depositado. Coste del cambio: --cambio
+puntos básicos sobre la deuda, al abrir y al cerrar (por defecto 5).
+
 Medida clave: sin liquidación, HF(t) = HF inicial × r(t), con r(t) independiente del HF elegido.
 Así que el HF inicial que habría aguantado una ventana es 1 / mín r(t) («HF necesario»).
 
     python -m etapas.aave_backtest WETH USDC --red base --hf 1.5,1.8,2.2 --ventana 60 --paso 7
     python -m etapas.aave_backtest cbBTC USDC --red base --hf 1.8 --gestion nunca,defender --desde 2025-01-01
     python -m etapas.aave_backtest cubierta "WETH/USDC 0.05%" --red base --ancho 10,20 --hf 2,2.5 --ventana 60
+    python -m etapas.aave_backtest emode wstETH WETH --red ethereum --mercado lido --hf 1.05,1.1,1.2 --ventana 60
 
 Límites: precio y HF vistos cada hora (una mecha dentro de la hora no se ve); no modela el
 cambio de tipo que provocaría tu propio préstamo ni la liquidez disponible para retirar.
@@ -333,6 +342,126 @@ def summarize_covered(rs: list[CoveredResult | None], cv: Covered) -> dict | Non
             "en_rango_mediana": float(s["in_range_pct"].median()), "pool_pct_capital": float((s["lp_value"] / s["capital"]).median())}
 
 
+# --- carry en E-Mode -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Carry:
+    hf: float                      # factor de salud al abrir, con el umbral E-Mode
+    manage: str = "nunca"          # nunca | defender
+    defend_at: float = 1.02
+    swap_bps: float = 5.0          # coste de cambiar la deuda por garantía (y al revés al cerrar)
+    gas_usd: float = 0.05
+
+    @property
+    def name(self) -> str:
+        return f"HF {self.hf:.3g} {self.manage}" + (f" <{self.defend_at:.3g}" if self.manage == "defender" else "")
+
+
+@dataclass
+class CarryResult:
+    strategy: str
+    start: str
+    end: str
+    days: float
+    capital: float
+    emode: str                     # categoría E-Mode al abrir
+    leverage: float                # garantía / capital al abrir
+    final_usd: float
+    eth_apr: float                 # rendimiento anual medido en el token prestado (ETH)
+    plain_apr: float               # solo la garantía depositada, sin bucle, en ETH
+    staking_apr: float             # subida del precio garantía/deuda en el oráculo (staking)
+    supply_apr: float              # APY de depósito de la garantía en Aave
+    borrow_apr: float              # coste del préstamo
+    hf_min: float
+    hf_needed: float
+    liquidations: int
+    liquidation_loss_usd: float
+    defenses: int
+    added_usd: float
+    swap_usd: float
+
+
+def emode_params(con, chain: str, market: str, c_asset: str, d_asset: str) -> pd.DataFrame:
+    """Por día, la categoría E-Mode de umbral más alto en la que la garantía cuenta y la deuda se puede pedir."""
+    ids = dict(con.execute("SELECT asset, reserve_id FROM aave_reserves WHERE chain = ? AND market = ?",
+                           [chain, market]).fetchall())
+    rows = con.execute("SELECT day, category, label, ltv, liq_threshold, liq_bonus, collateral_bitmap, borrowable_bitmap "
+                       "FROM aave_emode_day WHERE chain = ? AND market = ?", [chain, market]).fetchall()
+    ci, di = ids[c_asset], ids[d_asset]
+    ok = [(d, cat, lab, ltv, lt, bon) for d, cat, lab, ltv, lt, bon, col, bor in rows
+          if col and bor and (int(col, 16) >> ci) & 1 and (int(bor, 16) >> di) & 1]
+    df = pd.DataFrame(ok, columns=["day", "category", "emode", "e_ltv", "e_lt", "e_bonus"])
+    return df.sort_values(["day", "e_lt"]).drop_duplicates("day", keep="last")
+
+
+def load_emode(collateral: str, debt: str, chain: str, market: str | None = None,
+               start: str | None = None, end: str | None = None) -> tuple[dict, pd.DataFrame]:
+    """load_pair con el LTV, el umbral y el bonus de la categoría E-Mode de cada día (si la hay)."""
+    info, df = load_pair(collateral, debt, chain, market, start, end)
+    con = _connect()
+    try:
+        c_asset, _ = _reserve(con, chain, info["market"], collateral)
+        d_asset, _ = _reserve(con, chain, info["market"], debt)
+        em = emode_params(con, chain, info["market"], c_asset, d_asset)
+    finally:
+        con.close()
+    if em.empty:
+        raise BacktestError(f"No hay categoría E-Mode con {info['collateral']} de garantía y {info['debt']} prestado "
+                            f"en {info['market']}")
+    df["day"] = pd.to_datetime(df["hour"].dt.date)
+    em["day"] = pd.to_datetime(em["day"])
+    df = df.merge(em, on="day", how="left")
+    has = df["e_lt"].notna()
+    df.loc[has, "ltv"], df.loc[has, "lt"], df.loc[has, "bonus"] = df.loc[has, "e_ltv"], df.loc[has, "e_lt"], df.loc[has, "e_bonus"]
+    df["emode"] = df["emode"].fillna("")
+    return info, df.drop(columns=["day", "e_ltv", "e_lt", "e_bonus"])
+
+
+def simulate_carry(df: pd.DataFrame, cv: Carry, capital: float = 10_000.0) -> CarryResult:
+    if not df["emode"].iloc[0]:
+        raise CannotOpen(f"el {df['hour'].iloc[0]:%Y-%m-%d} no había categoría E-Mode para este par")
+    lt0 = float(df["lt"].iloc[0])
+    if cv.hf <= lt0:
+        raise CannotOpen(f"HF {cv.hf:g} no es mayor que el umbral E-Mode ({lt0:.3f})")
+    coll0 = capital * cv.hf / (cv.hf - lt0)
+    loan = simulate(df, Loan(cv.hf, cv.manage, cv.defend_at, cv.gas_usd), coll0, keep_proceeds=False)
+    swap = 2 * loan.debt_usd * cv.swap_bps / 1e4
+    final = loan.final_usd - swap
+    years = max(loan.days, 1 / 24) / 365
+    c0, c1 = df["c_price"].iloc[0], df["c_price"].iloc[-1]
+    d0, d1 = df["d_price"].iloc[0], df["d_price"].iloc[-1]
+    i0, i1 = df["c_index"].iloc[0], df["c_index"].iloc[-1]
+    in_eth = lambda usd_end: (usd_end / d1) / (capital / d0) - 1
+    plain_end = capital / c0 / i0 * i1 * c1
+    return CarryResult(cv.name, loan.start, loan.end, loan.days, capital, df["emode"].iloc[0], coll0 / capital, final,
+                       in_eth(final) / years, in_eth(plain_end) / years, ((c1 / d1) / (c0 / d0) - 1) / years,
+                       (i1 / i0 - 1) / years, loan.borrow_apr, loan.hf_min, loan.hf_needed, loan.liquidations,
+                       loan.liquidation_loss_usd, loan.defenses, loan.added_usd, swap)
+
+
+def summarize_carry(rs: list[CarryResult | None], cv: Carry) -> dict | None:
+    blocked = sum(r is None for r in rs)
+    rs = [r for r in rs if r is not None]
+    if not rs:
+        return None
+    s = pd.DataFrame([asdict(r) for r in rs])
+    return {"strategy": cv.name, "ventanas": len(rs), "sin_abrir": blocked,
+            "apalancamiento": float(s["leverage"].median()),
+            "eth_apr_mediana": float(s["eth_apr"].median()), "eth_apr_p10": float(s["eth_apr"].quantile(0.1)),
+            "pct_negativas": float((s["eth_apr"] < 0).mean()),
+            "sin_bucle_mediana": float(s["plain_apr"].median()), "staking_mediana": float(s["staking_apr"].median()),
+            "prestamo_mediana": float(s["borrow_apr"].median()), "prestamo_max": float(s["borrow_apr"].max()),
+            "liquidadas": int((s["liquidations"] > 0).sum()), "hf_min_peor": float(s["hf_min"].min()),
+            "hf_necesario_max": float(s["hf_needed"].max()), "aportado_max": float(s["added_usd"].max())}
+
+
+def _try_carry(df: pd.DataFrame, cv: Carry, capital: float) -> CarryResult | None:
+    try:
+        return simulate_carry(df, cv, capital)
+    except CannotOpen:
+        return None
+
+
 def _try_covered(pool: dict, df: pd.DataFrame, cv: Covered, capital: float) -> CoveredResult | None:
     try:
         return simulate_covered(pool, df, cv, capital)
@@ -356,16 +485,18 @@ def main(argv: list[str] | None = None) -> int:
         except (AttributeError, ValueError):
             pass
     ap = argparse.ArgumentParser(prog="python -m etapas.aave_backtest", description=__doc__.split("\n\n")[0])
-    ap.add_argument("tokens", nargs="+", metavar="GARANTIA DEUDA | cubierta POOL",
+    ap.add_argument("tokens", nargs="+", metavar="GARANTIA DEUDA | cubierta POOL | emode GARANTIA DEUDA",
                     help="préstamo: token de garantía y token prestado (WETH USDC); liquidez cubierta: "
-                         "«cubierta» y el pool (dirección o parte de la etiqueta, p. ej. «WETH/USDC 0.05%%»)")
+                         "«cubierta» y el pool (dirección o parte de la etiqueta, p. ej. «WETH/USDC 0.05%%»); "
+                         "carry en E-Mode: «emode» y el par (wstETH WETH)")
     ap.add_argument("--red", help="ethereum | base | arbitrum (obligatoria en el préstamo)")
     ap.add_argument("--mercado", help="en Ethereum: ethereum (principal, por defecto) | lido | etherfi")
     ap.add_argument("--desde"), ap.add_argument("--hasta")
     ap.add_argument("--capital", type=float, default=10_000)
     ap.add_argument("--hf", default=None, help="factor de salud al abrir, lista (por defecto 1.8; en la cubierta 2)")
     ap.add_argument("--gestion", default="nunca", help="nunca | defender, lista: nunca,defender")
-    ap.add_argument("--defensa", type=float, default=1.3, help="HF que dispara la defensa")
+    ap.add_argument("--defensa", type=float, default=None, help="HF que dispara la defensa (por defecto 1,3; en E-Mode 1,02)")
+    ap.add_argument("--cambio", type=float, default=5.0, help="emode: coste de cambiar la deuda por garantía, en puntos básicos")
     ap.add_argument("--ancho", default="10", help="cubierta: semiancho del rango en %%, lista: 5,10,20")
     ap.add_argument("--reajuste", default="nunca", help="cubierta: nunca | fuera, lista")
     ap.add_argument("--espera", type=int, default=0, help="cubierta: horas fuera de rango antes de reajustar")
@@ -374,6 +505,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--paso", type=int, default=7, help="días entre fechas de entrada (con --ventana)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
+    if a.tokens[0].lower() == "emode":
+        if len(a.tokens) != 3 or not a.red:
+            ap.error("uso: emode GARANTIA DEUDA --red RED")
+        return main_carry(a, a.tokens[1], a.tokens[2])
+    a.defensa = a.defensa or 1.3
     if a.tokens[0].lower() == "cubierta":
         if len(a.tokens) != 2:
             ap.error("uso: cubierta POOL")
@@ -439,6 +575,64 @@ def main(argv: list[str] | None = None) -> int:
               f"{r.interest_usd:>10,.0f}{r.borrow_apr:>10.2%}{r.net_cost_apr:>9.2%}{r.final_usd:>10,.0f}"
               f"{r.hold_usd:>11,.0f}{_pct(r.vs_hold_pct):>12}{r.added_usd:>9,.0f}")
     print(f"\nHF inicial que habría evitado la liquidación en este periodo sin tocar nada: {r0.hf_needed:.2f}.")
+    return 0
+
+
+def main_carry(a: argparse.Namespace, collateral: str, debt: str) -> int:
+    try:
+        info, df = load_emode(collateral, debt, a.red, a.mercado, a.desde, a.hasta)
+    except BacktestError as e:
+        print(e, file=sys.stderr)
+        return 2
+    gas = a.gas if a.gas is not None else (5.0 if a.red == "ethereum" else 0.05)
+    grid = [Carry(float(h), g, a.defensa or 1.02, a.cambio, gas)
+            for h, g in itertools.product((a.hf or "1.05,1.1,1.2").split(","), a.gestion.split(","))]
+    last = df.iloc[-1]
+    head = (f"Carry en E-Mode · {info['collateral']} de garantía, {info['debt']} prestado y vuelto a depositar · "
+            f"Aave V3 {info['market']} ({info['chain']})\nE-Mode hoy: «{last['emode']}» LTV {last['ltv']:.1%}, "
+            f"umbral {last['lt']:.1%}, bonus {last['bonus']:.1%} · cambio {a.cambio:g} pb al abrir y al cerrar")
+    try:
+        if a.ventana:
+            rows = []
+            for cv in grid:
+                rs = windows(df, lambda part, cv=cv: _try_carry(part, cv, a.capital), a.ventana, a.paso)
+                if rs and (row := summarize_carry(rs, cv)):
+                    rows.append(row)
+            if a.json:
+                print(json.dumps({**info, "ventana_dias": a.ventana, "resultados": rows}, default=str, indent=1))
+                return 0
+            print(f"{head}\nVentanas de {a.ventana} días cada {a.paso} días · {df['hour'].iloc[0]:%Y-%m-%d} → "
+                  f"{df['hour'].iloc[-1]:%Y-%m-%d} · capital {a.capital:,.0f} $ · gas {gas} $/tx\n")
+            print(f"{'estrategia':<20}{'n':>4}{'apalanc.':>9}{'APR en ETH':>11}{'peor 10%':>10}{'<0':>5}"
+                  f"{'sin bucle':>10}{'staking':>9}{'préstamo':>9}{'préstamo máx.':>14}{'liquid.':>8}{'HF mín.':>9}")
+            for r in rows:
+                print(f"{r['strategy']:<20}{r['ventanas']:>4}{r['apalancamiento']:>8.1f}x{r['eth_apr_mediana']:>11.2%}"
+                      f"{r['eth_apr_p10']:>10.2%}{r['pct_negativas']:>5.0%}{r['sin_bucle_mediana']:>10.2%}"
+                      f"{r['staking_mediana']:>9.2%}{r['prestamo_mediana']:>9.2%}{r['prestamo_max']:>14.2%}"
+                      f"{r['liquidadas']:>8}{r['hf_min_peor']:>9.3f}")
+            if rows:
+                print(f"\nHF inicial que habría evitado la liquidación en todas las ventanas: {rows[0]['hf_necesario_max']:.3f}.")
+            print(f"APR en ETH = rendimiento anual del capital medido en {info['debt']}; sin bucle = solo "
+                  f"{info['collateral']} depositado; staking = subida de {info['collateral']}/{info['debt']} en el oráculo; "
+                  "préstamo = coste del préstamo (mediana y peor ventana). Sin abrir: "
+                  + (", ".join(f"{r['strategy']} {r['sin_abrir']}" for r in rows if r["sin_abrir"]) or "ninguna") + ".")
+            return 0
+        res = [simulate_carry(df, cv, a.capital) for cv in grid]
+    except BacktestError as e:
+        print(e, file=sys.stderr)
+        return 2
+    if a.json:
+        print(json.dumps({**info, "resultados": [asdict(r) for r in res]}, default=str, indent=1))
+        return 0
+    r0 = res[0]
+    print(f"{head}\n{r0.start} → {r0.end} ({r0.days} días) · capital {a.capital:,.0f} $ · gas {gas} $/tx\n")
+    print(f"{'estrategia':<20}{'apalanc.':>9}{'final $':>10}{'APR en ETH':>11}{'sin bucle':>10}{'staking':>9}"
+          f"{'depósito':>9}{'préstamo':>9}{'HF mín.':>9}{'liquid.':>8}{'cambio $':>9}")
+    for r in res:
+        print(f"{r.strategy:<20}{r.leverage:>8.1f}x{r.final_usd:>10,.0f}{r.eth_apr:>11.2%}{r.plain_apr:>10.2%}"
+              f"{r.staking_apr:>9.2%}{r.supply_apr:>9.2%}{r.borrow_apr:>9.2%}{r.hf_min:>9.3f}{r.liquidations:>8}"
+              f"{r.swap_usd:>9,.0f}")
+    print(f"\nHF inicial que habría evitado la liquidación en este periodo: {r0.hf_needed:.3f}.")
     return 0
 
 

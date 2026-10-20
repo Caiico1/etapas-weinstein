@@ -139,6 +139,39 @@ def test_cubierta_se_liquida_si_el_activo_sube_mas_que_el_hf():
     assert r.hf_needed == pytest.approx(2.2, rel=1e-3)
 
 
+# --- carry en E-Mode: wstETH (staking en el precio) de garantía, WETH prestado ------------------
+
+def _carry(hours, staking=0.03, borrow=0.02, lt=0.95, ltv=0.93, emode="wstETH/WETH"):
+    """ETH quieto a 2000 $; wstETH sube con el staking (simple por hora); la deuda crece con `borrow`."""
+    h = range(hours)
+    return pd.DataFrame({"hour": pd.date_range("2026-01-01", periods=hours, freq="h"),
+                         "c_index": [1.0] * hours, "c_price": [2400 * (1 + staking * i / A.YEAR_H) for i in h],
+                         "ltv": [ltv] * hours, "lt": [lt] * hours, "bonus": [0.01] * hours,
+                         "d_index": [1 + borrow * i / A.YEAR_H for i in h], "d_supply_index": [1.0] * hours,
+                         "d_price": [2000.0] * hours, "can_borrow": [True] * hours, "emode": [emode] * hours})
+
+
+def test_carry_apalancamiento_y_rendimiento_en_eth():
+    r = A.simulate_carry(_carry(A.YEAR_H + 1), A.Carry(1.05, swap_bps=0, gas_usd=0), 10_000)
+    x = 1.05 / (1.05 - 0.95)                                     # 10,5x
+    assert r.leverage == pytest.approx(x)
+    assert r.staking_apr == pytest.approx(0.03, rel=1e-3)
+    assert r.plain_apr == pytest.approx(0.03, rel=1e-3)
+    assert r.eth_apr == pytest.approx(0.03 * x - 0.02 * (x - 1), rel=0.01)   # ≈ 12,5 %
+    assert r.liquidations == 0
+
+
+def test_carry_negativo_si_el_prestamo_cuesta_mas_que_el_staking():
+    r = A.simulate_carry(_carry(A.YEAR_H + 1, borrow=0.05), A.Carry(1.05, swap_bps=0, gas_usd=0), 10_000)
+    assert r.eth_apr < 0
+    assert r.hf_min < 1.05                                       # el HF cae despacio con el carry negativo
+
+
+def test_carry_sin_emode_no_se_abre():
+    with pytest.raises(A.CannotOpen):
+        A.simulate_carry(_carry(48, emode=""), A.Carry(1.05))
+
+
 def test_hf_por_debajo_del_ltv_no_se_puede_abrir():
     with pytest.raises(BacktestError):
         A.simulate(_series([2000.0] * 48), A.Loan(1.0))         # 0,83 / 1,0 > LTV 0,80
