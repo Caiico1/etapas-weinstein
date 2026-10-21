@@ -67,6 +67,32 @@ def test_action_follows_the_two_steps(price, state, expected):
     assert expected in txt and "Paso 1 (etapa)" in txt and "fuera de rango y no cobra" not in txt
 
 
+def _today(state, same=True, rango=(2100.0, 2900.0), por_dolar=-0.01, gas=0.9, stop=(1800.0, None)):
+    return {"decision": state, "paso1": "diario apta", "motivo": "resultado neto estimado negativo",
+            "ciclo": "semanal", "pool": "Uniswap v3 · x", "rango": list(rango), "mismo_pool": same,
+            "gas": gas, "stop": list(stop), "quedarse": {"por_dolar": por_dolar, "ciclo": "semanal", "gas": gas}}
+
+
+@pytest.mark.parametrize("price, today, expected", [
+    (2500, _today("abrir"), "Puedes añadir"),                                   # mismo pool y rango parecido
+    (2500, _today("abrir", same=False), "No añadir aquí"),                       # hoy es mejor otro pool
+    (2500, _today("abrir", rango=(2600.0, 3400.0)), "ya no se parece"),         # rango de hoy distinto
+    (2500, _today("vigilar", por_dolar=-0.05), "Quitar liquidez"),              # 482 $ de pérdida > 0,9 $ de gas
+    (2500, _today("vigilar", por_dolar=-0.00005), "Ni añadir ni quitar"),       # 0,48 $ < 0,9 $ de gas (9.635 $)
+    (1700, _today("vigilar"), "Quitar toda la liquidez"),                       # por debajo del stop-loss
+    (1900, _today("vigilar"), ""),                                              # fuera, sin cruzar el stop
+])
+def test_liquidity_move(price, today, expected):
+    """Añadir o quitar en la misma posición con los dos pasos de hoy, el gas y el stop-loss."""
+    t = S.track("arbitrum", 1, capital=100, reader=_reader(price))
+    t.today = today
+    move = S.liquidity_move(t)
+    assert (expected in move) if expected else move == ""
+    if expected == "Puedes añadir":
+        assert "45 $" in move                                                     # 0,9 $ / 2 %
+        assert ("Añadir o quitar liquidez" in S.verdict(t))
+
+
 def test_add_today_uses_the_pair_on_the_same_chain():
     from types import SimpleNamespace as NS
     seen = []

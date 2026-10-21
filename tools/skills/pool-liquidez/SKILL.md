@@ -131,6 +131,20 @@ analiza el par en la red de la posición; tarda 1-3 minutos, `--sin-hoy` lo omit
 abriría), **reajustar** al rango que da (fuera y hoy sí se abriría) o **no reajustar** (fuera y hoy no
 se abriría: cerrar o quedarse con el token según su stop-loss). Cópiala tal cual con su paso 1.
 
+Después viene **añadir o quitar liquidez** en la misma posición, sin cambiar el rango (campo
+`liquidez` con `--json`). Cópialo tal cual:
+- **Puedes añadir**: está dentro del rango y hoy se abriría en este mismo pool con un rango parecido.
+  Da la proporción de cada token y el mínimo que hay que añadir de una vez para que el gas no pase
+  del 2 %.
+- **No añadir aquí**: hoy el mejor sitio es otro pool, o el rango de hoy ya no se parece al de la
+  posición. Si quiere poner más capital, que abra una posición nueva.
+- **Quitar liquidez**: hoy no se abriría y la pérdida esperada en un ciclo más supera el gas de retirar.
+- **Ni añadir ni quitar**: hoy no se abriría, pero retirar costaría más de lo que se espera perder.
+- **Quitar toda la liquidez**: el precio ha cruzado el stop-loss y hoy no se abriría.
+
+Recuérdale que cambiar el rango no es añadir ni quitar: hay que retirar la liquidez y crear una
+posición nueva. Si añade o quita capital, el siguiente seguimiento necesita el capital total aportado.
+
 ## Contraste con el histórico (solo en el PC con MetaProDB)
 
 Si existe `D:\MetaProDB\metapro.duckdb` (histórico hora a hora, desde el 17-oct-2024, de 168 pools

@@ -113,6 +113,7 @@ class OnChain:
     tick: int
     fees0: int                  # comisiones pendientes de cobrar, en unidades mínimas
     fees1: int
+    pool: str = ""              # dirección del pool (v4: su identificador de 32 bytes)
 
 
 def _inside(g: int, out_l: int, out_u: int, tick: int, tl: int, tu: int) -> int:
@@ -139,7 +140,7 @@ def read_v3(chain: str, token_id: int) -> OnChain:
     in1 = _inside(g1, lo[3], up[3], tick, tl, tu)
     fees0 = owed0 + liq * ((in0 - last0) % MOD) // Q128
     fees1 = owed1 + liq * ((in1 - last1) % MOD) // Q128
-    return OnChain("v3", chain, token_id, t0, t1, fee / 1e6, tl, tu, liq, sqrt_p, tick, fees0, fees1)
+    return OnChain("v3", chain, token_id, t0, t1, fee / 1e6, tl, tu, liq, sqrt_p, tick, fees0, fees1, pool)
 
 
 def read_v4(chain: str, token_id: int) -> OnChain:
@@ -158,7 +159,7 @@ def read_v4(chain: str, token_id: int) -> OnChain:
     ins = _call(chain, view, SEL["inside"] + pid + _word(tl) + _word(tu))
     fees0 = liq * ((ins[0] - last0) % MOD) // Q128
     fees1 = liq * ((ins[1] - last1) % MOD) // Q128
-    oc = OnChain("v4", chain, token_id, c0, c1, fee / 1e6, tl, tu, liq, sqrt_p, tick, fees0, fees1)
+    oc = OnChain("v4", chain, token_id, c0, c1, fee / 1e6, tl, tu, liq, sqrt_p, tick, fees0, fees1, "0x" + pid)
     if int(hooks, 16):
         oc.version = "v4 (con hook)"
     return oc
@@ -185,6 +186,7 @@ class Tracking:
     base: str = ""                         # activo (el precio se expresa en quote por base)
     quote: str = ""
     fee: float = 0.0
+    pool: str = ""
     price: float | None = None
     low: float | None = None
     high: float | None = None
@@ -222,7 +224,7 @@ def track(chain: str, token_id: int, version: str = "v3", capital: float | None 
     except (OSError, ValueError, KeyError, TypeError, IndexError) as e:
         t.error = f"No se pudo leer la posición {token_id} de Uniswap {version} en {chain}: {e}"
         return t
-    t.version, t.fee = oc.version, oc.fee
+    t.version, t.fee, t.pool = oc.version, oc.fee, oc.pool
     # Orientación: con una estable, el activo primero; entre dos volátiles, como cotiza el par
     if a0 in STABLES and a1 not in STABLES:
         base_is0 = False
@@ -297,7 +299,78 @@ def add_today(t: Tracking, analyze=None) -> None:
     t.today = {"decision": state, "paso1": op.step1_line(rep),
                "motivo": op.decision(o, rep.capital)[1] if o else "sin pools con liquidez suficiente",
                "ciclo": o.name.lower() if o else None, "pool": o.pool.label if o else None,
-               "rango": [o.quote.low, o.quote.high] if o and o.quote and o.quote.low else None}
+               "rango": [o.quote.low, o.quote.high] if o and o.quote and o.quote.low else None,
+               "mismo_pool": bool(o and t.pool and o.pool.address.lower() == t.pool.lower()),
+               "gas": o.gas_usd if o else None,
+               "stop": [o.stop_low, o.stop_high] if o else None}
+    # Lo que se espera de quedarse en el pool de la posición un ciclo más, sin tocarla (por dólar):
+    # comisiones + resultado frente a mantener, sin gas ni cambio de tokens. La mejor combinación de ese pool.
+    mine = [x for x in rep.opportunities if t.pool and x.pool.address.lower() == t.pool.lower()
+            and x.fees_cycle is not None and x.expected_result is not None and x.gas_usd is not None]
+    if mine:
+        x = max(mine, key=lambda x: (x.fees_cycle + x.expected_result * rep.capital) / x.days)
+        t.today["quedarse"] = {"por_dolar": (x.fees_cycle + x.expected_result * rep.capital) / rep.capital,
+                               "ciclo": x.name.lower(), "gas": x.gas_usd}
+
+
+ADD_GAS_SHARE = 0.02      # al añadir, el gas como mucho el 2 % de lo que se añade
+
+
+def liquidity_move(t: Tracking) -> str:
+    """Añadir o quitar liquidez en la misma posición (mismo rango): la misma lógica de dos pasos.
+    - Fuera y por debajo del stop-loss (o por encima, entre dos volátiles): quitar toda la liquidez.
+    - Dentro, hoy se abriría en este mismo pool y el rango de hoy cae casi entero en el de la
+      posición: se puede añadir, con un mínimo para que el gas no pase de ADD_GAS_SHARE.
+    - Dentro y hoy no se abriría: quitar si la pérdida esperada en un ciclo más supera el gas de
+      retirar; si no, no tocarla (salir costaría más de lo que se espera perder)."""
+    d = t.today
+    if not d or t.value_usd is None or t.status.startswith("cerrada"):
+        return ""
+    go = d["decision"] in ("abrir", "abrir con precaución")
+    stop = d.get("stop") or [None, None]
+    if not go and ((stop[0] and t.price < stop[0]) or (stop[1] and t.price > stop[1])):
+        lvl = stop[0] if stop[0] and t.price < stop[0] else stop[1]
+        return (f"**Quitar toda la liquidez**: el precio ha cruzado el stop-loss ({_n(lvl, 4)} {t.quote}) "
+                f"y hoy no se abriría.")
+    if t.status != "dentro":
+        return ""
+    gas = d.get("gas")
+    if go:
+        rng = d.get("rango")
+        overlap = 0.0
+        if rng and t.low and t.high:
+            lo, hi = max(rng[0], t.low), min(rng[1], t.high)
+            overlap = max(0.0, math.log(hi / lo)) / math.log(rng[1] / rng[0]) if hi > lo else 0.0
+        if not d.get("mismo_pool"):
+            return (f"**No añadir aquí**: hoy el mejor sitio es otro pool ({d['pool']}). Si quieres poner más "
+                    f"capital, ábrelo allí.")
+        if overlap < 0.7:
+            return (f"**No añadir aquí**: el rango de hoy ({_n(rng[0], 4)} – {_n(rng[1], 4)}) ya no se parece al "
+                    f"de la posición; añadir mantendría el rango antiguo. Si quieres más capital, abre una "
+                    f"posición nueva con ese rango.")
+        share = t.base_amount * t.price / (t.base_amount * t.price + t.quote_amount) if t.value_usd else 0
+        txt = (f"**Puedes añadir liquidez** en esta misma posición: hoy se abriría en este pool con un rango "
+               f"parecido ({d['decision']}). Se aporta en la proporción actual, {share:.0%} {t.base} y "
+               f"{1 - share:.0%} {t.quote}.")
+        if gas:
+            txt += (f" Añade al menos **{_n(gas / ADD_GAS_SHARE, 0)} $** de una vez: el gas ({_n(gas)} $) sería "
+                    f"como mucho el {ADD_GAS_SHARE:.0%} de lo añadido.")
+        if d["decision"] == "abrir con precaución":
+            txt += " Etapa en precaución: no superes el capital que tenías previsto."
+        return txt
+    stay = d.get("quedarse")
+    if not stay:
+        return ""
+    expected = stay["por_dolar"] * t.value_usd
+    exit_gas = stay["gas"]
+    if expected < 0 and -expected > exit_gas:
+        return (f"**Quitar liquidez**: hoy no se abriría y quedarse un ciclo {stay['ciclo']} más pierde unos "
+                f"{_n(-expected)} $ frente a mantener los tokens, más que el gas de retirarla ({_n(exit_gas)} $). "
+                f"Puedes quitar una parte si no quieres salir del todo.")
+    if expected < 0:
+        return (f"**Ni añadir ni quitar**: hoy no se abriría, pero la pérdida esperada en un ciclo {stay['ciclo']} "
+                f"más ({_n(-expected)} $) es menor que el gas de retirarla ({_n(exit_gas)} $).")
+    return "**No añadir**: hoy no se abriría; deja la posición como está."
 
 
 def action(t: Tracking) -> str:
@@ -335,6 +408,9 @@ def verdict(t: Tracking) -> str:
                f"volver al capital inicial.")
     if t.today:
         txt += " " + action(t)
+        move = liquidity_move(t)
+        if move:
+            txt += "\n\n**Añadir o quitar liquidez** (misma posición y rango): " + move
     elif t.status.startswith("fuera"):
         txt += (" La posición está fuera de rango y no cobra comisiones: vuelve a ejecutar /pool para "
                 "decidir si reajustar o cerrar (y revisa tu stop-loss).")
@@ -381,6 +457,7 @@ def render(t: Tracking) -> str:
 def to_json(t: Tracking) -> dict:
     d = {k: v for k, v in t.__dict__.items()}
     d["lectura"] = verdict(t).replace("**", "") if not t.error else None
+    d["liquidez"] = liquidity_move(t).replace("**", "") or None if not t.error else None
     return d
 
 
