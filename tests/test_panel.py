@@ -106,7 +106,10 @@ def test_pool_column_separates_stage_from_profitability():
                   ranges={k: (0.028, 0.031) for k in ("1d", "1w", "1M")})
 
     bad = opp("1w", "resultado neto estimado negativo", -0.092, label="Uniswap v4 · Base · ETH/cbBTC 0,05 %")
-    a.pool_report = report([bad, opp("1M", "", 0.05, net_safe=3.0), opp("1M", "", 0.03, net_safe=2.0)])
+    bad.stop_low = 0.0251
+    good = opp("1M", "", 0.05, net_safe=3.0)
+    good.stop_low, good.stop_high = 0.0262, 0.0334
+    a.pool_report = report([bad, good, opp("1M", "", 0.03, net_safe=2.0)])
     out = matrix_html([a], [])
     assert "etapa apta:" in out and "favorable" not in out
     assert "decisión: ABRIR · mensual (+5.0%)" in out and "M✓" in out and "S✓" not in out
@@ -115,6 +118,9 @@ def test_pool_column_separates_stage_from_profitability():
     assert card.count("✓ abrir") == 2 and "neto +5.00 $ por ciclo (+5.0% anual" in card
     assert "Ningún pool productivo hoy. El mejor, Uniswap v4 · Base · ETH/cbBTC 0,05 %" in card
     assert "1,5 veces las de hoy" in card and 'href="https://app.uniswap.org/0,05 %"' not in card
+    # Stop-loss del método solo en los pools con ✓ (y solo si lo hay)
+    assert card.count("stop-loss <b>") == 1 and "(o si sube de <b>" in card
+    assert "0.0251" not in card and "0,0251" not in card
     # Todos los pools: columna de neto (ganancia o pérdida) también en un par entre volátiles
     sec = liquidity_html(a.liquidity, a.pool_report)
     assert "Neto esperado por ciclo (anual)" in sec and "-9.20 $" in sec and "+5.00 $" in sec

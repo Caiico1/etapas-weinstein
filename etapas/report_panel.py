@@ -283,6 +283,14 @@ def _net_txt(o) -> str:
             f"{o.net_safe_apr:+.1%})" if o.net_cycle is not None else "sin neto")
 
 
+def _stop_txt(o) -> str:
+    """Stop-loss del método (oportunidad.stop_levels): por abajo y, entre dos volátiles, por arriba."""
+    if not o.stop_low:
+        return ""
+    return (f" · stop-loss <b>{fmt(o.stop_low)}</b>"
+            + (f" (o si sube de <b>{fmt(o.stop_high)}</b>)" if o.stop_high else ""))
+
+
 def pool_verdict_html(asset: AssetResult, github_link: str = "") -> str:
     """Tarjeta «¿Pool ahora?». Con el análisis de /pool (asset.pool_report): por ciclo, la etapa como
     información y solo los pools productivos (los que /pool propondría: neto positivo con el margen
@@ -350,7 +358,7 @@ def _verdict_from_report(asset: AssetResult, rep, github_link: str) -> str:
             pools = "".join(
                 f'<div><span class="lvl" style="background:#16a34a">✓ {html.escape(op.decision(o, rep.capital)[0])}</span> '
                 f'<a href="{html.escape(o.pool.app_url or o.pool.url)}" target="_blank" rel="noopener">{html.escape(o.pool.label)}</a>'
-                f' · rango {fmt(o.quote.low)} – {fmt(o.quote.high)} · {_net_txt(o)}</div>' for o in good)
+                f' · rango {fmt(o.quote.low)} – {fmt(o.quote.high)}{_stop_txt(o)} · {_net_txt(o)}</div>' for o in good)
         elif mine and mine[0].net_cycle is not None:
             o = mine[0]
             gap = op.fee_gap(o, rep.capital)
