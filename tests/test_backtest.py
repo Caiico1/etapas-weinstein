@@ -98,6 +98,15 @@ def test_metodo_stop_cierra_y_espera_en_la_estable():
     assert r.final == pytest.approx(r_no.final * (1 - 0.0005), rel=1e-3)  # mismo valor menos la venta (precio quieto tras el stop)
 
 
+def test_metodo_stop_en_el_borde_cierra_al_salir_del_rango():
+    df = _series([T0] + [T0 - 1335] * 24)                                 # ETH ≈ 1750: fuera del rango, sin llegar al stop
+    cy = [_cycle(df, 1800, 2200, stop_low=1700)]
+    m = B.Method("1w", gas_usd=0, stop_at_edge=True)
+    assert m.name == "método semanal stop en el borde"
+    assert B.simulate_method(POOL, df, cy, B.Method("1w", gas_usd=0)).stops == 0
+    assert B.simulate_method(POOL, df, cy, m).stops == 1
+
+
 def test_stop_cierra_a_estable():
     down = T0 - 4000                                                      # −33 %
     df = _series([T0] + [down] * 10)

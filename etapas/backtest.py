@@ -287,6 +287,7 @@ class Method:
     gas_usd: float = 5.0
     use_stage: bool = True
     use_stop: bool = True
+    stop_at_edge: bool = False   # cerrar al salir del rango en lugar de en el stop del método
 
     @property
     def name(self) -> str:
@@ -295,6 +296,8 @@ class Method:
             s += " sin etapa"
         if not self.use_stop:
             s += " sin stop"
+        if self.stop_at_edge:
+            s += " stop en el borde"
         return s
 
 
@@ -446,6 +449,9 @@ def simulate_method(pool: dict, df: pd.DataFrame, cycles: list[Cycle], m: Method
         f0 = f1 = 0.0
         n_cycles += 1
         closed = False
+        stop_lo, stop_hi = cy.stop_low, cy.stop_high
+        if m.stop_at_edge:                                       # el borde del rango; por arriba solo si hay stop alto
+            stop_lo, stop_hi = cy.low, (cy.high if cy.stop_high else None)
         for i in range(i0, i1):
             part = (int(bool(tl <= ticks[i] < tu)) + int(bool(tl <= ticks[i + 1] < tu))) / 2
             in_h += part
@@ -457,7 +463,7 @@ def simulate_method(pool: dict, df: pd.DataFrame, cycles: list[Cycle], m: Method
             val = usd(p0 + f0, p1 + f1, i + 1)
             peak, max_dd = max(peak, val), max(max_dd, 1 - val / max(peak, val))
             px = human(i + 1)
-            if m.use_stop and ((cy.stop_low and px <= cy.stop_low) or (cy.stop_high and px >= cy.stop_high)):
+            if m.use_stop and ((stop_lo and px <= stop_lo) or (stop_hi and px >= stop_hi)):
                 h0, h1, c = to_quote(i + 1, p0 + f0, p1 + f1)
                 costs += c
                 stops += 1
@@ -510,6 +516,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--metodo", default="", help="ciclos del método de /pool a probar, lista: 1d,1w,1M")
     ap.add_argument("--variantes", action="store_true",
                     help="con --metodo, también sin veto de etapa y sin stop (para ver qué aporta cada uno)")
+    ap.add_argument("--stop-borde", action="store_true",
+                    help="con --metodo, también el método con el stop en el borde del rango (cierra al salir)")
     ap.add_argument("--ventana", type=int, help="días de cada prueba: abrir en muchas fechas")
     ap.add_argument("--paso", type=int, default=7, help="días entre fechas de entrada (con --ventana)")
     ap.add_argument("--json", action="store_true")
@@ -534,7 +542,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"método {tf}: {e}", file=sys.stderr)
             continue
         variants = [Method(tf, gas)] + ([Method(tf, gas, use_stage=False), Method(tf, gas, use_stop=False)]
-                                        if a.variantes else [])
+                                        if a.variantes else []) \
+                   + ([Method(tf, gas, stop_at_edge=True)] if a.stop_borde else [])
         for m in variants:
             sims.append(lambda part, m=m, cycles=cycles: simulate_method(
                 pool, part, [c for c in cycles if part["hour"].iloc[0] <= c.start < part["hour"].iloc[-1]], m, a.capital))
