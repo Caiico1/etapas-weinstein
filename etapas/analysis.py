@@ -5,6 +5,7 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
+from . import power4
 from .classifier import STAGE_NAMES, classify, levels
 from .config import ORDER, RANGE_QUANTILE, RANGE_QUANTILE_TYPICAL, TIMEFRAMES, TimeframeConfig
 from .data import (Candles, DataError, canonical_pair, fetch_candles, fetch_ondo_token,
@@ -54,6 +55,8 @@ class TimeframeResult:
     ma_run: int = 0                   # velas seguidas que la media sube (+) o baja (−)
     by_break: bool = False            # la etapa 2 o 4 sale de la regla de ruptura del rango
     break_level: float | None = None  # techo (o suelo) del rango que se rompió
+    power4: int | None = None         # etapa según Power4 de MetaPro (power4.py); 0 = rango
+    power4_reason: str = ""
     provisional: "TimeframeResult | None" = None
     history: pd.DataFrame | None = field(default=None, repr=False)   # para el HTML
     candles: pd.DataFrame | None = field(default=None, repr=False)
@@ -195,6 +198,7 @@ def analyze_candles(candles: Candles, cfg: TimeframeConfig, provisional: bool = 
     res.source = candles.source
     res.history, res.candles = hist, df
     res.last_price = _f(candles.current["close"]) if candles.current is not None else res.price
+    res.power4, res.power4_reason = power4.latest(df, cfg.pivot_window)
     if res.status == "ok":
         low, high = expected_range(df, hist["atr"], RANGE_QUANTILE, cfg.range_lookback)
         res.est_low, res.est_high, res.est_period = _f(low), _f(high), cfg.period_name

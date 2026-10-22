@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import power4
 from .analysis import AssetResult, TimeframeResult
 from .classifier import STAGE_NAMES
 from .config import DISCLAIMER, ORDER
@@ -17,7 +18,7 @@ from .report_liquidez import (LIQ_CSS, index_cell, liquidity_html, liquidity_tex
 from .report_panel import PANEL_CSS, matrix_html, pool_verdict_html, range_bars_html
 
 STAGE_COLORS = {1: "#2563eb", 2: "#16a34a", 3: "#eab308", 4: "#dc2626"}
-HEADERS = ["Marco", "Etapa", "Si cerrara hoy", "Confianza", "Transición", "Cierre de referencia",
+HEADERS = ["Marco", "Etapa", "Si cerrara hoy", "Power4", "Confianza", "Transición", "Cierre de referencia",
            "Media clave", "Pendiente",
            "Estructura", "Nivel que confirma", "Nivel que invalida",
            "Mín. típico", "Máx. típico", "Mín. extremo", "Máx. extremo"]
@@ -64,6 +65,15 @@ def provisional_text(r: TimeframeResult) -> str:
     return f"{p.stage} · {p.stage_name}" + (f" ({p.transition})" if p.transition else "")
 
 
+def power4_text(r: TimeframeResult) -> str:
+    return "—" if r.power4 is None else f"{r.power4} · {power4.NAMES[r.power4]}"
+
+
+POWER4_NOTE = ("Power4: la etapa con las reglas de MetaPro (SMA20 y SMA40, último máximo o mínimo "
+               "relevante, 3 cierres al otro lado de la SMA20), para comparar. Usa medias más cortas "
+               "que Weinstein y cambia antes.")
+
+
 def table_row(r: TimeframeResult) -> list[str]:
     if r.status != "ok":
         return [r.label, r.message if r.status == "insuficiente" else "error"] + [""] * (len(HEADERS) - 2)
@@ -71,6 +81,7 @@ def table_row(r: TimeframeResult) -> list[str]:
         r.label,
         f"{r.stage} · {r.stage_name}",
         provisional_text(r),
+        power4_text(r),
         f"{r.confidence_label} ({r.confidence:.0f})",
         r.transition or "—",
         f"{fmt_price(r.price)} ({ref_label(r)})",
@@ -234,6 +245,10 @@ def render_text(asset: AssetResult) -> str:
     out.append("")
     out.append("Qué significa:")
     out.extend(f"  {asset.timeframes[k].label}: {meaning(asset.timeframes[k], asset.kind)}" for k in ORDER)
+    out.append("")
+    out.append(POWER4_NOTE)
+    out.extend(f"  {r.label}: {power4_text(r)}. {r.power4_reason}" for k in ORDER
+               if (r := asset.timeframes[k]).power4 is not None)
     zone = key_zone(asset)
     if zone:
         out.append("")
@@ -406,7 +421,7 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False,
     rows = [table_row(asset.timeframes[k]) for k in ORDER]
     meanings = [meaning(asset.timeframes[k], asset.kind) for k in ORDER]
     # Orden de lectura: lo importante primero (se ve sin desplazar la tabla), el detalle técnico después
-    first = ["Marco", "Etapa", "Si cerrara hoy", "Qué significa", "Mín. típico", "Máx. típico",
+    first = ["Marco", "Etapa", "Si cerrara hoy", "Power4", "Qué significa", "Mín. típico", "Máx. típico",
              "Mín. extremo", "Máx. extremo", "Nivel que confirma", "Nivel que invalida"]
     heads = first + [h for h in HEADERS if h not in first]
     thead = "".join(f"<th>{html.escape(h)}</th>" for h in heads)
@@ -423,6 +438,8 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False,
             elif h == "Si cerrara hoy" and tf.provisional is not None and tf.provisional.status == "ok":
                 p = tf.provisional
                 cells.append(f'<td class="prov">{stage_chip(p.stage, p.stage_name, p.transition)}</td>')
+            elif h == "Power4" and tf.power4 is not None:
+                cells.append(f'<td title="{html.escape(tf.power4_reason)}">{power4_chip(tf.power4)}</td>')
             else:
                 cls = "typ" if "típico" in h else "est" if "extremo" in h else ""
                 cells.append(f'<td class="{cls}">{html.escape(values[h])}</td>')
@@ -434,6 +451,9 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False,
         zone_html = (f'<div class="keyzone"><b>⚠ {html.escape(KEY_ZONE_TITLE)}</b><ul>{items}</ul>'
                      f'<p>{html.escape(KEY_ZONE_NOTE)}</p></div>')
     details = "".join(f"<li>{html.escape(detail_line(asset.timeframes[k]).strip())}</li>" for k in ORDER)
+    p4 = "".join(f"<li><b>{html.escape(r.label)}</b>: {html.escape(power4_text(r))}. "
+                 f"{html.escape(r.power4_reason)}</li>" for k in ORDER
+                 if (r := asset.timeframes[k]).power4 is not None)
     summary = html.escape(alignment_summary(asset)).replace("\n", "<br>")
     back = ('<p><a href="index.html">← Todos los activos</a> · '
             '<a href="guia.html">Guía: qué significa cada dato</a></p>') if index_link else ""
@@ -487,6 +507,7 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False,
 {liquidity_html(asset.liquidity, asset.pool_report)}
 {context_html(asset, context)}
 <details><summary>Métricas que justifican cada etapa</summary><ul>{details}</ul></details>
+<details><summary>Power4 (MetaPro): por qué está en cada etapa</summary><p class="muted">{html.escape(POWER4_NOTE)}</p><ul>{p4}</ul></details>
 {fig.to_html(full_html=False, include_plotlyjs="cdn")}
 <p class="disclaimer">{DISCLAIMER}</p>
 </body></html>"""
@@ -509,6 +530,12 @@ def stage_chip(stage: int, name: str, transition: str = "", small: bool = False)
             f'{html.escape(name)}{trans}</span>')
 
 
+def power4_chip(stage: int, small: bool = False) -> str:
+    """Etiqueta de la etapa Power4, con los colores de Weinstein (gris para «Rango»)."""
+    return stage_chip(stage, power4.NAMES[stage], small=small) if stage else (
+        f'<span><span class="chip" style="background:#9ca3af">–</span>{power4.NAMES[0]}</span>')
+
+
 def _stage_cell(r: TimeframeResult) -> str:
     if r.status != "ok":
         return f'<td class="muted">{html.escape(r.message if r.status == "insuficiente" else "error")}</td>'
@@ -516,6 +543,8 @@ def _stage_cell(r: TimeframeResult) -> str:
     if r.provisional is not None and r.provisional.status == "ok":
         p = r.provisional
         prov = f'<br><span class="muted">si cerrara hoy:</span> {stage_chip(p.stage, p.stage_name, p.transition, small=True)}'
+    if r.power4 is not None:
+        prov += f'<br><span class="muted" title="{html.escape(r.power4_reason)}">Power4:</span> {power4_chip(r.power4, small=True)}'
     return (f'<td>{stage_chip(r.stage, r.stage_name, r.transition)}{prov}'
             f'<br><span class="muted">cierre de referencia {fmt_price(r.price)} ({ref_label(r)}) · '
             f'confianza {r.confidence_label} · '

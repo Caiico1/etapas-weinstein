@@ -47,7 +47,7 @@ def snapshot(assets: list[AssetResult]) -> dict:
     out = {}
     for a in assets:
         out[a.key] = {
-            k: {"etapa": r.stage, "transicion": r.transition, "vela": r.candle_time,
+            k: {"etapa": r.stage, "transicion": r.transition, "vela": r.candle_time, "power4": r.power4,
                 "cierre": r.price, "confirma": r.confirm_level, "invalida": r.invalid_level}
             for k, r in a.timeframes.items() if r.status == "ok"
         }
@@ -90,6 +90,9 @@ def diff(prev: dict, curr: dict) -> list[dict]:
             elif new["transicion"] and new["transicion"] != old["transicion"]:
                 changes.append({"simbolo": sym, "marco": label,
                                 "texto": f"entra en transición {new['transicion']}"})
+            if old.get("power4") is not None and new.get("power4") not in (None, old["power4"]):
+                changes.append({"simbolo": sym, "marco": label,
+                                "texto": f"Power4 {old['power4']} → {new['power4']}"})
     for sym in prev:
         if sym not in curr:
             changes.append({"simbolo": sym, "marco": "", "tipo": "lista", "texto": "retirado de la lista"})

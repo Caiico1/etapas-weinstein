@@ -3,6 +3,7 @@ informe. Solo presentación: todos los datos salen del análisis (etapas, rangos
 import html
 
 from .analysis import AssetResult, TimeframeResult
+from . import power4
 from .classifier import STAGE_NAMES
 from .config import ORDER, TIMEFRAMES
 from .liquidez import LiquidityResult
@@ -97,6 +98,9 @@ def _matrix_cell(r: TimeframeResult, changed: bool) -> str:
     p = r.provisional
     if p is not None and p.status == "ok" and (p.stage, p.transition) != (r.stage, r.transition):
         prov = f'<span class="msub">si cerrara hoy: {html.escape(stage_label(p))}</span>'
+    if r.power4 is not None:
+        same = " (igual)" if r.power4 == r.stage else ""
+        prov += f'<span class="msub">Power4: E{r.power4} {power4.NAMES[r.power4]}{same}</span>'
     new = '<span class="mnew" title="Cambió desde la ejecución anterior">nuevo</span>' if changed else ""
     title = (f"{r.label}: etapa {r.stage} ({STAGE_NAMES[r.stage]}), confianza {r.confidence_label}"
              + (f", en transición {r.transition}" if r.transition else ""))
@@ -191,7 +195,7 @@ def matrix_html(assets: list[AssetResult], changes: list[dict]) -> str:
             f'<div class="wrap"><table class="matrix"><thead><tr><th>Valor</th>{heads}'
             f'<th>Pool (D · S · M)</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
             '<p class="muted">Etapa con velas cerradas; «si cerrara hoy» solo aparece cuando la vela en curso '
-            'la cambiaría. «nuevo»: cambió desde la ejecución anterior. Pool, en dos pasos: el color es el '
+            'la cambiaría. «Power4»: la etapa con las reglas de MetaPro (SMA20/40), para comparar. «nuevo»: cambió desde la ejecución anterior. Pool, en dos pasos: el color es el '
             'paso 1, si la etapa permite un rango diario (D), semanal (S) y mensual (M) (verde apta, naranja '
             'precaución); ✓ y «decisión» son el paso 2, si /pool lo propondría hoy (neto positivo con margen '
             'de seguridad y por encima de depositar los mismos tokens en Aave). Abre un pool solo con ✓; '
