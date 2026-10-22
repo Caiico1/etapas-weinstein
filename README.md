@@ -566,6 +566,57 @@ Todas se descubrieron en las pruebas y se pueden ajustar en `classifier.py`/`con
   con la regla de 0,5 × ATR% una SMA20 que bajó 11 meses seguidos en 2022 salía "plana".
 - **Puntuación suavizada** (media de *n* velas).
 
+## Columna Power4 (MetaPro Academy), para comparar
+
+Junto a la etapa de Weinstein, el informe muestra la etapa con las reglas de Power4, el sistema
+de MetaPro Academy (`etapas/power4.py`), en consola, en el HTML de cada activo y en la portada de
+la rutina. El historial la guarda y avisa de sus cambios («Power4 4 → 1»). Solo informa: no
+interviene en la etapa de Weinstein, en el paso 1 de liquidez ni en ninguna decisión.
+
+Reglas, sobre velas cerradas (deducidas de cómo explica MetaPro sus etapas, no de su código):
+
+- Entra en **2 (Avance)** con el cierre sobre la SMA20 y la SMA40 y la SMA20 subiendo; en
+  **4 (Declive)**, con el cierre bajo ambas y la SMA20 bajando.
+- La 2 se mantiene hasta que el cierre pierde el último mínimo relevante o hay 3 cierres seguidos
+  bajo la SMA20; entonces pasa a **3 (Distribución)**. La 4, hasta que supera el último máximo
+  relevante o hay 3 cierres seguidos sobre la SMA20; entonces pasa a **1 (Acumulación)**.
+- Desde 1 o 3, la primera vela que cumple las condiciones de 2 o de 4 entra en esa etapa.
+- Máximo o mínimo relevante: el último pivote confirmado con la ventana del marco.
+
+Con estas reglas salen las etapas de las capturas de MetaPro del 21-oct-2026 a las 20 h
+(mensual/semanal/diario): ETH 4/2/4 y BTC 1/2/4. Weinstein daba ETH 4/2/3 y BTC 4/2/2. Las
+diferencias vienen de las medias: Power4 usa la SMA20/40 en todos los marcos, sin umbral de
+pendiente, y cambia antes. Weinstein usa SMA10 mensual, SMA30 semanal y SMA50 diaria, y exige
+que la pendiente supere un umbral para hablar de etapa 2 o 4.
+
+### ¿Decide mejor que Weinstein? (validación, oct-2026)
+
+No. Se midió de dos formas, siempre con la etapa calculada solo con las velas cerradas al abrir:
+
+- **Pools, con comisiones reales** (la fase 0 repetida con las dos etapas): 12.738 ciclos
+  diarios, semanales y mensuales del método en 15 pools de MetaProDB (oct-2024 a oct-2026).
+  Comparando el resultado de abrir en E2 o en E4 con el resto, ninguna de las 24 diferencias
+  (2 métodos × 2 etapas × 3 marcos × contra dólar o cruzado) es significativa: todos los
+  intervalos al 90 %, calculados remuestreando por semanas, incluyen el 0. En los dos métodos, la
+  E2 semanal pasa menos tiempo en rango (90-91 % frente a 96-97 % en E4) y salta más el stop
+  (9 % frente a 1 %), pero el neto no cambia de forma apreciable. Cuando los métodos discrepan,
+  ninguno acierta más.
+- **Solo precio desde 2018** (BTC, ETH, SOL y ETH/BTC en Binance): Power4 cambia de etapa unas
+  32 veces al año en diario (Weinstein, unas 10) y 4,8 en semanal (Weinstein, 2,4). Para el riesgo
+  de una caída fuerte, que es lo que importa con un préstamo en Aave, la E3 semanal de Weinstein
+  separa mejor: un 27 % de probabilidad de caer más de un 30 % en las 8 semanas siguientes, frente
+  a un 10 % en E1. Con Power4 sale entre el 15 % y el 20 % en todas las etapas. En ninguna etapa
+  ni con ningún método la probabilidad de caer más de un 30 % en un mes baja del 8 %.
+
+Uso recomendado: Weinstein como referencia y Power4 como aviso temprano para revisar una posición.
+En pools decide el paso 2 (comisiones reales frente a mantener y frente a la alternativa sin
+riesgo); en Aave, el factor de salud que habría aguantado la historia, que ninguna etapa permite
+bajar.
+
+Límites: dos años de comisiones, casi todos en mercado bajista; pools del mismo activo que se
+mueven juntos; pocos ciclos mensuales y solapados entre sí; y los parámetros de Weinstein se
+ajustaron con activos parecidos, lo que puede favorecerle un poco.
+
 ## Tests
 
 - `tests/test_synthetic.py`: una serie sintética base → subida → techo → caída → base con
