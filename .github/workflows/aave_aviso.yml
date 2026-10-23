@@ -2,8 +2,9 @@ name: Aviso de factor de salud en Aave
 
 # Respaldo de la tarea de Windows (cada 15 minutos con el PC encendido): funciona con el PC apagado.
 # GitHub no garantiza la hora de las ejecuciones programadas y las retrasa a veces mucho, así que es
-# un respaldo, no la vigilancia principal. Las direcciones van en la variable AAVE_CARTERAS del
-# repositorio (Settings → Secrets and variables → Actions → Variables), separadas por comas.
+# un respaldo, no la vigilancia principal. Las direcciones van en el secret AAVE_CARTERAS del
+# repositorio (Settings → Secrets and variables → Actions → Secrets), separadas por comas. Secret y no
+# variable: el log de un repositorio público muestra el valor de las variables, no el de los secrets.
 on:
   schedule:
     - cron: "11,41 * * * *"
@@ -19,7 +20,6 @@ concurrency:
 
 jobs:
   aviso:
-    if: vars.AAVE_CARTERAS != ''
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -37,5 +37,7 @@ jobs:
       - name: Comprobar el factor de salud
         env:
           GH_TOKEN: ${{ github.token }}
-          AAVE_CARTERAS: ${{ vars.AAVE_CARTERAS }}
-        run: python -m etapas.aave_aviso
+          AAVE_CARTERAS: ${{ secrets.AAVE_CARTERAS }}
+        run: |
+          if [ -z "$AAVE_CARTERAS" ]; then echo "Sin el secret AAVE_CARTERAS: no hay nada que vigilar."; exit 0; fi
+          python -m etapas.aave_aviso

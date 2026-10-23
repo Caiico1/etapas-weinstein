@@ -168,7 +168,8 @@ puede ejecutar a menudo:
   `out\aave_aviso.log`.
 - **GitHub Actions** ([`aave_aviso.yml`](.github/workflows/aave_aviso.yml)), dos veces por hora, de
   respaldo con el PC apagado. GitHub retrasa a veces las ejecuciones programadas, así que no sustituye
-  a la tarea. Las direcciones van en la variable `AAVE_CARTERAS` del repositorio.
+  a la tarea. Las direcciones van en el *secret* `AAVE_CARTERAS` del repositorio (no en una variable:
+  en un repositorio público el log de Actions muestra el valor de las variables).
 - `--simular` dice qué haría sin tocar GitHub; `--prueba` abre un aviso ficticio para comprobar que
   llega el correo (la siguiente comprobación normal lo cierra).
 
