@@ -1,13 +1,13 @@
 name: Aviso de factor de salud en Aave
 
-# Respaldo de la tarea de Windows (cada 15 minutos con el PC encendido): funciona con el PC apagado.
+# Respaldo diario de la tarea de Windows (cada 15 minutos con el PC encendido): funciona con el PC apagado.
 # GitHub no garantiza la hora de las ejecuciones programadas y las retrasa a veces mucho, así que es
 # un respaldo, no la vigilancia principal. Las direcciones van en el secret AAVE_CARTERAS del
 # repositorio (Settings → Secrets and variables → Actions → Secrets), separadas por comas. Secret y no
 # variable: el log de un repositorio público muestra el valor de las variables, no el de los secrets.
 on:
   schedule:
-    - cron: "11,41 * * * *"
+    - cron: "23 4 * * *"        # una vez al día (con el retraso de GitHub, por la mañana en España)
   workflow_dispatch:
 
 permissions:

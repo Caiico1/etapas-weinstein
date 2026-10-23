@@ -10,7 +10,7 @@ GitHub envía por correo y al móvil, como los avisos de la rutina:
   - Cuando el HF vuelve a ≥ 1,6, comenta y la cierra. Entre 1,5 y 1,6 mantiene el estado, para no
     abrir y cerrar con cada vaivén.
 Con la issue abierta no se repite el aviso, así que se puede ejecutar a menudo (tarea de Windows cada
-15 minutos y GitHub Actions cada 30) sin llenar el correo.
+15 minutos y GitHub Actions una vez al día) sin llenar el correo.
 """
 from __future__ import annotations
 

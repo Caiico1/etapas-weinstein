@@ -166,9 +166,9 @@ puede ejecutar a menudo:
 - **Tarea de Windows** «Aave aviso HF», cada 15 minutos con el PC encendido y al iniciar sesión: `aave_aviso.vbs` (sin ventana) lanza `aave_aviso.bat`, que le
   pasa a gh el token de GitHub (el Python de Microsoft Store no deja a gh leerlo) y escribe en
   `out\aave_aviso.log`.
-- **GitHub Actions** ([`aave_aviso.yml`](.github/workflows/aave_aviso.yml)), dos veces por hora, de
-  respaldo con el PC apagado. GitHub retrasa a veces las ejecuciones programadas, así que no sustituye
-  a la tarea. Las direcciones van en el *secret* `AAVE_CARTERAS` del repositorio (no en una variable:
+- **GitHub Actions** ([`aave_aviso.yml`](.github/workflows/aave_aviso.yml)), una vez al día, de
+  respaldo con el PC apagado varios días. GitHub retrasa a veces las ejecuciones programadas, y una
+  vez al día no basta en una caída rápida, así que no sustituye a la tarea. Las direcciones van en el *secret* `AAVE_CARTERAS` del repositorio (no en una variable:
   en un repositorio público el log de Actions muestra el valor de las variables).
 - `--simular` dice qué haría sin tocar GitHub; `--prueba` abre un aviso ficticio para comprobar que
   llega el correo (la siguiente comprobación normal lo cierra).
