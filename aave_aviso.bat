@@ -1,5 +1,5 @@
 @echo off
-rem Aviso de factor de salud en Aave (etapas\aave_aviso.py). Lo lanza el Programador de tareas cada 15 minutos.
+rem Aviso de factor de salud en Aave (etapas\aave_aviso.py). Lo lanza el Programador de tareas una vez al día (09:30) y al iniciar sesión.
 rem El token de GitHub se saca aqui: el Python de Microsoft Store no deja a gh leerlo del Administrador de credenciales.
 cd /d "%~dp0"
 set PYTHONIOENCODING=utf-8

@@ -1,3 +1,3 @@
-' Lanza aave_aviso.bat sin abrir ventana (la tarea de Windows corre cada 15 minutos).
+' Lanza aave_aviso.bat sin abrir ventana (lo usa la tarea de Windows «Aave aviso HF»).
 Set sh = CreateObject("WScript.Shell")
 sh.Run """" & Replace(WScript.ScriptFullName, ".vbs", ".bat") & """", 0, True
