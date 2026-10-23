@@ -163,7 +163,7 @@ móvil. Si baja de **1,3** (el umbral de defensa del backtest) la marca como urg
 nuevo. Cuando vuelve a **1,6** o más, la cierra. Con la issue abierta no repite el aviso, así que se
 puede ejecutar a menudo:
 
-- **Tarea de Windows** «Aave aviso HF», cada 15 minutos con el PC encendido: `aave_aviso.bat`, que le
+- **Tarea de Windows** «Aave aviso HF», cada 15 minutos con el PC encendido y al iniciar sesión: `aave_aviso.vbs` (sin ventana) lanza `aave_aviso.bat`, que le
   pasa a gh el token de GitHub (el Python de Microsoft Store no deja a gh leerlo) y escribe en
   `out\aave_aviso.log`.
 - **GitHub Actions** ([`aave_aviso.yml`](.github/workflows/aave_aviso.yml)), dos veces por hora, de
