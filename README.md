@@ -155,6 +155,27 @@ correo **cuando cambia de estado**, no cada día: el estado se guarda en el hist
 `posiciones.txt` en GitHub relanza la rutina. **Ojo**: si el repositorio es público, las
 posiciones también lo son, tanto en el archivo como en la web publicada.
 
+### Aviso de factor de salud en Aave (`aave_aviso`)
+
+`python -m etapas.aave_aviso` lee tus posiciones de Aave V3 (como `aave_posicion`) y, si el factor de
+salud baja de **1,5**, abre una issue con la etiqueta `aave-hf`, que GitHub envía por correo y al
+móvil. Si baja de **1,3** (el umbral de defensa del backtest) la marca como urgente y comenta de
+nuevo. Cuando vuelve a **1,6** o más, la cierra. Con la issue abierta no repite el aviso, así que se
+puede ejecutar a menudo:
+
+- **Tarea de Windows** «Aave aviso HF», cada 15 minutos con el PC encendido: `aave_aviso.bat`, que le
+  pasa a gh el token de GitHub (el Python de Microsoft Store no deja a gh leerlo) y escribe en
+  `out\aave_aviso.log`.
+- **GitHub Actions** ([`aave_aviso.yml`](.github/workflows/aave_aviso.yml)), dos veces por hora, de
+  respaldo con el PC apagado. GitHub retrasa a veces las ejecuciones programadas, así que no sustituye
+  a la tarea. Las direcciones van en la variable `AAVE_CARTERAS` del repositorio.
+- `--simular` dice qué haría sin tocar GitHub; `--prueba` abre un aviso ficticio para comprobar que
+  llega el correo (la siguiente comprobación normal lo cierra).
+
+Como el repositorio es público, las issues y los logs no llevan la dirección ni importes en dólares:
+solo la red, el factor de salud, la caída que llevaría a la liquidación y qué parte de la deuda
+devolver para volver a 1,8. Los importes los da `aave_posicion` en el PC.
+
 ### Agentes e IA
 
 La rutina funciona como un equipo de agentes con reglas fijas: etapas, rangos, riesgo, contexto y
