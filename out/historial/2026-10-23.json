@@ -119,10 +119,5 @@
     }
   },
   "posiciones": {},
-  "oportunidades": {
-    "BTC/USDC 3000 todas": "",
-    "ETH/USDC 3000 todas": "Semanal · Uniswap v4 · Ethereum · ETH/USDC 0,01 % · precaución",
-    "ETH/USDT 3000 todas": "",
-    "BTC/ETH 3000 todas": ""
-  }
+  "oportunidades": {}
 }
