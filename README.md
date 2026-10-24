@@ -629,13 +629,22 @@ No. Se midió de dos formas, siempre con la etapa calculada solo con las velas c
   separa mejor: un 27 % de probabilidad de caer más de un 30 % en las 8 semanas siguientes, frente
   a un 10 % en E1. Con Power4 sale entre el 15 % y el 20 % en todas las etapas. En ninguna etapa
   ni con ningún método la probabilidad de caer más de un 30 % en un mes baja del 8 %.
+- **Repetida con el histórico ampliado** (24-oct-2026, MetaProDB desde mar-2022): 22.645 ciclos de
+  los mismos 15 pools, de mar-2022 a oct-2026. Se excluyó WBTC/USDT 0,05 % de Arbitrum antes de 2024,
+  cuando el pool estaba casi vacío (1 $ de liquidez durante meses y precios sin sentido), y un ciclo
+  aislado imposible. Las conclusiones se mantienen. En el tramo nuevo (2022-24), 21 de las 23
+  comparaciones de etapa frente al resto incluyen el 0; con Power4, ninguna es significativa. Las
+  dos excepciones son pequeñas y de Weinstein en diario en los pares cruzados: abrir en E2 rindió un
+  0,17 % menos por ciclo y en E4 un 0,10 % más (en el periodo completo, E2 un 0,11 % menos). 2022-24 fue más duro para los pools
+  contra dólar (en rango el 77-79 % del ciclo frente al 94 %; stop en el 15 % de los ciclos frente
+  al 3-4 %), pero en todas las etapas por igual, y el resultado medio por ciclo fue parecido (−0,1 %).
 
 Uso recomendado: Weinstein como referencia y Power4 como aviso temprano para revisar una posición.
 En pools decide el paso 2 (comisiones reales frente a mantener y frente a la alternativa sin
 riesgo); en Aave, el factor de salud que habría aguantado la historia, que ninguna etapa permite
 bajar.
 
-Límites: dos años de comisiones, casi todos en mercado bajista; pools del mismo activo que se
+Límites: comisiones desde mar-2022 (antes no hay Multicall3 para leerlas) y pools v4 solo desde 2025; pools del mismo activo que se
 mueven juntos; pocos ciclos mensuales y solapados entre sí; y los parámetros de Weinstein se
 ajustaron con activos parecidos, lo que puede favorecerle un poco.
 
