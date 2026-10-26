@@ -65,6 +65,17 @@ def provisional_text(r: TimeframeResult) -> str:
     return f"{p.stage} · {p.stage_name}" + (f" ({p.transition})" if p.transition else "")
 
 
+def divergence_text(r: TimeframeResult) -> str | None:
+    """Aviso de discrepancia entre la etapa de Weinstein y la de Power4 en un marco."""
+    if r.status != "ok":
+        return None
+    return power4.divergence(r.stage, r.power4, r.price, r.invalid_level)
+
+
+def divergences(asset: AssetResult) -> list[tuple[TimeframeResult, str]]:
+    return [(r, d) for k in ORDER if (d := divergence_text(r := asset.timeframes[k]))]
+
+
 def power4_text(r: TimeframeResult) -> str:
     return "—" if r.power4 is None else f"{r.power4} · {power4.NAMES[r.power4]}"
 
@@ -249,6 +260,7 @@ def render_text(asset: AssetResult) -> str:
     out.append(POWER4_NOTE)
     out.extend(f"  {r.label}: {power4_text(r)}. {r.power4_reason}" for k in ORDER
                if (r := asset.timeframes[k]).power4 is not None)
+    out.extend(f"⚠ {r.label}: {d}" for r, d in divergences(asset))
     zone = key_zone(asset)
     if zone:
         out.append("")
@@ -445,10 +457,11 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False,
                 cells.append(f'<td class="{cls}">{html.escape(values[h])}</td>')
         tbody += "<tr>" + "".join(cells) + "</tr>"
     zone = key_zone(asset)
-    zone_html = ""
+    zone_html = "".join(f'<div class="keyzone"><b>⚠ {html.escape(r.label)}</b>: {html.escape(d)}</div>'
+                        for r, d in divergences(asset))
     if zone:
         items = "".join(f"<li>{html.escape(z)}</li>" for z in zone)
-        zone_html = (f'<div class="keyzone"><b>⚠ {html.escape(KEY_ZONE_TITLE)}</b><ul>{items}</ul>'
+        zone_html += (f'<div class="keyzone"><b>⚠ {html.escape(KEY_ZONE_TITLE)}</b><ul>{items}</ul>'
                      f'<p>{html.escape(KEY_ZONE_NOTE)}</p></div>')
     details = "".join(f"<li>{html.escape(detail_line(asset.timeframes[k]).strip())}</li>" for k in ORDER)
     p4 = "".join(f"<li><b>{html.escape(r.label)}</b>: {html.escape(power4_text(r))}. "

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import agentes, cribado, vigilancia
+from . import agentes, cribado, power4, vigilancia
 from .analysis import AssetResult, analyze_symbol, parse_symbol
 from .config import DISCLAIMER, ORDER, POOL_CHECK_CAPITAL, POOL_PROXY, TIMEFRAMES
 from .contexto import MarketContext, headlines_for, load_context
@@ -124,6 +124,23 @@ def level_alerts(prev: dict, curr: dict) -> list[dict]:
                     alerts.append({"simbolo": sym, "marco": label, "tipo": "nivel",
                                    "texto": f"cierra {side} del nivel {name} de la etapa "
                                             f"{old['etapa']} ({fmt_price(level)} → cierre {fmt_price(close)})"})
+    return alerts
+
+
+def divergence_alerts(prev: dict, curr: dict) -> list[dict]:
+    """Discrepancias nuevas entre Weinstein y Power4 (power4.divergence): avisa el día que aparece,
+    no mientras dura."""
+    alerts = []
+    for sym, tfs in curr.items():
+        for k in ORDER:
+            new, old = tfs.get(k), prev.get(sym, {}).get(k)
+            if not new or (d := power4.divergence(new["etapa"], new.get("power4"), new.get("cierre"),
+                                                  new.get("invalida"))) is None:
+                continue
+            if old and power4.divergence(old["etapa"], old.get("power4")) is not None:
+                continue
+            alerts.append({"simbolo": sym, "marco": TIMEFRAMES[k].label, "tipo": "discrepancia",
+                           "texto": d[0].lower() + d[1:]})
     return alerts
 
 
@@ -284,6 +301,7 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None,
     previous = load_previous(hist_dir, today)
     changes = diff(previous[1], curr) if previous else []
     changes += level_alerts(previous[1], curr) if previous else []
+    changes += divergence_alerts(previous[1], curr) if previous else []
     if os.environ.get("ETAPAS_AVISO_PRUEBA"):
         changes.append({"simbolo": "PRUEBA", "marco": "", "tipo": "prueba",
                         "texto": "aviso de prueba: si te llega este correo, los avisos funcionan"})

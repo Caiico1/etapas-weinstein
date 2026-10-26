@@ -50,3 +50,13 @@ def test_power4_change_is_reported():
     # Instantáneas anteriores sin Power4: no es un cambio
     prev["ETH"]["1d"].pop("power4")
     assert diff(prev, curr) == []
+
+
+def test_divergence_only_against_the_trend():
+    assert power4.divergence(2, 2) is None and power4.divergence(4, 4) is None
+    assert power4.divergence(1, 4) is None and power4.divergence(3, 2) is None   # sin tendencia
+    assert power4.divergence(2, 3) and power4.divergence(4, 1)
+    text = power4.divergence(2, 4, 80154, 79800)
+    assert "Weinstein en 2 (Alcista) y Power4 en 4 (Declive)" in text
+    assert "cierre bajo 79,800 (a 0.4% del cierre)" in text
+    assert "sobre" in power4.divergence(4, 1, 100, 110)

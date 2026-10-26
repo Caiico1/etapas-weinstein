@@ -164,3 +164,12 @@ def test_index_links_pool_button_only_on_github(monkeypatch):
     assert pool_button() == ""
     monkeypatch.setenv("GITHUB_REPOSITORY", "alguien/repo")
     assert 'href="https://github.com/alguien/repo/actions/workflows/pool.yml"' in pool_button()
+
+
+def test_divergence_alerts_only_when_it_appears():
+    tf = lambda etapa, p4: _tf(etapa, "2026-10-25", 80154, 87220, 79800) | {"power4": p4}
+    prev = {"BTC": {"1d": tf(2, 3), "1w": tf(2, 2)}}
+    curr = {"BTC": {"1d": tf(2, 4), "1w": tf(2, 4), "1M": tf(4, 4)}}
+    alerts = rutina.divergence_alerts(prev, curr)
+    assert [a["marco"] for a in alerts] == ["Semanal"]          # el diario ya discrepaba ayer
+    assert alerts[0]["texto"].startswith("discrepancia: Weinstein en 2")

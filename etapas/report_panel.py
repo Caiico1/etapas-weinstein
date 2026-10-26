@@ -101,6 +101,8 @@ def _matrix_cell(r: TimeframeResult, changed: bool) -> str:
     if r.power4 is not None:
         same = " (igual)" if r.power4 == r.stage else ""
         prov += f'<span class="msub">Power4: E{r.power4} {power4.NAMES[r.power4]}{same}</span>'
+        if d := power4.divergence(r.stage, r.power4, r.price, r.invalid_level):
+            prov += f'<span class="msub" title="{html.escape(d)}">⚠ discrepa de Weinstein</span>'
     new = '<span class="mnew" title="Cambió desde la ejecución anterior">nuevo</span>' if changed else ""
     title = (f"{r.label}: etapa {r.stage} ({STAGE_NAMES[r.stage]}), confianza {r.confidence_label}"
              + (f", en transición {r.transition}" if r.transition else ""))

@@ -639,6 +639,14 @@ No. Se midió de dos formas, siempre con la etapa calculada solo con las velas c
   contra dólar (en rango el 77-79 % del ciclo frente al 94 %; stop en el 15 % de los ciclos frente
   al 3-4 %), pero en todas las etapas por igual, y el resultado medio por ciclo fue parecido (−0,1 %).
 
+**Aviso de discrepancia** (`power4.divergence`): cuando Power4 va contra la tendencia de
+Weinstein (Weinstein en 2 y Power4 en 3 o 4, o Weinstein en 4 y Power4 en 1 o 2), el informe lo
+marca con ⚠ en consola y en el HTML del activo, con el nivel que invalidaría la etapa de Weinstein
+y a qué distancia está; la portada de la rutina pone «⚠ discrepa de Weinstein» en la celda. La
+rutina avisa (correo e issue) solo el día en que aparece la discrepancia, no mientras dura. Es
+una señal para revisar, no un cambio de etapa: el 26-oct-2026, BTC diario estaba en Weinstein 2 y
+Power4 4, con el cierre a un 0,4 % del mínimo que invalida la etapa 2.
+
 Uso recomendado: Weinstein como referencia y Power4 como aviso temprano para revisar una posición.
 En pools decide el paso 2 (comisiones reales frente a mantener y frente a la alternativa sin
 riesgo); en Aave, el factor de salud que habría aguantado la historia, que ninguna etapa permite

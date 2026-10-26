@@ -100,6 +100,26 @@ def _entry(hist: pd.DataFrame, close: pd.Series) -> str:
     return f"Salió de la etapa 2 en la vela del {when}: {how}. "
 
 
+def divergence(stage: int | None, p4: int | None, close: float | None = None,
+               invalid: float | None = None) -> str | None:
+    """Aviso cuando Power4 va contra la tendencia de Weinstein: Weinstein en 2 y Power4 en 3 o 4,
+    o Weinstein en 4 y Power4 en 1 o 2. Power4, con medias más cortas, suele girar antes; es el
+    momento de revisar, no una señal de cambio (Power4 no predijo mejor en la validación)."""
+    if stage == 2 and p4 in (3, 4):
+        word, cross, trend = "Alcista", "bajo", "bajista"
+    elif stage == 4 and p4 in (1, 2):
+        word, cross, trend = "Bajista", "sobre", "alcista"
+    else:
+        return None
+    seen = (f"Power4 ya ve tendencia {trend}" if p4 in (2, 4)
+            else f"Power4 ya da por terminada la etapa {stage}")
+    text = f"Discrepancia: Weinstein en {stage} ({word}) y Power4 en {p4} ({NAMES[p4]}): {seen}."
+    if invalid is not None and close:
+        text += (f" La etapa {stage} de Weinstein se invalida con un cierre {cross} {_p(invalid)} "
+                 f"(a {abs(invalid / close - 1):.1%} del cierre).")
+    return text
+
+
 def latest(df: pd.DataFrame, pivot_k: int) -> tuple[int | None, str]:
     """(etapa, motivo) de la última vela cerrada; (None, '') sin velas para la SMA40."""
     if len(df) < SLOW:
