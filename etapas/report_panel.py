@@ -160,7 +160,8 @@ def _pool_mini(liq: LiquidityResult | None, rep=None, kind: str = "") -> str:
         elif dec:
             k, (o, _, _) = max(dec.items(), key=lambda kv: kv[1][0].net_apr if kv[1][0].net_apr is not None else -9)
             gap = _gap_txt(o, rep)
-            lines.append(f"decisión: vigilar · lo más cercano: {names[k]}" + (f", faltan {gap}" if gap else ""))
+            pct = f" ({o.net_apr:+.1%})" if o.net_apr is not None else ""
+            lines.append(f"decisión: vigilar · lo más cercano: {names[k]}{pct}" + (f", faltan {gap}" if gap else ""))
         else:
             lines.append("decisión: sin pools con liquidez suficiente")
     text = "".join(f'<span class="msub">{html.escape(t)}</span>' for t in lines)

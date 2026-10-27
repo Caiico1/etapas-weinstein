@@ -126,7 +126,7 @@ def test_pool_column_separates_stage_from_profitability():
     assert "Neto esperado por ciclo (anual)" in sec and "-9.20 $" in sec and "+5.00 $" in sec
     assert sec.count("Todos los pools (") == 2 and sec.count("sin pools con liquidez suficiente") == 1   # diario
     a.pool_report = report([bad])
-    assert "decisión: vigilar · lo más cercano: semanal, faltan comisiones ×1,5" in matrix_html([a], [])
+    assert "decisión: vigilar · lo más cercano: semanal (-9.2%), faltan comisiones ×1,5" in matrix_html([a], [])
     assert "Ningún pool productivo hoy con 5,000 $" in pool_verdict_html(a)
     a.pool_report = report([])
     assert "decisión: sin pools" in matrix_html([a], [])
