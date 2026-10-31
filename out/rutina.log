@@ -268,3 +268,6 @@
     BTC Diario: cierra por debajo del nivel que invalida de la etapa 2 (79,800 → cierre 77,992)
     ETH/USDC oportunidad con 3,000 $: ABRIR CON PRECAUCIÓN: paso 1 (etapa): diario apta · semanal precaución (etapa 2) · mensual apta. Paso 2: ciclo semanal en Uniswap v4 · Ethereum · ETH/USDC 0,01 %, rango 1,956.33 – 2,486.45, neto estimado +6.80 $ por ciclo (+11.8% anual; con margen +0.09 $)
     ETH/BTC oportunidad con 3,000 $: ABRIR: paso 1 (etapa): diario apta · semanal apta · mensual apta. Paso 2: ciclo semanal en Uniswap v3 · Ethereum · WBTC/WETH 0,30 %, rango 0.0268144 – 0.030233, neto estimado +8.12 $ por ciclo (+14.1% anual; con margen +4.94 $)
+2026-10-31 05:24 UTC · 4/4 activos analizados · 2 cambios desde 2026-10-30
+    ETH Diario: entra en transición 3→4
+    ETH/USDC oportunidad con 3,000 $: la propuesta anterior (Semanal · Uniswap v4 · Ethereum · ETH/USDC 0,01 % · precaución) ya no cumple los criterios. vigilar: paso 1 (etapa): diario apta · semanal precaución (etapa 2) · mensual apta. Paso 2, lo más cercano: ciclo semanal en Uniswap v4 · Ethereum · ETH/USDC 0,01 %, neto estimado +6.86 $ por ciclo (rinde menos que depositar los mismos tokens en Aave; para abrir necesitaría unas comisiones 1,1 veces las de hoy)
