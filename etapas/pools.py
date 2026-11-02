@@ -377,9 +377,20 @@ class FeeRates:
 
     @property
     def prudent(self) -> float | None:
-        """El menor entre 7 y 30 días: una semana buena no se extrapola."""
-        ok = [x for x in (self.week, self.month) if x is not None]
+        """El menor entre 7 días, 30 días y la mediana de las últimas semanas: una semana buena no
+        se extrapola, y un pico de una hora (un swap enorme con poca liquidez, que entra en las
+        ventanas de 7 y de 30 días) solo estropea una semana, que la mediana deja fuera."""
+        ok = [x for x in (self.week, self.month, self.median_week) if x is not None]
         return min(ok) if ok else None
+
+    @property
+    def median_week(self) -> float | None:
+        """Mediana de las últimas semanas; None con menos de tres (no descarta un pico)."""
+        if len(self.weeks) < 3:
+            return None
+        w = sorted(self.weeks)
+        mid = len(w) // 2
+        return w[mid] if len(w) % 2 else (w[mid - 1] + w[mid]) / 2
 
     @property
     def weakest_week(self) -> float | None:

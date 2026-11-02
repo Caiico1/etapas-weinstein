@@ -53,6 +53,15 @@ def test_fee_rates_by_window(monkeypatch):
     assert r.prudent == pytest.approx(r.month) and r.weakest_week == pytest.approx(0.5)
 
 
+def test_prudent_ignores_one_spike_week():
+    # Caso UNI/USDC 0,3 % (29-oct-2026): una hora de 5 M$ con poca liquidez entra en 7 y 30 días
+    r = P.FeeRates(day=1e-15, week=40e-15, month=10e-15, weeks=[40e-15, 0.9e-15, 1e-15, 0.8e-15])
+    assert r.median_week == pytest.approx(0.95e-15)
+    assert r.prudent == pytest.approx(0.95e-15)
+    # Con menos de tres semanas no hay mediana: manda el menor entre 7 y 30 días
+    assert P.FeeRates(week=2e-15, month=1e-15, weeks=[2e-15, 3e-15]).prudent == pytest.approx(1e-15)
+
+
 def test_fee_rates_offline_is_none():
     assert P.fee_rates(V3, 1.0, 1.0) is None                      # sin red en los tests
 
