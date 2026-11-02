@@ -56,6 +56,13 @@ REBALANCE_GAS = 900_000                               # retirar + cobrar + cambi
 L2_DATA_FEE_USD = 0.05                                # margen por la tarifa de datos de L1 en Base/Arbitrum
 SOLANA_REBALANCE_SOL = 0.001                          # comisiones de transacción y prioridad en Solana
 NO_DAILY_ON = {"ethereum"}                            # el ciclo diario no se propone en Ethereum (gas)
+# Tamaño del pool y ciclo (criterio de Javier): un pool grande con volumen cobra menos por dólar pero
+# de forma más estable, y se propone para periodos largos (sin ciclo diario). Un pool pequeño admite
+# todos los ciclos: la idea era limitarlo a los cortos, pero en el backtest de MetaProDB (oct-2026,
+# ventanas de 60 días) el mensual fue el mejor también en 3 de 5 pools pequeños.
+LARGE_TVL = 20_000_000                                # desde aquí: pool grande
+GROUP_CYCLES = {"pequeño": {"1d", "1w", "1M"}, "grande": {"1w", "1M"}}
+GROUP_TERM = {"pequeño": "cualquier plazo", "grande": "largo plazo"}
 # Margen de seguridad: la pérdida frente a mantener, medida por anchura del rango, varía hasta un
 # 20-30 % entre mitades del histórico (BTC, SOL). Solo se propone lo que sigue siendo rentable con
 # una pérdida un 25 % peor que la estimada.
@@ -171,6 +178,7 @@ class Opportunity:
     aave_yields: dict = field(default_factory=dict)    # {token: APY de depósito}
     aave_apy: float | None = None
     excluded: str = ""
+    out_of_term: bool = False              # descartada solo porque el ciclo no encaja con el tamaño del pool
 
 
 @dataclass
@@ -531,6 +539,8 @@ def _analyze(pair: str, capital: float, chains) -> Report:
                         o.scenarios[label] = (price, position_value(price, q.low, q.high) / v0 - 1)
                 if level not in LEVELS:
                     o.excluded = "sin etapa"
+                elif veto := group_veto(key, st.tvl):
+                    o.excluded, o.out_of_term = veto, True
                 elif o.net_cycle <= 0:
                     o.excluded = "resultado neto estimado negativo"
                 elif o.net_safe <= 0:
@@ -540,6 +550,22 @@ def _analyze(pair: str, capital: float, chains) -> Report:
             rep.opportunities.append(o)
     rep.proposals = choose(rep.opportunities)
     return rep
+
+
+def tvl_group(tvl: float | None) -> str | None:
+    """«pequeño» o «grande» según el TVL (None si no se conoce)."""
+    if tvl is None:
+        return None
+    return "grande" if tvl >= LARGE_TVL else "pequeño"
+
+
+def group_veto(cycle: str, tvl: float | None) -> str:
+    """Motivo para no proponer ese ciclo en un pool de ese tamaño ("" si encaja)."""
+    group = tvl_group(tvl)
+    if group is None or cycle in GROUP_CYCLES[group]:
+        return ""
+    name = dict((k, n) for k, n, _ in CYCLES)[cycle].lower()
+    return (f"pool {group} (TVL {tvl / 1e6:,.1f} M$): es para {GROUP_TERM[group]}, no para el ciclo {name}")
 
 
 def choose(opps: list[Opportunity]) -> list[Opportunity]:
@@ -575,7 +601,7 @@ def decision(o: Opportunity, capital: float) -> tuple[str, str]:
     if not o.excluded:
         return (ABRIR, "etapa apta y rentable") if o.level == "apta" else (
             PRECAUCION, "rentable aun estimando la pérdida solo con los ciclos de esta etapa")
-    gap = fee_gap(o, capital)
+    gap = None if o.out_of_term else fee_gap(o, capital)
     if gap is not None:
         times = f"{gap:.1f}".replace(".", ",")
         return VIGILAR, (f"{o.excluded}; para abrir necesitaría unas comisiones {times} veces las de hoy"
@@ -670,6 +696,10 @@ def checklist(rep: Report, o: Opportunity) -> tuple[list[tuple[str, str, str, st
                  "El pool tiene liquidez suficiente",
                  ("TVL desconocido" if q.tvl is None else f"TVL {q.tvl / 1e6:,.1f} M$")
                  + f" (mínimo {MIN_TVL / 1e6:,.0f} M$)"))
+    if (group := tvl_group(q.tvl)) is not None:
+        rows.append(("Veto", FAIL if o.out_of_term else OK, "El ciclo encaja con el tamaño del pool",
+                     f"pool {group} (grande desde {LARGE_TVL / 1e6:,.0f} M$): "
+                     f"{GROUP_TERM[group]}"))
     if o.cycle == "1d" and o.pool.chain in NO_DAILY_ON:
         rows.append(("Veto", FAIL, "El gas de la red permite reajustar cada día",
                      f"en {o.pool.chain.capitalize()} no se propone el ciclo diario"))

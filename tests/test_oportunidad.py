@@ -184,6 +184,27 @@ def test_decision_two_steps():
     assert op.decision(o, 5000)[0] == op.SIN_DATOS
 
 
+def test_pool_size_decides_the_cycles(fake_world, monkeypatch):
+    """Pool grande → sin ciclo diario; pequeño → todos. El veto no pide más comisiones."""
+    assert [op.tvl_group(x) for x in (None, 2e6, 1.5e7, 5e7)] == [None, "pequeño", "pequeño", "grande"]
+    assert op.group_veto("1d", 5e7) and not op.group_veto("1M", 5e7)
+    assert not any(op.group_veto(k, 2e6) for k in ("1d", "1w", "1M")) and not op.group_veto("1d", None)
+    rep = op.analyze("ETH/USDC", 5000)                       # en fake_world los dos pools son grandes
+    daily = [o for o in rep.opportunities if o.cycle == "1d" and o.pool.chain == "arbitrum" and o.net_cycle]
+    assert daily and all(o.out_of_term and "largo plazo" in o.excluded for o in daily)
+    assert all(o.cycle != "1d" for o in rep.proposals)
+    o = daily[0]
+    assert op.decision(o, 5000) == (op.SIN_DATOS, o.excluded)          # sin «necesitaría X veces»
+    rows, _ = op.checklist(rep, o)
+    assert any(c == "El ciclo encaja con el tamaño del pool" and st == op.FAIL for _, st, c, _ in rows)
+    states = P.fetch_states([])
+    for k in list(states):                                               # ahora, pools pequeños
+        st = states[k]
+        states[k] = PoolState(st.price, st.liquidity, st.protocol_cut, st.volume_24h, 5e6 if st.tvl > 1e6 else st.tvl)
+    small = op.analyze("ETH/USDC", 5000)
+    assert not any(o.out_of_term for o in small.opportunities)
+
+
 def test_backtest_conditioned_on_stage():
     """En precaución la pérdida se estima solo con los ciclos abiertos en esa etapa."""
     cfg = TIMEFRAMES["1w"]

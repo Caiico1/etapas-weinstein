@@ -50,6 +50,29 @@ def test_phase1_filters_and_metrics(llama):
     assert C.shortlist(cands, 0.0004, 5) == ["ETH/USD", "BTC/USD"]
 
 
+def test_two_groups_short_and_long_term():
+    """Pequeño con mucho volumen → corto plazo; grande con volumen → largo plazo, con menos
+    comisiones / TVL. La lista reparte los pares entre los dos grupos."""
+    def cand(pair, tvl, vol_tvl, fees):
+        b, q = pair.split("/")
+        return C.Candidate("base", "Uniswap v3", pair, tvl, vol_tvl * tvl, True, fees, 400, b, q)
+    small = cand("ETH/USDC", 3e6, 2.0, 0.0015)              # corto: pasa
+    slow = cand("SOL/USDC", 3e6, 0.5, 0.0015)               # corto, pero volumen < TVL
+    big = cand("BTC/USDC", 50e6, 0.6, 0.0007)               # largo: pasa con 0,07 %
+    big_thin = cand("UNI/USDC", 50e6, 0.1, 0.0007)          # largo, pero poco volumen
+    big_cheap = cand("ETH/BTC", 50e6, 1.0, 0.0003)          # largo, pocas comisiones
+    assert small.group == "pequeño" and big.group == "grande"
+    assert C.short_term(small, 0.001) and not C.short_term(slow, 0.001) and not C.short_term(big, 0.0005)
+    assert C.long_term(big) and not C.long_term(big_thin) and not C.long_term(big_cheap) and not C.long_term(small)
+    cands = [small, slow, big, big_thin, big_cheap]
+    assert C.shortlist(cands, 0.001, 2) == ["ETH/USD", "BTC/USD"]
+    assert C.shortlist(cands, 0.001, 1) == ["ETH/USD"]
+    assert C.shortlist(cands, 0.001, 5, large_min_fees=0.0002) == ["ETH/USD", "BTC/USD", "ETH/BTC"]
+    s = C.Screen(5000, ["base"], 0.001, candidates=cands, deep=False)
+    text = C.render(s)
+    assert "| Grupo |" in text and "largo ✅" in text and "corto —" in text
+
+
 def test_full_run_ranks_only_pairs_that_pass_pool(llama, monkeypatch):
     def fake_analyze(pair, capital, chains):
         rep = op.Report(*pair.split("/"), capital, 1.0, 1.0, None)

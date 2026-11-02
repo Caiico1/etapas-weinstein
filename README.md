@@ -279,7 +279,13 @@ volumen diario: con 5.000 $ en un pool pequeño, la estimación depende demasiad
    propuesta da el resultado **frente a USDC** (sin comisiones) si el precio toca el mínimo, el
    máximo o el stop. Uniswap no tiene stop nativo: alerta de precio y cierre a mano, o una
    automatización de salida.
-9. **Avisos del checklist** (⚠️, nunca vetan): volumen/TVL > 1 y comisiones del pool ≥ 0,1 % diario del
+9. **Tamaño del pool y ciclo** (criterio de Javier, oct-2026; `LARGE_TVL`): un pool grande (TVL ≥
+   20 M$) cobra menos por dólar pero de forma más estable y solo se propone en ciclos semanal y
+   mensual. Un pool pequeño admite todos: la idea era limitarlo a ciclos cortos, pero en el backtest de
+   MetaProDB (7 pools, ventanas de 60 días) el diario fue el peor casi siempre y el mensual el mejor
+   también en 3 de 5 pools pequeños. El veto va en la fila «El ciclo encaja con el tamaño del pool»
+   del checklist y no pide más comisiones.
+10. **Avisos del checklist** (⚠️, nunca vetan): volumen/TVL > 1 y comisiones del pool ≥ 0,1 % diario del
    TVL (eficiencia); protocolo consolidado (más de 1.000 M$ de TVL y años en producción), estable con
    respaldo 1:1 en efectivo y letras del Tesoro (USDT y DAI no) y tokens que dependen de un custodio o
    un puente (WBTC, cbBTC, WETH de Wormhole, PAXG, XAUt). No son vetos porque las comisiones reales y
@@ -324,8 +330,14 @@ python -m etapas.cribado --capital 5000 [--red base,arbitrum] [--top 5] [--solo-
 
 - **Fase 1** (segundos, una petición a DefiLlama Yields): todos los pools de Uniswap v3, v4 y Orca
   con TVL ≥ 1 M$. Pasan a la fase 2 los pares con algún pool de tokens verificados, sin hook, con al
-  menos 90 días de historial (efecto Lindy), comisiones/TVL ≥ 0,1 % diario (volumen medio de 7 días ×
-  comisión; `--min-comisiones`) y volumen ≤ 20 × TVL (más suele ser volumen de bots o inflado).
+  menos 90 días de historial (efecto Lindy), volumen ≤ 20 × TVL (más suele ser volumen de bots o
+  inflado) y el criterio de uno de los **dos grupos** (comisiones = volumen medio de 7 días × comisión):
+  - **Corto plazo**: pool pequeño (TVL < 20 M$) con comisiones/TVL ≥ 0,1 % diario
+    (`--min-comisiones`) y volumen ≥ TVL.
+  - **Largo plazo**: pool grande (TVL ≥ 20 M$) con comisiones/TVL ≥ 0,05 % diario
+    (`--min-comisiones-grandes`) y volumen ≥ 0,3 × TVL: reajusta menos, así que necesita menos.
+  La mitad de los pares (redondeando hacia arriba) sale del grupo de corto plazo y el resto del de
+  largo; si uno no llena su parte, la completa el otro.
 - **Fase 2**: el análisis completo de `/pool` para los 5 mejores; se recomiendan solo los que pasan
   todos sus vetos, ordenados por neto anual con margen. Tarda minutos: GeckoTerminal, que usa /pool,
   limita en la práctica a unas 5-6 peticiones por minuto.

@@ -1,6 +1,6 @@
 ---
 name: pool-cribado
-description: Busca por sí sola qué duplas o pares de criptomonedas merecen hoy una posición de liquidez concentrada en Uniswap v3 y v4, sin que el usuario diga cuáles mirar. Filtra todos los pools por TVL, eficiencia (volumen/TVL, comisiones/TVL ≥ 0,1 % diario con media de 7 días), tokens verificados, historial y volumen sospechoso, y a los mejores les aplica el análisis completo de pool-liquidez (etapa, rango, comisiones reales, IL, gas, stop-loss y margen de seguridad). Úsala siempre que el usuario pregunte qué pools o duplas son rentables ahora, dónde poner liquidez sin decir el par, o qué pares le recomiendas para aportar liquidez. Si nombra un activo o temática (oro tokenizado, bitcoin, ether), usa pool-liquidez, que busca todos los pools de esa temática.
+description: Busca por sí sola qué duplas o pares de criptomonedas merecen hoy una posición de liquidez concentrada en Uniswap v3 y v4, sin que el usuario diga cuáles mirar. Filtra todos los pools por TVL, eficiencia (volumen/TVL, comisiones/TVL con media de 7 días) en dos grupos —pools pequeños con mucho volumen para ciclos cortos y pools grandes con volumen para ciclos largos—, tokens verificados, historial y volumen sospechoso, y a los mejores les aplica el análisis completo de pool-liquidez (etapa, rango, comisiones reales, IL, gas, stop-loss y margen de seguridad). Úsala siempre que el usuario pregunte qué pools o duplas son rentables ahora, dónde poner liquidez sin decir el par, o qué pares le recomiendas para aportar liquidez. Si nombra un activo o temática (oro tokenizado, bitcoin, ether), usa pool-liquidez, que busca todos los pools de esa temática.
 ---
 
 # Cribado de duplas para liquidez concentrada
@@ -25,7 +25,9 @@ que cada cifra sale de datos verificados.
    - `--red base,arbitrum` limita las redes; `--top 3` analiza menos pares (más rápido).
    - `--solo-filtro`: solo la fase 1 (segundos). Úsalo si el usuario quiere una vista rápida, y
      dile que no es una recomendación: falta el análisis completo.
-   - `--min-comisiones 0.05` relaja el criterio de comisiones/TVL (por defecto 0,1 % diario). Solo
+   - `--min-comisiones-grandes 0.03` relaja el criterio de los pools grandes (por defecto 0,05 %
+     diario). Solo si el usuario lo pide.
+   - `--min-comisiones 0.05` relaja el criterio de los pools de corto plazo (por defecto 0,1 % diario). Solo
      si el usuario lo pide.
    - `--json` da los mismos datos estructurados.
    - Si dice que faltan librerías, instálalas (`pip install ccxt pandas numpy`) y vuelve a ejecutar.
@@ -51,6 +53,11 @@ que cada cifra sale de datos verificados.
      las que le interesen a `oportunidades.txt` para que la rutina avise si pasan a «abrir».
    - Si **no hay ninguna para abrir**, dilo claramente con los motivos por par y la regla de capital
      parado: mantener USDC en la red donde vaya a operar. «Vigilar» es una respuesta válida y frecuente.
+   - **Dos grupos** (criterio de Javier): **corto plazo** = pool pequeño (TVL < 20 M$) con
+     volumen ≥ TVL; **largo plazo** = pool grande (TVL ≥ 20 M$) con volumen ≥ 0,3 × TVL. El análisis
+     de pool-liquidez no propone el ciclo diario en un pool grande; un pool pequeño admite todos los ciclos
+     (en el histórico el mensual también funcionó). Di de qué grupo es cada dupla (columna «Grupo»
+     de la fase 1). Un ciclo descartado «por tamaño del pool» no es falta de comisiones.
    - Resume la tabla de fase 1 en dos o tres frases: qué pares pasaron el filtro y por qué otros no
      (comisiones bajas, historial corto, hook, volumen sospechoso).
    - **Fuera de la lista verificada**: preséntalo solo como información. No los recomiendes nunca:
@@ -90,7 +97,10 @@ disco desconectado), omite esta sección sin mencionarla.
 - **Fase 1** (DefiLlama Yields, una sola petición): todos los pools de Uniswap v3 y v4 con TVL ≥ 1 M$
   en Ethereum, Base y Arbitrum. Pasan a la fase 2 los pares con algún pool que cumpla a la vez: dos
   tokens de la lista verificada, sin hook, al menos 90 días de historial (efecto Lindy),
-  comisiones/TVL ≥ 0,1 % diario (volumen medio de 7 días × comisión) y volumen ≤ 20 × TVL. Las
+  el criterio de su grupo (comisiones = volumen medio de 7 días × comisión) y volumen
+  ≤ 20 × TVL. Corto plazo (TVL < 20 M$): comisiones/TVL ≥ 0,1 % diario y volumen ≥ TVL. Largo
+  plazo (TVL ≥ 20 M$): comisiones/TVL ≥ 0,05 % diario y volumen ≥ 0,3 × TVL. La mitad de los pares
+  sale de cada grupo; si uno no llena su parte, la completa el otro. Las
   estables se agrupan en «USD» (USDC y USDT a la vez).
 - **Fase 2**: el análisis completo de pool-liquidez para los 5 mejores pares, con sus dos pasos
   (etapa y rentabilidad). Se ordenan por neto anual con el margen de seguridad.

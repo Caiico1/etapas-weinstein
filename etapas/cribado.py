@@ -39,6 +39,11 @@ NETWORKS = {"ethereum": "Ethereum", "base": "Base", "arbitrum": "Arbitrum", "sol
 # Proyecto de DefiLlama → DEX (solo protocolos consolidados, los mismos que usa /pool)
 PROJECTS = {"uniswap-v3": "Uniswap v3", "uniswap-v4": "Uniswap v4", "orca-dex": "Orca"}
 MIN_TVL = op.MIN_TVL
+# Dos grupos (oportunidad.tvl_group): pool pequeño con mucho volumen para ciclos cortos, y
+# pool grande con mucho volumen para ciclos largos. Al grande se le pide menos comisiones / TVL
+# porque reajusta menos (menos gas y menos cambios de tokens), pero sí volumen.
+LARGE_MIN_FEES = 0.0005        # comisiones / TVL diarias mínimas de un pool grande (0,05 %)
+LARGE_MIN_VOL_TVL = 0.3        # volumen diario mínimo de un pool grande, en veces el TVL
 SUSPICIOUS_VOL_TVL = 20.0      # más de 20 veces el TVL en un día suele ser volumen de bots o inflado
 YOUNG_POOL_DAYS = 90           # pool con menos historial que esto: sin efecto Lindy
 NATIVE_ETH = {"0x0000000000000000000000000000000000000000", "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}
@@ -79,6 +84,10 @@ class Candidate:
         return self.volume / self.tvl
 
     @property
+    def group(self) -> str:
+        return op.tvl_group(self.tvl)
+
+    @property
     def hooked(self) -> bool:
         return "hook" in self.name.lower()
 
@@ -107,6 +116,7 @@ class Screen:
     capital: float
     chains: list[str]
     min_fees: float
+    large_min_fees: float = LARGE_MIN_FEES
     candidates: list[Candidate] = field(default_factory=list)
     shortlist: list[str] = field(default_factory=list)          # pares que pasan a la fase 2
     reports: dict = field(default_factory=dict)                  # par → oportunidad.Report
@@ -169,26 +179,47 @@ def fetch_candidates(chains: list[str], warnings: list[str]) -> list[Candidate]:
     return out
 
 
-def shortlist(cands: list[Candidate], min_fees: float, top: int) -> list[str]:
-    """Pares con algún pool elegible (Candidate.eligible) que cumple el criterio de comisiones / TVL,
-    ordenados por su mejor pool."""
+def short_term(c: Candidate, min_fees: float) -> bool:
+    """Pool pequeño para ciclos cortos: comisiones / TVL ≥ min_fees y volumen ≥ TVL."""
+    return c.group != "grande" and c.fees_tvl >= min_fees and c.vol_tvl >= op.VOL_TVL_REF
+
+
+def long_term(c: Candidate, large_min_fees: float = LARGE_MIN_FEES) -> bool:
+    """Pool grande para ciclos largos: comisiones / TVL ≥ large_min_fees y volumen ≥ 0,3 × TVL."""
+    return c.group == "grande" and c.fees_tvl >= large_min_fees and c.vol_tvl >= LARGE_MIN_VOL_TVL
+
+
+def _best_pairs(cands: list[Candidate], test) -> list[str]:
     best: dict[str, float] = {}
     for c in cands:
-        if c.eligible and c.fees_tvl >= min_fees:
+        if c.eligible and test(c):
             best[c.pair] = max(best.get(c.pair, 0.0), c.fees_tvl)
-    return [p for p, _ in sorted(best.items(), key=lambda kv: -kv[1])][:top]
+    return [p for p, _ in sorted(best.items(), key=lambda kv: -kv[1])]
+
+
+def shortlist(cands: list[Candidate], min_fees: float, top: int,
+              large_min_fees: float = LARGE_MIN_FEES) -> list[str]:
+    """Pares con algún pool elegible (Candidate.eligible) de uno de los dos grupos, ordenados por su
+    mejor pool: la mitad de los `top` (redondeando hacia arriba) del grupo de corto plazo y el resto
+    del de largo; si un grupo no llena su parte, la completa el otro."""
+    short = _best_pairs(cands, lambda c: short_term(c, min_fees))
+    long = _best_pairs(cands, lambda c: long_term(c, large_min_fees))
+    picked = short[:(top + 1) // 2]
+    picked += [p for p in long if p not in picked][:top - len(picked)]
+    return picked + [p for p in short if p not in picked][:top - len(picked)]
 
 
 # ---------------------------------------------------------------- todo junto
 
 def run(capital: float = 5000.0, chains: list[str] | None = None, top: int = 5,
-        min_fees: float = op.FEES_TVL_REF, deep: bool = True, progress=None) -> Screen:
+        min_fees: float = op.FEES_TVL_REF, deep: bool = True, progress=None,
+        large_min_fees: float = LARGE_MIN_FEES) -> Screen:
     chains = chains or list(NETWORKS)
-    s = Screen(capital, chains, min_fees, deep=deep, date=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+    s = Screen(capital, chains, min_fees, large_min_fees, deep=deep, date=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
     say = progress or (lambda msg: None)
     say("Fase 1: pools de Uniswap v3, v4 y Orca en " + ", ".join(chains))
     s.candidates = fetch_candidates(chains, s.warnings)
-    s.shortlist = shortlist(s.candidates, min_fees, top)
+    s.shortlist = shortlist(s.candidates, min_fees, top, large_min_fees)
     if deep:
         for pair in s.shortlist:
             say(f"Fase 2: {pair}")
@@ -211,16 +242,28 @@ def _m(x: float) -> str:
     return f"{x / 1e6:,.1f} M$"
 
 
-def _cand_row(c: Candidate) -> str:
-    return (f"| {c.name} | {c.dex} · {c.chain.capitalize()} | {_m(c.tvl)} | {c.vol_tvl:.2f} | "
+def _term(s: Screen, c: Candidate) -> str:
+    """Grupo del pool y si cumple su criterio: «corto ✅», «largo —»..."""
+    if c.group == "grande":
+        return "largo " + ("✅" if c.fees_tvl is not None and long_term(c, s.large_min_fees) else "—")
+    return "corto " + ("✅" if c.fees_tvl is not None and short_term(c, s.min_fees) else "—")
+
+
+def _cand_row(c: Candidate, s: Screen | None = None) -> str:
+    term = f" {_term(s, c)} |" if s else ""
+    return (f"| {c.name} | {c.dex} · {c.chain.capitalize()} | {_m(c.tvl)} |{term} {c.vol_tvl:.2f} | "
             f"{_pct(c.fees_tvl, 3)} | {'7 días' if c.week else '24 h'} | "
             f"{'; '.join(c.flags()) or '—'} |")
 
 
 def render(s: Screen) -> str:
     out = [f"# Cribado de duplas para liquidez concentrada · capital {s.capital:,.0f} $", "",
-           f"{s.date} · redes: {', '.join(c.capitalize() for c in s.chains)} · criterio de comisiones: "
-           f"≥ {_pct(s.min_fees, 2)} del TVL al día", ""]
+           f"{s.date} · redes: {', '.join(c.capitalize() for c in s.chains)}", "",
+           f"Dos grupos: **corto plazo** (pool pequeño, TVL < {_m(op.LARGE_TVL)}: comisiones ≥ "
+           f"{_pct(s.min_fees, 2)} del TVL al día y volumen ≥ TVL; admite todos los ciclos, porque en el "
+           f"histórico el mensual también funcionó) y **largo plazo** (pool grande, TVL ≥ {_m(op.LARGE_TVL)}: comisiones ≥ "
+           f"{_pct(s.large_min_fees, 2)} y volumen ≥ {LARGE_MIN_VOL_TVL:.1f} × TVL; ".replace(".", ",")
+           + "ciclos semanal y mensual).", ""]
     ranked = ranking(s)
     if not s.deep:
         out += ["## Pares que pasan a la fase 2", "",
@@ -262,7 +305,7 @@ def render(s: Screen) -> str:
     else:
         out += ["## Ninguna dupla para abrir ahora: vigilar", ""]
         if not s.shortlist:
-            out.append("Ningún par verificado cumple a la vez TVL ≥ 1 M$ y el criterio de comisiones sin volumen "
+            out.append("Ningún par verificado cumple el criterio de su grupo (corto o largo plazo) sin volumen "
                        "sospechoso.")
         elif s.reports:
             out.append("Los pares que pasaron el filtro no superan el paso 2 de /pool: las comisiones no compensan "
@@ -275,8 +318,10 @@ def render(s: Screen) -> str:
     verified = sorted((c for c in s.candidates if c.verified and not c.stable_pair),
                       key=lambda c: -(c.fees_tvl or 0))
     out += ["## Fase 1: pools con tokens verificados", "",
-            "| Pool | DEX · red | TVL | Vol/TVL | Comis./TVL día | Datos | Avisos |", "|---|---|---|---|---|---|---|"]
-    out += [_cand_row(c) for c in verified] or ["| — | | | | | | |"]
+            "Grupo: corto (TVL < " + _m(op.LARGE_TVL).replace(".", ",") + ") o largo plazo; ✅ si cumple el criterio de su grupo.", "",
+            "| Pool | DEX · red | TVL | Grupo | Vol/TVL | Comis./TVL día | Datos | Avisos |",
+            "|---|---|---|---|---|---|---|---|"]
+    out += [_cand_row(c, s) for c in verified] or ["| — | | | | | | | |"]
     stables = sorted((c for c in s.candidates if c.stable_pair), key=lambda c: -(c.fees_tvl or 0))[:5]
     if stables:
         out += ["", "**Pools entre estables** (sin riesgo de precio salvo un desanclaje; la etapa de Weinstein no "
@@ -300,10 +345,12 @@ def render(s: Screen) -> str:
     out += ["", "**Cómo se criba.** Fase 1 (DefiLlama): todos los pools de Uniswap v3, v4 y Orca con TVL ≥ "
                 "1 M$. Para pasar a la fase 2: sus dos tokens verificados, sin hook, al menos "
                 f"{YOUNG_POOL_DAYS} días de historial (efecto Lindy), comisiones (volumen medio de 7 días × "
-                "comisión del pool) que lleguen al criterio y un volumen que no supere "
+                "comisión del pool) y volumen que lleguen al criterio de su grupo (la mitad de los pares, del "
+                "de corto plazo; el resto, del de largo) y un volumen que no supere "
                 f"{SUSPICIOUS_VOL_TVL:.0f} veces el TVL (suele ser volumen de bots o inflado). Vol/TVL alto no es "
                 "bueno por sí solo: a menudo viene de volatilidad, que es lo que genera la pérdida frente a "
-                "mantener. Fase 2: el análisis completo de /pool. Son estimaciones con los datos de hoy.",
+                "mantener. Fase 2: el análisis completo de /pool, que solo propone en cada pool los ciclos de "
+                "su tamaño. Son estimaciones con los datos de hoy.",
             "", f"_{DISCLAIMER}_"]
     return "\n".join(out)
 
@@ -324,8 +371,10 @@ def to_json(s: Screen) -> dict:
         return {"pool": c.name, "red": c.chain, "dex": c.dex, "tvl": c.tvl, "dias_historial": c.days,
                 "volumen_dia": c.volume, "base_volumen": "7 días" if c.week else "24 h",
                 "volumen_tvl": c.vol_tvl, "comisiones_tvl_dia": c.fees_tvl, "par": c.pair if c.verified else None,
+                "grupo": c.group, "plazo": "largo" if c.group == "grande" else "corto",
                 "verificado": c.verified, "avisos": c.flags()}
     return {"fecha": s.date, "capital": s.capital, "redes": s.chains, "criterio_comisiones": s.min_fees,
+            "criterio_comisiones_grandes": s.large_min_fees,
             "recomendadas": [dict(op.to_json(s.reports[p])["propuestas"][s.reports[p].proposals.index(o)], par=p)
                              for p, o in ranking(s)],
             "analizados": {p: {"propuestas": len(r.proposals), "motivo": None if r.proposals else _why(r)}
@@ -374,7 +423,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--red", default="", metavar="REDES", help="ethereum, base, arbitrum, solana (por defecto, todas)")
     ap.add_argument("--top", type=int, default=5, help="Pares que pasan al análisis completo (por defecto 5)")
     ap.add_argument("--min-comisiones", type=float, default=op.FEES_TVL_REF * 100, metavar="PCT",
-                    help="Comisiones / TVL diario mínimas, en %% (por defecto 0,1)")
+                    help="Comisiones / TVL diario mínimas de los pools de corto plazo, en %% (por defecto 0,1)")
+    ap.add_argument("--min-comisiones-grandes", type=float, default=LARGE_MIN_FEES * 100, metavar="PCT",
+                    help="Comisiones / TVL diario mínimas de los pools grandes (largo plazo), en %% "
+                         "(por defecto 0,05)")
     ap.add_argument("--solo-filtro", action="store_true", help="Solo la fase 1 (rápida, sin análisis completo)")
     ap.add_argument("--json", action="store_true", help="Salida en JSON")
     ap.add_argument("--guardar", metavar="DIR", help="Guarda también cribado.md y cribado.json en DIR")
@@ -385,7 +437,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Redes no admitidas: {', '.join(bad)}. Disponibles: {', '.join(NETWORKS)}")
         return 1
     s = run(args.capital, chains, args.top, args.min_comisiones / 100, not args.solo_filtro,
-            progress=lambda m: print(m, file=sys.stderr, flush=True))
+            progress=lambda m: print(m, file=sys.stderr, flush=True),
+            large_min_fees=args.min_comisiones_grandes / 100)
     if args.guardar:
         save(s, args.guardar)
     print(json.dumps(to_json(s), ensure_ascii=False, indent=2, default=float) if args.json else render(s))
