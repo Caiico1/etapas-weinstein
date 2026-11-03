@@ -14,6 +14,7 @@ He leído tu posición en Revert: **#475067, ETH/USDC, Uniswap v4 en Ethereum, c
 Al bajar ETH, el pool ha ido **comprando ETH con tus USDC**: tenías 0,0070 ETH y ahora tienes 0,0114, y los USDC han pasado de 20,49 a 10,16. Así funciona la liquidez concentrada, y de ahí sale la pérdida por divergencia.
 
 ## Ref: HOLD → "¿me ha ido mejor que no hacer nada?"
+<img width="2156" height="1254" alt="image" src="https://github.com/user-attachments/assets/76d93841-bb11-4cd6-8e27-ae82e1430f3f" />
 
 Compara la posición con haber dejado **los mismos tokens quietos en la wallet**, todo valorado al precio de **hoy**. Por eso la caída de ETH no le afecta: también habría afectado a los tokens guardados.
 
@@ -27,6 +28,8 @@ Compara la posición con haber dejado **los mismos tokens quietos en la wallet**
 **Cómo leerlo:** las comisiones (0,62) pagan de sobra la divergencia (0,31), así que el pool como estrategia va ganando a guardar los tokens. Pero el gas de abrir (0,77) se lo come todo y el resultado neto es −0,46 $.
 
 ## Ref: USD → "¿tengo más o menos dólares que cuando entré?"
+<img width="2216" height="1268" alt="image" src="https://github.com/user-attachments/assets/004c9bdf-fef0-4fc1-910a-919eff2faba2" />
+
 
 Compara con el **valor en dólares el día que depositaste**. Por los datos, ETH estaba entonces a unos **2.444 $**, así que lo aportado valía 37,59 $. Aquí sí cuenta la bajada de ETH.
 
