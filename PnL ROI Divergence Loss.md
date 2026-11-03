@@ -1,3 +1,4 @@
+Hoy a 03 de Noviembre del 2026:
 He leído tu posición en Revert: **#475067, ETH/USDC, Uniswap v4 en Ethereum, comisión 0,01 %**, abierta hace 14 días. El rango es 2.159,9 – 2.690,6 y ETH está a 2.294, así que está dentro del rango, cerca del límite inferior. He rehecho las cuentas a mano y salen los mismos números que muestra Revert.
 
 ## Los datos de partida
