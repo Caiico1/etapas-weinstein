@@ -7,3 +7,4 @@
 # Ejemplos:
 # ETH  2410  2930   semanal · Base WETH/USDC 0,05 %
 # SOL  105.2 131.1  semanal · Orca SOL/USDC
+ETH  2159.9  2690.6  v4 Ethereum ETH/USDC 0,01 % · n.º 475067
