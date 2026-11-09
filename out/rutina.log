@@ -303,3 +303,13 @@
     ETH Diario: etapa 3 → 4
     accion:GLD Diario: cierra por debajo del nivel que confirma de la etapa 4 (373.36 → cierre 372.52)
 2026-11-08 05:54 UTC · 4/4 activos analizados · 0 cambios desde 2026-11-07
+2026-11-09 06:01 UTC · 4/4 activos analizados · 9 cambios desde 2026-11-08
+    BTC Semanal: Power4 2 → 3
+    ETH Semanal: etapa 2 → 1
+    par:ETH/BTC Diario: Power4 1 → 4
+    BTC Semanal: cierra por debajo del nivel que invalida de la etapa 2 (74,968 → cierre 74,851)
+    ETH Semanal: cierra por debajo del nivel que invalida de la etapa 2 (2,168 → cierre 2,127)
+    ETH Diario: cierra por debajo del nivel que confirma de la etapa 4 (2,174 → cierre 2,127)
+    BTC Semanal: discrepancia: Weinstein en 2 (Alcista) y Power4 en 3 (Distribución): Power4 ya da por terminada la etapa 2. La etapa 2 de Weinstein se invalida con un cierre bajo 73,545 (a 1.7% del cierre).
+    ETH posición: rango 2159.9–2690.6: fuera del rango por abajo (-1.3% bajo el mínimo): la posición es 100 % ETH y no cobra comisiones. Hoy /pool: vigilar: no reajustes; cierra o quédate con el token según tu stop-loss
+    ETH/USDT oportunidad con 3,000 $: la propuesta anterior (Semanal · Uniswap v4 · Ethereum · ETH/USDT 0,01 % · precaución) ya no cumple los criterios. vigilar: paso 1 (etapa): diario apta · semanal precaución (etapa 1) · mensual apta. Paso 2, lo más cercano: ciclo semanal en Uniswap v4 · Ethereum · ETH/USDT 0,01 %, neto estimado +7.64 $ por ciclo (rinde menos que depositar los mismos tokens en Aave; para abrir necesitaría unas comisiones 1,0 veces las de hoy)
