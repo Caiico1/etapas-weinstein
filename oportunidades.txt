@@ -10,3 +10,6 @@ BTC/USDC 3000
 ETH/USDC 3000
 ETH/USDT 3000
 BTC/WETH 3000
+# Añadidas el 9-nov-2026 desde /pool-cribado (5.000 $): les faltaba un 10-20 % de comisiones
+ETH/USD 5000
+BTC/USD 5000
