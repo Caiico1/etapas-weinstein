@@ -121,6 +121,10 @@ def test_pool_column_separates_stage_from_profitability():
     # Stop-loss del método solo en los pools con ✓ (y solo si lo hay)
     assert card.count("stop-loss <b>") == 1 and "(o si sube de <b>" in card
     assert "0.0251" not in card and "0,0251" not in card
+    # Par entre dos volátiles: el precio también al revés (ETH por BTC), con los bordes cruzados
+    from etapas.report_liquidez import fmt
+    assert f"(= {fmt(1 / 0.031)} – {fmt(1 / 0.028)} ETH por BTC)" in card
+    assert f"(en ETH por BTC: si sube de {fmt(1 / 0.0262)} o baja de {fmt(1 / 0.0334)})" in card
     # Todos los pools: columna de neto (ganancia o pérdida) también en un par entre volátiles
     sec = liquidity_html(a.liquidity, a.pool_report)
     assert "Neto esperado por ciclo (anual)" in sec and "-9.20 $" in sec and "+5.00 $" in sec

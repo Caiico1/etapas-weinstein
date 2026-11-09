@@ -290,12 +290,36 @@ def _net_txt(o) -> str:
             f"{o.net_safe_apr:+.1%})" if o.net_cycle is not None else "sin neto")
 
 
-def _stop_txt(o) -> str:
-    """Stop-loss del método (oportunidad.stop_levels): por abajo y, entre dos volátiles, por arriba."""
+def _inverse(rep) -> tuple[str, str] | None:
+    """(base, quote) si el par es entre dos volátiles (ETH/BTC): sus precios se leen también al revés."""
+    from .data import STABLES
+    base, quote = getattr(rep, "base", None), getattr(rep, "quote", None)
+    if not base or not quote or base in STABLES or quote in STABLES:
+        return None
+    return base, quote
+
+
+def _inv_range_txt(lo, hi, inv) -> str:
+    """Rango invertido: 0.02421–0.03249 BTC por ETH → 30.78–41.31 ETH por BTC (los bordes se cruzan)."""
+    if not inv or not lo or not hi:
+        return ""
+    base, quote = inv
+    return (f' <span class="muted">(= {fmt(1 / hi)} – {fmt(1 / lo)} {html.escape(base)} por '
+            f'{html.escape(quote)})</span>')
+
+
+def _stop_txt(o, inv=None) -> str:
+    """Stop-loss del método (oportunidad.stop_levels): por abajo y, entre dos volátiles, por arriba.
+    Con `inv`, también en el precio invertido, donde el de abajo pasa a ser el de arriba."""
     if not o.stop_low:
         return ""
-    return (f" · stop-loss <b>{fmt(o.stop_low)}</b>"
-            + (f" (o si sube de <b>{fmt(o.stop_high)}</b>)" if o.stop_high else ""))
+    txt = (f" · stop-loss <b>{fmt(o.stop_low)}</b>"
+           + (f" (o si sube de <b>{fmt(o.stop_high)}</b>)" if o.stop_high else ""))
+    if inv:
+        base, quote = inv
+        txt += (f' <span class="muted">(en {html.escape(base)} por {html.escape(quote)}: si sube de '
+                f'{fmt(1 / o.stop_low)}' + (f" o baja de {fmt(1 / o.stop_high)}" if o.stop_high else "") + ")</span>")
+    return txt
 
 
 def pool_verdict_html(asset: AssetResult, github_link: str = "") -> str:
@@ -351,13 +375,15 @@ def _verdict_from_report(asset: AssetResult, rep, github_link: str) -> str:
     liq = asset.liquidity
     horizons = {p.timeframe: p.horizon for p in liq.profiles} if liq is not None else {}
     rows, n_ok = [], 0
+    inv = _inverse(rep)
     for key, name, _ in op.CYCLES:
         level = rep.stages.get(key, ("sin datos", []))[0]
         r = rep.asset.timeframes.get(key) if rep.asset is not None else None
         chip = (f'<span class="lvl" style="background:{LEVEL_COLORS.get(level, "#6b7280")}">etapa {html.escape(level)}</span>'
                 + (f'<span class="muted">{html.escape(stage_label(r))}</span>' if r is not None and r.status == "ok" else ""))
         rng = rep.ranges.get(key)
-        rtxt = f"<span>rango <b>{fmt(rng[0])} – {fmt(rng[1])}</b></span>" if rng else ""
+        rtxt = (f"<span>rango <b>{fmt(rng[0])} – {fmt(rng[1])}</b>{_inv_range_txt(rng[0], rng[1], inv)}</span>"
+                if rng else "")
         mine = sorted((o for o in rep.opportunities if o.cycle == key), key=lambda o: -(o.net_apr if o.net_apr is not None else -9))
         good = [o for o in mine if not o.excluded][:MAX_PRODUCTIVE]
         n_ok += len(good)
@@ -365,7 +391,8 @@ def _verdict_from_report(asset: AssetResult, rep, github_link: str) -> str:
             pools = "".join(
                 f'<div><span class="lvl" style="background:#16a34a">✓ {html.escape(op.decision(o, rep.capital)[0])}</span> '
                 f'<a href="{html.escape(o.pool.app_url or o.pool.url)}" target="_blank" rel="noopener">{html.escape(o.pool.label)}</a>'
-                f' · rango {fmt(o.quote.low)} – {fmt(o.quote.high)}{_stop_txt(o)} · {_net_txt(o)}</div>' for o in good)
+                f' · rango {fmt(o.quote.low)} – {fmt(o.quote.high)}{_inv_range_txt(o.quote.low, o.quote.high, inv)}'
+                f'{_stop_txt(o, inv)} · {_net_txt(o)}</div>' for o in good)
         elif mine and mine[0].net_cycle is not None:
             o = mine[0]
             gap = op.fee_gap(o, rep.capital)
