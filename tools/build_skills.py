@@ -17,7 +17,21 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC, SKILLS, OUT = ROOT / "etapas", ROOT / "tools" / "skills", ROOT / "out"
 SKILL_NAMES = ("pool-liquidez", "pool-cribado", "defi-rendimiento")
 MODULES = ("__init__", "aave", "analysis", "classifier", "config", "cribado", "data", "descubrir", "estrategia", "indicators",
-           "keccak", "liquidez", "oportunidad", "pools", "seguimiento", "tema")
+           "keccak", "liquidez", "oportunidad", "pools", "power4", "seguimiento", "tema")
+# Importaciones internas del motor: «from .x import ...» y «from . import x, y»
+LOCAL_IMPORT = re.compile(r"^\s*from \.(\w*) import \(?([\w, ]+)", re.M)
+
+
+def check_imports() -> None:
+    """Falla si un módulo empaquetado importa otro del motor que no está en MODULES."""
+    missing = set()
+    for name in MODULES:
+        for mod, names in LOCAL_IMPORT.findall((SRC / f"{name}.py").read_text(encoding="utf-8")):
+            for dep in [mod] if mod else [n.strip().split(" as ")[0] for n in names.split(",")]:
+                if (SRC / f"{dep}.py").exists() and dep not in MODULES:
+                    missing.add(f"{dep} (lo importa {name})")
+    if missing:
+        sys.exit("build_skills: faltan módulos en MODULES: " + ", ".join(sorted(missing)))
 
 # (módulo, texto original, texto empaquetado)
 PATCHES = [
@@ -82,5 +96,6 @@ def build(skill: str) -> Path:
 
 
 if __name__ == "__main__":
+    check_imports()
     for s in SKILL_NAMES:
         print(build(s))
