@@ -11,5 +11,6 @@
 # SOL  105.2 131.1  semanal · Orca SOL/USDC
 ETH  2159.9  2690.6  v4 Ethereum ETH/USDC 0,01 % · n.º 475067
 ETH  1808.0924  2347.2850  semanal · v3 Base WETH/USDC 0,05 % · n.º 6526632
+ETH  1923.7363  2130.3029  diario · v3 Base WETH/USDC 0,3 % · n.º 6539729
 ETH/BTC  0.0265741  0.0297531  semanal · v3 Arbitrum WBTC/WETH 0,05 % (33,61–37,63 ETH por BTC)
 ETH/BTC  0.0241901  0.0313411  mensual · v3 Arbitrum WBTC/WETH 0,05 % (31,91–41,34 ETH por BTC)
