@@ -149,7 +149,9 @@ Binance, y si difiere más de un 2 % no se estima nada.
 
 ### Posiciones abiertas (`posiciones.txt`)
 
-Una línea por posición: `ETH 2410 2930 semanal Base`. El índice muestra si cada una está dentro,
+Una línea por posición: `ETH 2410 2930 semanal Base`. Un pool entre dos criptoactivos va como par,
+con el precio de uno en el otro y el par en la lista (`par:ETH/BTC`): `ETH/BTC 0.0266 0.0298 semanal
+Arbitrum`. El índice muestra si cada una está dentro,
 cerca de un borde (a menos del 10 % de su anchura, `LP_EDGE_WARN`) o fuera. La rutina avisa por
 correo **cuando cambia de estado**, no cada día: el estado se guarda en el historial. Editar
 `posiciones.txt` en GitHub relanza la rutina. **Ojo**: si el repositorio es público, las

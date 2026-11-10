@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .config import LP_EDGE_WARN
 
-_LINE = re.compile(r"^([A-Za-z0-9]{1,15})\s+([0-9][0-9.,]*)\s+([0-9][0-9.,]*)\s*(.*)$")
+_LINE = re.compile(r"^([A-Za-z0-9]{1,15}(?:/[A-Za-z0-9]{1,15})?)\s+([0-9][0-9.,]*)\s+([0-9][0-9.,]*)\s*(.*)$")
 
 
 @dataclass
@@ -26,7 +26,8 @@ def _num(s: str) -> float:
 
 
 def load_positions(path: Path) -> tuple[list[Position], list[str]]:
-    """Una posición por línea: «SÍMBOLO MÍN MÁX [nota]». Ignora comentarios (#) y líneas vacías."""
+    """Una posición por línea: «SÍMBOLO MÍN MÁX [nota]». El símbolo es un activo frente al dólar (ETH)
+    o un par (ETH/BTC, con el precio de uno en el otro). Ignora comentarios (#) y líneas vacías."""
     if not path.exists():
         return [], []
     out, warnings = [], []
@@ -53,14 +54,16 @@ def check(pos: Position, price: float | None) -> dict:
     base = {"simbolo": pos.symbol, "min": pos.low, "max": pos.high, "nota": pos.label, "precio": price}
     if price is None:
         return base | {"estado": "sin precio", "texto": "no se pudo obtener el precio actual", "aviso": False}
+    base_tok, _, quote_tok = pos.symbol.partition("/")
+    quote_tok = quote_tok or "moneda estable"
     if price < pos.low:
         return base | {"estado": "fuera por abajo", "aviso": True,
                        "texto": f"fuera del rango por abajo ({price / pos.low - 1:+.1%} bajo el mínimo): la "
-                                f"posición es 100 % {pos.symbol} y no cobra comisiones"}
+                                f"posición es 100 % {base_tok} y no cobra comisiones"}
     if price > pos.high:
         return base | {"estado": "fuera por arriba", "aviso": True,
                        "texto": f"fuera del rango por arriba ({price / pos.high - 1:+.1%} sobre el máximo): la "
-                                f"posición es 100 % moneda estable y no cobra comisiones"}
+                                f"posición es 100 % {quote_tok} y no cobra comisiones"}
     margin = LP_EDGE_WARN * (pos.high - pos.low)
     if price - pos.low < margin:
         return base | {"estado": "cerca del mínimo", "aviso": True,

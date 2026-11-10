@@ -221,8 +221,10 @@ def position_status(path: Path, assets: list[AssetResult], log: list[str]) -> li
     """Estado de cada posición de posiciones.txt con el precio actual de su activo."""
     positions, warnings = load_positions(path)
     log.extend(warnings)
-    prices = {a.symbol: a.last_price for a in assets if not a.error and a.kind == "cripto"}
-    reports = {a.symbol: a.pool_report for a in assets if not a.error and a.kind == "cripto" and a.pool_report}
+    # Activos frente al dólar (ETH) y pares (ETH/BTC, de «par:ETH/BTC» en la lista).
+    prices = {a.symbol: a.last_price for a in assets if not a.error and a.kind in ("cripto", "par")}
+    reports = {a.symbol: a.pool_report for a in assets
+               if not a.error and a.kind in ("cripto", "par") and a.pool_report}
     out = []
     for pos in positions:
         if pos.symbol not in prices:

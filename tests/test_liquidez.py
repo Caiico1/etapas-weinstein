@@ -225,6 +225,16 @@ def test_check_position(price, estado, aviso):
     assert (r["estado"], r["aviso"]) == (estado, aviso)
 
 
+def test_pair_positions(tmp_path):
+    f = tmp_path / "posiciones.txt"
+    f.write_text("ETH/BTC 0.0265741 0.0297531 semanal Arbitrum\n", encoding="utf-8")
+    pos, warnings = load_positions(f)
+    assert warnings == [] and (pos[0].symbol, pos[0].low, pos[0].high) == ("ETH/BTC", 0.0265741, 0.0297531)
+    assert "100 % ETH" in check(pos[0], 0.025)["texto"]
+    assert "100 % BTC" in check(pos[0], 0.031)["texto"]
+    assert "moneda estable" in check(Position("ETH", 2500, 2900), 3000)["texto"]
+
+
 def test_position_alerts_only_on_change():
     item = check(Position("ETH", 2500, 2900), 2400)
     assert len(rutina.position_alerts({}, [item])) == 1

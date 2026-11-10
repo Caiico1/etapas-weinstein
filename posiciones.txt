@@ -1,5 +1,7 @@
 # Mis posiciones de liquidez concentrada abiertas (Uniswap, Orca...)
 # Una por línea: SÍMBOLO  PRECIO_MÍNIMO  PRECIO_MÁXIMO  [nota libre: perfil, pool, fecha...]
+# El símbolo puede ser un par (ETH/BTC): el rango va en el precio de uno en el otro (BTC por ETH),
+# y el par tiene que estar en watchlist.txt como par:ETH/BTC.
 # El símbolo tiene que estar en watchlist.txt. La rutina avisa por correo cuando una posición
 # se acerca a un borde (menos del 10 % de su anchura), sale del rango o vuelve a entrar.
 # Para dejar de vigilar una, bórrala o ponle # delante.
@@ -8,3 +10,6 @@
 # ETH  2410  2930   semanal · Base WETH/USDC 0,05 %
 # SOL  105.2 131.1  semanal · Orca SOL/USDC
 ETH  2159.9  2690.6  v4 Ethereum ETH/USDC 0,01 % · n.º 475067
+ETH  1808.0924  2347.2850  semanal · v3 Base WETH/USDC 0,05 %
+ETH/BTC  0.0265741  0.0297531  semanal · v3 Arbitrum WBTC/WETH 0,05 % (33,61–37,63 ETH por BTC)
+ETH/BTC  0.0241901  0.0313411  mensual · v3 Arbitrum WBTC/WETH 0,05 % (31,91–41,34 ETH por BTC)
