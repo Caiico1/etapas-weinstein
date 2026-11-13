@@ -1,0 +1,135 @@
+{
+  "fecha": "2026-11-13",
+  "activos": {
+    "BTC": {
+      "1M": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-10-01",
+        "power4": 1,
+        "cierre": 77582.02,
+        "confirma": 57800.19,
+        "invalida": 82850.0
+      },
+      "1w": {
+        "etapa": 2,
+        "transicion": "",
+        "vela": "2026-11-02",
+        "power4": 3,
+        "cierre": 74851.44,
+        "confirma": 87395.67,
+        "invalida": 73545.16900000001
+      },
+      "1d": {
+        "etapa": 3,
+        "transicion": "3→4",
+        "vela": "2026-11-12",
+        "power4": 4,
+        "cierre": 71460.0,
+        "confirma": 65684.09,
+        "invalida": 81971.0
+      }
+    },
+    "ETH": {
+      "1M": {
+        "etapa": 1,
+        "transicion": "",
+        "vela": "2026-10-01",
+        "power4": 4,
+        "cierre": 2255.66,
+        "confirma": 3458.17,
+        "invalida": 1505.68
+      },
+      "1w": {
+        "etapa": 1,
+        "transicion": "1→2",
+        "vela": "2026-11-02",
+        "power4": 2,
+        "cierre": 2127.46,
+        "confirma": 3181.01,
+        "invalida": 2060.0
+      },
+      "1d": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-11-12",
+        "power4": 4,
+        "cierre": 2019.74,
+        "confirma": 1983.82,
+        "invalida": 2431.2358
+      }
+    },
+    "par:ETH/BTC": {
+      "1M": {
+        "etapa": 1,
+        "transicion": "",
+        "vela": "2026-10-01",
+        "power4": 1,
+        "cierre": 0.02908,
+        "confirma": 0.037505,
+        "invalida": 0.02525
+      },
+      "1w": {
+        "etapa": 1,
+        "transicion": "",
+        "vela": "2026-11-02",
+        "power4": 3,
+        "cierre": 0.02842,
+        "confirma": 0.036055,
+        "invalida": 0.02815
+      },
+      "1d": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-11-12",
+        "power4": 4,
+        "cierre": 0.02827,
+        "confirma": 0.02746,
+        "invalida": 0.0299936
+      }
+    },
+    "accion:GLD": {
+      "1M": {
+        "etapa": 3,
+        "transicion": "",
+        "vela": "2026-10-01",
+        "power4": 3,
+        "cierre": 355.7799987792969,
+        "confirma": 313.2950134277344,
+        "invalida": 437.4200134277344
+      },
+      "1w": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-11-02",
+        "power4": 4,
+        "cierre": 372.5199890136719,
+        "confirma": 363.32000732421875,
+        "invalida": 395.6279998779297
+      },
+      "1d": {
+        "etapa": 4,
+        "transicion": "",
+        "vela": "2026-11-12",
+        "power4": 4,
+        "cierre": 354.8900146484375,
+        "confirma": 354.6700134277344,
+        "invalida": 382.0013995361328
+      }
+    }
+  },
+  "posiciones": {
+    "ETH 1808.09-2347.28": "dentro",
+    "ETH 1923.74-2130.3": "cerca del mínimo",
+    "ETH/BTC 0.0265741-0.0297531": "dentro",
+    "ETH/BTC 0.0241901-0.0313411": "dentro"
+  },
+  "oportunidades": {
+    "BTC/USDC 3000 todas": "Diario · Orca · Solana · cbBTC/USDC 0,04 %",
+    "ETH/USDC 3000 todas": "",
+    "ETH/USDT 3000 todas": "",
+    "BTC/ETH 3000 todas": "Semanal · Uniswap v3 · Base · WETH/cbBTC 0,30 %",
+    "ETH/USD 5000 todas": "",
+    "BTC/USD 5000 todas": "Diario · Orca · Solana · cbBTC/USDC 0,04 %"
+  }
+}
