@@ -281,6 +281,13 @@ volumen diario: con 5.000 $ en un pool pequeño, la estimación depende demasiad
    propuesta da el resultado **frente a USDC** (sin comisiones) si el precio toca el mínimo, el
    máximo o el stop. Uniswap no tiene stop nativo: alerta de precio y cierre a mano, o una
    automatización de salida.
+   **Pérdida máxima y periodo de recuperación** (criterio de Javier, 14-nov-2026; `max_loss`): la
+   pérdida máxima es lo que se pierde frente a USDC si salta el stop (el peor de los dos entre dos
+   volátiles), más el cambio de tokens al abrir, el gas y volver a USDC al cerrar. El periodo de
+   recuperación son los días de comisiones esperadas (las del ciclo, contando el tiempo fuera del
+   rango) que la cubren. Entre las combinaciones que pasan los dos pasos se propone primero la de menor
+   periodo de recuperación (a igualdad, la de mejor neto), y /pool-cribado ordena igual. El checklist
+   avisa (⚠️, no veta) si hace falta más de un año (`RECOVERY_WARN`).
 9. **Tamaño del pool y ciclo** (criterio de Javier, oct-2026; `LARGE_TVL`): un pool grande (TVL ≥
    20 M$) cobra menos por dólar pero de forma más estable y solo se propone en ciclos semanal y
    mensual. Un pool pequeño admite todos: la idea era limitarlo a ciclos cortos, pero en el backtest de

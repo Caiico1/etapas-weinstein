@@ -131,7 +131,7 @@ def test_analyze_end_to_end(fake_world):
         if not o.excluded:
             assert o.level in ("apta", "precaución") and o.net_cycle > 0 and o.net_safe > 0
             assert o.net_cycle == pytest.approx(o.fees_cycle + o.expected_result * 5000 - o.gas_usd - o.swap_cycle)
-    ok = sorted((o for o in rep.opportunities if not o.excluded), key=lambda o: -o.net_apr)
+    ok = sorted((o for o in rep.opportunities if not o.excluded), key=op._recovery_key)
     assert rep.proposals == op.choose(rep.opportunities)
     if ok:
         assert rep.proposals[0] is ok[0]
@@ -159,6 +159,28 @@ def test_choose_prefers_another_cycle():
     assert op.choose([b, c, a]) == [a, c]
     assert op.choose([a, b]) == [a, b]
     assert op.choose([]) == []
+
+
+def test_choose_prefers_shortest_recovery():
+    def o(cycle, pool, apr, days):
+        x = op.Opportunity(cycle, cycle, 1, "apta", [], pool, None, op.Backtest(0.8, -0.01, 50))
+        x.net_apr, x.recovery_days = apr, days
+        return x
+    slow, fast, nostop = o("1w", POOL_ARB, 0.4, 120), o("1M", POOL_ARB, 0.1, 30), o("1d", POOL_ETH, 0.9, None)
+    assert op.choose([slow, nostop, fast]) == [fast, slow]          # la de menos días primero; sin stop, al final
+
+
+def test_max_loss_and_recovery():
+    x = op.Opportunity("1w", "Semanal", 7, "apta", [], POOL_ARB, None, op.Backtest(0.8, -0.01, 50), gas_usd=1.0)
+    x.scenarios = {"stop": (1800.0, -0.10)}
+    x.entry_cost, x.fees_cycle = 2.0, 70.0                           # 10 $/día de comisiones esperadas
+    loss, days = op.max_loss(x, 5000, 0.001)
+    assert loss == pytest.approx(500 + 2 + 1 + 4500 * 0.001)        # stop + entrada + gas + volver a USDC
+    assert days == pytest.approx(loss / 10)
+    x.scenarios["stop_alto"] = (2600.0, -0.15)                      # entre dos volátiles manda el peor stop
+    assert op.max_loss(x, 5000, 0.0)[0] == pytest.approx(750 + 3)
+    x.scenarios = {}
+    assert op.max_loss(x, 5000, 0.0) == (None, None)
 
 
 def test_invalid_pair_is_reported():

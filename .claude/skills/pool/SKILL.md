@@ -42,7 +42,12 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
    - De cada propuesta, además: el **fondeo** (tener USDC en esa red; cuánto hay que cambiar para
      abrir, su coste y el neto del primer ciclo), los **escenarios sin comisiones** frente a USDC (qué
      pasa en dólares si el precio toca el mínimo o el máximo) y el **stop-loss** (precio, pérdida en
-     dólares si salta y cuántas veces saltó en el histórico). Recuerda que Uniswap no tiene stop-loss
+     dólares si salta y cuántas veces saltó en el histórico), y la **pérdida máxima y tiempo de
+     cobertura**: cuánto se pierde en total si salta el stop (frente a USDC, con el cambio de tokens al
+     abrir, el gas y volver a USDC) y en cuántos días de comisiones esperadas se recupera. Da siempre las
+     tres cosas juntas: precio del stop, pérdida máxima en $ y % del capital, y días para recuperarla.
+     Entre las combinaciones que pasan los dos pasos, la propuesta 1 es la de **menor periodo de
+     recuperación** (no la de mayor neto anual); dilo si la de más neto es otra. Recuerda que Uniswap no tiene stop-loss
      nativo: alerta de precio y cierre a mano, o una automatización de salida.
    - Si **no hay propuesta**, da también la regla de **capital parado** que muestra la salida
      (mantener USDC en la red del pool mejor situado).

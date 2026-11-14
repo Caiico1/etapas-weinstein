@@ -80,7 +80,12 @@ muestra). Si tú calcularas o redondearas algo por tu cuenta, el usuario perder�
    - De cada propuesta, además: el **fondeo** (tener USDC en esa red; cuánto hay que cambiar para
      abrir, su coste y el neto del primer ciclo), los **escenarios sin comisiones** frente a USDC (qué
      pasa en dólares si el precio toca el mínimo o el máximo) y el **stop-loss** (precio, pérdida en
-     dólares si salta y cuántas veces saltó en el histórico). Uniswap no tiene stop-loss nativo:
+     dólares si salta y cuántas veces saltó en el histórico), y la **pérdida máxima y tiempo de
+     cobertura**: cuánto se pierde en total si salta el stop (frente a USDC, con el cambio de tokens al
+     abrir, el gas y volver a USDC) y en cuántos días de comisiones esperadas se recupera. Da siempre las
+     tres cosas juntas: precio del stop, pérdida máxima en $ y % del capital, y días para recuperarla.
+     Entre las combinaciones que pasan los dos pasos, la propuesta 1 es la de **menor periodo de
+     recuperación** (no la de mayor neto anual); dilo si la de más neto es otra. Uniswap no tiene stop-loss nativo:
      alerta de precio y cierre a mano, o una automatización de salida.
    - Si **no hay propuesta** (decisión «vigilar»), dilo claramente con el motivo que da la salida: poca
      liquidez, comisiones que no compensan la pérdida frente a mantener los tokens o que rinde menos

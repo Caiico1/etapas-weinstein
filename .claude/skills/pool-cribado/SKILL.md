@@ -36,7 +36,8 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
      («apta» o «precaución»: solo la etapa 2 en semanal o mensual; ninguna veta por sí sola) y paso 2,
      si es rentable. Resultado: abrir, abrir con precaución o vigilar.
    - **Duplas recomendadas**: la tabla tal cual (par, ciclo, decisión, pool, rango, neto, neto anual, con
-     margen, Vol/TVL, comisiones/TVL y número de avisos) y, de cada dupla recomendada, la
+     margen, pérdida máxima si salta el stop, días de recuperación, Vol/TVL, comisiones/TVL y número de
+     avisos), ordenada por el **menor periodo de recuperación** y, de cada dupla recomendada, la
      **dirección del pool** completa (en v4, el identificador) y su enlace, tal cual los da la lista
      «Direcciones de los pools recomendados». Explica que han pasado los dos pasos de /pool y que
      para el detalle de una (depósito, stop-loss, escenarios frente a USDC, fondeo y checklist) hay
@@ -81,7 +82,8 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
   plazo (TVL ≥ 20 M$): comisiones/TVL ≥ 0,05 % diario y volumen ≥ 0,3 × TVL. La mitad de los pares
   sale de cada grupo; si uno no llena su parte, la completa el otro. Las estables se agrupan en «USD» (USDC y USDT a la vez).
 - **Fase 2**: `etapas.oportunidad.analyze` (el motor de /pool) para los 5 mejores pares, con todos
-  sus vetos. Se ordenan por neto anual con el margen de seguridad.
+  sus vetos. Se ordenan por el menor periodo de recuperación de la pérdida máxima (días de
+  comisiones que cubren lo perdido si salta el stop); a igualdad, por el neto anual con margen.
 - **Rutina diaria**: si existe `cribado.txt` junto a `watchlist.txt` con una línea
   `CAPITAL [redes]` (por ejemplo `4500 base,arbitrum`), la rutina deja `out/cribado.md` y
   `out/cribado.json` cada día.

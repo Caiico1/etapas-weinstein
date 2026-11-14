@@ -42,7 +42,8 @@ que cada cifra sale de datos verificados.
      precaución; ninguna etapa veta por sí sola) y **paso 2**, si es rentable. Resultado: **abrir**,
      **abrir con precaución** o **vigilar** (con cuántas veces las comisiones de hoy harían falta).
    - **Duplas recomendadas**: la tabla tal cual (par, ciclo, decisión, pool, rango, neto, neto anual, con
-     margen, Vol/TVL, comisiones/TVL y número de avisos) y, de cada dupla recomendada, la
+     margen, pérdida máxima si salta el stop, días de recuperación, Vol/TVL, comisiones/TVL y número de
+     avisos), ordenada por el **menor periodo de recuperación** y, de cada dupla recomendada, la
      **dirección del pool** completa (en v4, el identificador) y su enlace a Uniswap, tal cual los
      da la lista «Direcciones de los pools recomendados» (campos `direccion` y `enlace_dex` de
      `recomendadas` con `--json`). Explica que han pasado los dos pasos y que, para el detalle de
@@ -103,5 +104,6 @@ disco desconectado), omite esta sección sin mencionarla.
   sale de cada grupo; si uno no llena su parte, la completa el otro. Las
   estables se agrupan en «USD» (USDC y USDT a la vez).
 - **Fase 2**: el análisis completo de pool-liquidez para los 5 mejores pares, con sus dos pasos
-  (etapa y rentabilidad). Se ordenan por neto anual con el margen de seguridad.
+  (etapa y rentabilidad). Se ordenan por el menor periodo de recuperación de la pérdida máxima (días
+  de comisiones que cubren lo perdido si salta el stop); a igualdad, por el neto anual con margen.
 - No busca en Orca (Solana), igual que pool-liquidez.

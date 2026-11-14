@@ -229,7 +229,9 @@ def run(capital: float = 5000.0, chains: list[str] | None = None, top: int = 5,
 
 def ranking(s: Screen) -> list[tuple[str, op.Opportunity]]:
     rows = [(pair, o) for pair, rep in s.reports.items() for o in rep.proposals]
-    return sorted(rows, key=lambda x: -(x[1].net_safe / s.capital * 365 / x[1].days))
+    # Menor periodo de recuperación de la pérdida máxima primero; a igualdad, mejor neto con margen
+    return sorted(rows, key=lambda x: (x[1].recovery_days is None, x[1].recovery_days or 0.0,
+                                       -(x[1].net_safe / s.capital * 365 / x[1].days)))
 
 
 # ---------------------------------------------------------------- salida
@@ -274,11 +276,11 @@ def render(s: Screen) -> str:
         out += ["## Duplas recomendadas", "",
                 "Pasan los dos pasos de /pool: la etapa lo permite (paso 1; «precaución» = etapa 2 en semanal "
                 "o mensual, con la pérdida estimada solo con los ciclos de esa etapa) y son rentables (paso 2: "
-                "neto positivo con margen de seguridad y por encima de Aave). Ordenadas por el neto anual con "
-                "el margen de seguridad.", "",
-                "| # | Par | Ciclo | Decisión | Pool | Rango | Neto/ciclo | Neto anual | Con margen | Vol/TVL | "
-                "Comis./TVL día | Avisos |",
-                "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+                "neto positivo con margen de seguridad y por encima de Aave). Ordenadas por el menor periodo de "
+                "recuperación: días de comisiones que cubren la pérdida máxima si salta el stop.", "",
+                "| # | Par | Ciclo | Decisión | Pool | Rango | Neto/ciclo | Neto anual | Con margen | "
+                "Pérdida máx. (stop) | Recuperación | Vol/TVL | Comis./TVL día | Avisos |",
+                "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for i, (pair, o) in enumerate(ranked, 1):
             rep = s.reports[pair]
             rows, _ = op.checklist(rep, o)
@@ -287,6 +289,7 @@ def render(s: Screen) -> str:
                        f"{o.pool.label} | {op._p(o.quote.low)} – "
                        f"{op._p(o.quote.high)} | {op._usd(o.net_cycle)} | {op._pct(o.net_apr)} | "
                        f"{op._pct(o.net_safe / s.capital * 365 / o.days)} | "
+                       f"{'—' if o.max_loss is None else op._usd(-o.max_loss)} | {op._days(o.recovery_days)} | "
                        f"{'—' if o.vol_tvl is None else f'{o.vol_tvl:.2f}'} | {_pct(o.fees_tvl, 3)} | "
                        f"{warns} ⚠️ |")
         out += ["", "**Direcciones de los pools recomendados** (compruébala al abrir la posición):", ""]

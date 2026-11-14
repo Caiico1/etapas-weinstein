@@ -158,6 +158,11 @@ class Opportunity:
     entry_cost: float | None = None        # coste de ese cambio ($)
     stop_low: float | None = None          # stop-loss por abajo (precio del par)
     stop_high: float | None = None         # ... y por arriba, solo entre dos volátiles
+    # Pérdida máxima ($) si salta el stop: lo perdido frente a USDC en el peor stop + cambiar desde
+    # USDC al abrir + gas + volver a USDC al cerrar. Y días de comisiones (al ritmo esperado, contando
+    # el tiempo fuera del rango) que hacen falta para recuperarla: el periodo de recuperación.
+    max_loss: float | None = None
+    recovery_days: float | None = None
     scenarios: dict = field(default_factory=dict)   # resultado frente a USDC (fracción) en cada precio
     vol_tvl: float | None = None           # volumen diario (mediana 30 días) / TVL
     fees_tvl: float | None = None          # comisiones diarias de todo el pool / TVL
@@ -537,6 +542,7 @@ def _analyze(pair: str, capital: float, chains) -> Report:
                                      ("stop_alto", o.stop_high)):
                     if price:
                         o.scenarios[label] = (price, position_value(price, q.low, q.high) / v0 - 1)
+                o.max_loss, o.recovery_days = max_loss(o, capital, rate)
                 if level not in LEVELS:
                     o.excluded = "sin etapa"
                 elif veto := group_veto(key, st.tvl):
@@ -550,6 +556,25 @@ def _analyze(pair: str, capital: float, chains) -> Report:
             rep.opportunities.append(o)
     rep.proposals = choose(rep.opportunities)
     return rep
+
+
+def max_loss(o: Opportunity, capital: float, rate: float) -> tuple[float | None, float | None]:
+    """(pérdida máxima en $, días de comisiones para recuperarla). La pérdida máxima es lo que se
+    pierde si salta el stop (el peor de los dos entre dos volátiles), contando el cambio de tokens al
+    abrir, el gas y el cambio de vuelta a USDC al cerrar. Los días usan las comisiones esperadas por
+    día del ciclo (con el precio dentro del rango solo la fracción histórica de los ciclos)."""
+    worst = [o.scenarios[k][1] for k in ("stop", "stop_alto") if k in o.scenarios]
+    if not worst or o.gas_usd is None or o.fees_cycle is None:
+        return None, None
+    ret = min(worst)
+    loss = -ret * capital + (o.entry_cost or 0.0) + o.gas_usd + capital * (1 + ret) * rate
+    daily = o.fees_cycle / o.days
+    return loss, (loss / daily if daily > 0 else None)
+
+
+def _recovery_key(o: Opportunity) -> tuple:
+    """Orden de preferencia: el menor periodo de recuperación; a igualdad (o sin stop), mejor neto."""
+    return (o.recovery_days is None, o.recovery_days or 0.0, -(o.net_apr or 0.0))
 
 
 def tvl_group(tvl: float | None) -> str | None:
@@ -569,8 +594,10 @@ def group_veto(cycle: str, tvl: float | None) -> str:
 
 
 def choose(opps: list[Opportunity]) -> list[Opportunity]:
-    """La mejor combinación y la mejor de otro ciclo (si no la hay, la mejor en otro pool)."""
-    ok = sorted((o for o in opps if not o.excluded), key=lambda o: o.net_apr, reverse=True)
+    """La mejor combinación y la mejor de otro ciclo (si no la hay, la mejor en otro pool). Entre las
+    que pasan los dos pasos, manda el menor periodo de recuperación de la pérdida máxima (criterio de
+    Javier, 14-nov-2026); a igualdad, el mejor neto anual."""
+    ok = sorted((o for o in opps if not o.excluded), key=_recovery_key)
     if not ok:
         return []
     first = ok[0]
@@ -611,12 +638,16 @@ def decision(o: Opportunity, capital: float) -> tuple[str, str]:
 
 def decisions(rep: Report) -> dict[str, Opportunity]:
     """{ciclo: la mejor combinación de ese ciclo según la decisión}: primero abrir, luego abrir con
-    precaución, luego vigilar; a igualdad, la de mejor neto anual."""
+    precaución, luego vigilar; a igualdad, entre las que se pueden abrir, la de menor periodo de
+    recuperación, y si no, la de mejor neto anual."""
+    def rank(o: Opportunity) -> tuple:
+        state = _RANK[decision(o, rep.capital)[0]]
+        rec = -(o.recovery_days if o.recovery_days is not None else math.inf) if state >= _RANK[PRECAUCION] else 0
+        return (state, rec, o.net_apr is not None, o.net_apr or 0)
     out: dict[str, Opportunity] = {}
     for o in rep.opportunities:
-        rank = (_RANK[decision(o, rep.capital)[0]], o.net_apr is not None, o.net_apr or 0)
         cur = out.get(o.cycle)
-        if cur is None or rank > (_RANK[decision(cur, rep.capital)[0]], cur.net_apr is not None, cur.net_apr or 0):
+        if cur is None or rank(o) > rank(cur):
             out[o.cycle] = o
     return {k: out[k] for k, _, _ in CYCLES if k in out}
 
@@ -626,7 +657,11 @@ def overall(rep: Report) -> tuple[str, Opportunity | None]:
     best = decisions(rep)
     if not best:
         return SIN_DATOS, None
-    o = max(best.values(), key=lambda o: (_RANK[decision(o, rep.capital)[0]], o.net_apr or -math.inf))
+    def rank(o: Opportunity) -> tuple:
+        state = _RANK[decision(o, rep.capital)[0]]
+        rec = -(o.recovery_days if o.recovery_days is not None else math.inf) if state >= _RANK[PRECAUCION] else 0
+        return (state, rec, o.net_apr or -math.inf)
+    o = max(best.values(), key=rank)
     return decision(o, rep.capital)[0], o
 
 
@@ -677,6 +712,28 @@ def _scen_txt(rep: Report, o: Opportunity, key: str) -> str:
     return f"{price / o.quote.pool_price - 1:+.1%} desde el precio; {ret:+.1%}, {ret * rep.capital:+,.2f} $ {unit}"
 
 
+def _days(x: float | None) -> str:
+    """'12 días', '1,4 años' o '—'."""
+    if x is None:
+        return "—"
+    if x >= 730:
+        return f"{x / 365:.1f} años".replace(".", ",")
+    return f"{x:.0f} días" if x >= 2 else f"{x:.1f} días".replace(".", ",")
+
+
+def loss_txt(rep: Report, o: Opportunity) -> str:
+    """'−412,30 $ (8,2 % del capital); las comisiones la recuperan en 23 días (3,3 ciclos semanales)'."""
+    if o.max_loss is None:
+        return ""
+    txt = f"**{-o.max_loss:+,.2f} $** ({o.max_loss / rep.capital:.1%} del capital)"
+    if o.recovery_days is None:
+        return txt + "; sin comisiones esperadas no se recupera"
+    plural = {"1d": "diarios", "1w": "semanales", "1M": "mensuales"}[o.cycle]
+    return (txt + f"; las comisiones la recuperan en **{_days(o.recovery_days)}** "
+            f"({o.recovery_days / o.days:.1f} ciclos {plural})")
+
+
+RECOVERY_WARN = 365              # aviso si recuperar la pérdida máxima pide más de un año de comisiones
 OK, WARN, FAIL = "✅", "⚠️", "❌"
 GAS_SHARE_WARN = 0.10            # aviso (no veto) si el gas se lleva más del 10 % de las comisiones del ciclo
 
@@ -756,6 +813,11 @@ def checklist(rep: Report, o: Opportunity) -> tuple[list[tuple[str, str, str, st
         bt_txt = (f"; en el histórico saltó en el {bt.stop_hit:.0%} de los ciclos" if bt.stop_hit is not None else "")
         rows.append(("Riesgo", OK, "Stop-loss definido de antemano",
                      f"cerrar si baja de {_p(o.stop_low)} {rep.quote} ({_scen_txt(rep, o, 'stop')})" + bt_txt))
+    if o.max_loss is not None:
+        slow = o.recovery_days is None or o.recovery_days > RECOVERY_WARN
+        rows.append(("Riesgo", WARN if slow else OK,
+                     "Las comisiones recuperan la pérdida máxima en menos de un año",
+                     "pérdida máxima si salta el stop " + loss_txt(rep, o).replace("**", "")))
     rows.append(("Riesgo", OK if o.pool.dex in CONSOLIDATED_DEX else WARN,
                  "Protocolo consolidado (más de 1.000 M$ de TVL y años en producción)",
                  CONSOLIDATED_DEX.get(o.pool.dex, f"{o.pool.dex}: sin historial suficiente")))
@@ -874,6 +936,10 @@ def short_answer(rep: Report) -> list[str]:
                   + (" (etapa en precaución: la pérdida ya se ha estimado solo con los ciclos de esa etapa; "
                      "vigila más el rango y el stop)." if state == PRECAUCION else "."),
                   address_line(o.pool)]
+        if o.max_loss is not None:
+            lines.append(f"- **Pérdida máxima (stop-loss en {_p(o.stop_low)} {rep.quote}"
+                         + (f" o {_p(o.stop_high)}" if o.stop_high else "") + f")**: {loss_txt(rep, o)}. "
+                         "Entre las que pasan los dos pasos se propone primero la de menor periodo de recuperación.")
     elif o.excluded == "resultado neto estimado negativo":
         lines += [f"- **Paso 2 · ¿Es rentable?** No. El pool que menos pierde es **{o.pool.label}** "
                   f"(ciclo {o.name.lower()}): neto {_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual), "
@@ -988,15 +1054,16 @@ def render(rep: Report, footer: bool = True) -> str:
         out.append(f"| {name} | {_stage_line(rep, key)} | {level} | {rtxt} | {btxt} |")
     out += ["", "## Todas las combinaciones evaluadas", "",
             "| Ciclo | Pool | Comisiones/día | Fuente | Comisiones/ciclo | IL/ciclo | Gas/reajuste | "
-            "Swap/ciclo | Neto/ciclo | Neto anual | Estado |",
-            "|---|---|---|---|---|---|---|---|---|---|---|"]
+            "Swap/ciclo | Neto/ciclo | Neto anual | Pérdida máx. | Recuperación | Estado |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for o in sorted(rep.opportunities, key=lambda o: (o.net_apr is None, -(o.net_apr or 0))):
         star = "**propuesta**" if o in rep.proposals else (o.excluded or "válida")
         il = None if o.expected_result is None else o.expected_result * rep.capital
         out.append(f"| {o.name} | {o.pool.label} | {_usd(o.quote.fee_day)} | "
                    f"{ {'real': 'real', 'volumen': 'volumen'}.get(o.quote.fee_source, '—') } | "
                    f"{_usd(o.fees_cycle)} | {_usd(il)} | {_usd(o.gas_usd)} | {_usd(o.swap_cycle)} | "
-                   f"{_usd(o.net_cycle)} | {_pct(o.net_apr)} | {star} |")
+                   f"{_usd(o.net_cycle)} | {_pct(o.net_apr)} | "
+                   f"{'—' if o.max_loss is None else _usd(-o.max_loss)} | {_days(o.recovery_days)} | {star} |")
     if rep.illiquid:
         out += ["", f"Pools descartados por poca liquidez (TVL < {MIN_TVL / 1e3:,.0f} k$ o volumen < "
                     f"{MIN_VOLUME / 1e3:,.0f} k$/día): " + "; ".join(rep.illiquid)]
@@ -1030,7 +1097,11 @@ def how_it_works() -> list[str]:
                 "deslizamiento); y Neto/ciclo = Comisiones/ciclo + IL/ciclo − Gas/reajuste − Swap/ciclo. Solo se "
                 "propone lo que sigue siendo positivo con una pérdida un "
                 f"{SAFETY_LOSS - 1:.0%} peor. Stop-loss: precio que el par no alcanzó en el {STOP_QUANTILE:.0%} de "
-                f"los ciclos pasados, como mucho un {STOP_MAX_GAP:.0%} más allá del borde del rango. Checklist: ordena esas mismas condiciones; un ❌ es un veto (la "
+                f"los ciclos pasados, como mucho un {STOP_MAX_GAP:.0%} más allá del borde del rango. Pérdida máxima: "
+                "lo que se pierde frente a USDC si salta el stop, más el cambio de tokens al abrir, el gas y "
+                "volver a USDC; periodo de recuperación: días de comisiones esperadas (contando el tiempo fuera "
+                "del rango) que la cubren. Entre las combinaciones que pasan los dos pasos se propone primero la "
+                "de menor periodo de recuperación. Checklist: ordena esas mismas condiciones; un ❌ es un veto (la "
                 "combinación no se propone) y un ⚠️ es un aviso que no la impide (los criterios de eficiencia y de "
                 "riesgo de tokens son avisos: las comisiones reales y el neto ya miden la rentabilidad). Que se cumplan todas indica "
                 "que la combinación encaja en el método, no que vaya a salir bien. "
@@ -1119,6 +1190,12 @@ def _risk_lines(rep: Report, o: Opportunity, base_tok: str, quote_tok: str) -> l
         txt += (" Uniswap no tiene stop-loss: ponlo como alerta de precio y cierra a mano, o usa una "
                 "automatización de salida (por ejemplo, Auto-Exit de Revert Finance).")
         lines.append(txt)
+    if o.max_loss is not None:
+        lines.append(f"- **Pérdida máxima y tiempo de cobertura**: si salta el stop pierdes {loss_txt(rep, o)}. "
+                     f"Incluye lo perdido frente a USDC en el stop, el cambio de tokens al abrir "
+                     f"({_usd(o.entry_cost)}), el gas ({_usd(o.gas_usd)}) y volver a USDC al cerrar. Los días "
+                     f"usan las comisiones esperadas ({_usd(o.fees_cycle / o.days)}/día de media, con el precio "
+                     f"dentro el {o.backtest.inside:.0%} de los ciclos).")
     return lines
 
 
@@ -1168,6 +1245,7 @@ def to_json(rep: Report) -> dict:
                 "enlace_dex": o.pool.app_url or None, "enlace_geckoterminal": o.pool.url,
                 "gas_reajuste": o.gas_usd, "swap_ciclo": o.swap_cycle, "importe_a_cambiar": o.entry_swapped,
                 "coste_entrada": o.entry_cost, "stop_bajo": o.stop_low, "stop_alto": o.stop_high,
+                "perdida_maxima": o.max_loss, "dias_recuperacion": o.recovery_days,
                 "escenarios": {k: {"precio": p, "resultado": r} for k, (p, r) in o.scenarios.items()},
                 "historico_stop_salta": o.backtest.stop_hit, "historico_resultado_con_stop": o.backtest.mean_with_stop,
                 "volumen_tvl": o.vol_tvl, "comisiones_tvl_dia": o.fees_tvl, "neto_ciclo": o.net_cycle,
