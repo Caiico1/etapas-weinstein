@@ -7,7 +7,7 @@ import pandas as pd
 from .config import SOURCES, TimeframeConfig
 
 COLUMNS = ["open", "high", "low", "close", "volume"]
-_APPROX_MS = {"1d": 86_400_000, "1w": 7 * 86_400_000, "1M": 31 * 86_400_000}
+_APPROX_MS = {"6h": 21_600_000, "1d": 86_400_000, "1w": 7 * 86_400_000, "1M": 31 * 86_400_000}
 _RESAMPLE_RULE = {"1w": "W-MON", "1M": "MS"}
 
 

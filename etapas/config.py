@@ -42,6 +42,11 @@ TIMEFRAMES: dict[str, TimeframeConfig] = {
                           range_lookback=48, period_name="este mes"),
 }
 
+# 6 horas: solo para Power4 (MetaPro lo muestra; Weinstein no está calibrado en este marco).
+# pivot_window = 3: con él coincide con MetaPro en 5 de 6 monedas (17-nov-2026).
+TF_6H = TimeframeConfig("6h", "6H", ma=20, ma_alt=None, slope_window=5, pivot_window=3,
+                        prior_window=30, history=300, period_name="estas 6 h")
+
 # Orden de presentación: contexto → tendencia principal → momento de entrada
 ORDER = ["1M", "1w", "1d"]
 

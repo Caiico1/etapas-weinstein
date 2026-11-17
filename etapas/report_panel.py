@@ -112,6 +112,19 @@ def _matrix_cell(r: TimeframeResult, changed: bool) -> str:
             f'<span class="msub">confianza {html.escape(r.confidence_label)}</span>{prov}</td>')
 
 
+def _p4_6h_cell(a: AssetResult) -> str:
+    """Celda del 6H: solo Power4 (Weinstein no se calcula en este marco)."""
+    if not a.power4_6h:
+        return '<td style="background:#f4f4f5" class="muted">—</td>'
+    st, why = a.power4_6h
+    if not st:
+        return f'<td title="{html.escape(why)}"><span class="mlabel">Rango</span></td>'
+    return (f'<td style="background:{STAGE_TINTS[st]}" title="{html.escape(why)}">'
+            f'<span class="dot" style="background:{STAGE_COLORS[st]}"></span>'
+            f'<span class="mlabel">E{st} {power4.NAMES[st]}</span>'
+            f'<span class="msub">solo Power4</span></td>')
+
+
 def cycle_decisions(rep) -> dict:
     """{marco: (Opportunity, estado, motivo)} con la decisión en dos pasos de oportunidad.decision
     para la mejor combinación de cada ciclo. Vacío sin análisis."""
@@ -176,7 +189,7 @@ def matrix_html(assets: list[AssetResult], changes: list[dict]) -> str:
     for a in assets:
         if a.error:
             rows.append(f'<tr data-f=""><td class="msym">{html.escape(a.title)}</td>'
-                        f'<td colspan="{len(ORDER) + 1}" class="err">{html.escape(a.error)}</td></tr>')
+                        f'<td colspan="{len(ORDER) + 2}" class="err">{html.escape(a.error)}</td></tr>')
             continue
         tfs = a.timeframes
         tags = " ".join(f"e{tfs[k].stage}" for k in ORDER if tfs[k].status == "ok")
@@ -188,8 +201,8 @@ def matrix_html(assets: list[AssetResult], changes: list[dict]) -> str:
         cells = "".join(_matrix_cell(tfs[k], (a.key, k) in changed) for k in ORDER)
         rows.append(f'<tr data-f="{tags}"><td class="msym"><a href="etapas_{a.file_stem}.html">'
                     f'{html.escape(a.symbol)}</a><span class="msub">{fmt(a.last_price)}{kind}</span></td>'
-                    f'{cells}{_pool_mini(a.liquidity, a.pool_report, a.kind)}</tr>')
-    heads = "".join(f"<th>{TIMEFRAMES[k].label}</th>" for k in ORDER)
+                    f'{cells}{_p4_6h_cell(a)}{_pool_mini(a.liquidity, a.pool_report, a.kind)}</tr>')
+    heads = "".join(f"<th>{TIMEFRAMES[k].label}</th>" for k in ORDER) + "<th>6H (Power4)</th>"
     filters = "".join(
         f'<button data-f="e{s}"><span class="dot" style="background:{STAGE_COLORS[s]}"></span>'
         f'Etapa {s}</button>' for s in STAGE_COLORS)

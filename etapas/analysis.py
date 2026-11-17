@@ -7,7 +7,7 @@ import pandas as pd
 
 from . import power4
 from .classifier import STAGE_NAMES, classify, levels
-from .config import ORDER, RANGE_QUANTILE, RANGE_QUANTILE_TYPICAL, TIMEFRAMES, TimeframeConfig
+from .config import ORDER, RANGE_QUANTILE, RANGE_QUANTILE_TYPICAL, TF_6H, TIMEFRAMES, TimeframeConfig
 from .data import (Candles, DataError, canonical_pair, fetch_candles, fetch_ondo_token,
                    fetch_pair_candles, fetch_stock_candles)
 from .indicators import expected_range
@@ -100,6 +100,7 @@ class AssetResult:
     token: dict | None = None          # token de Ondo de la acción, si cotiza
     liquidity: object = None           # liquidez.LiquidityResult (criptomonedas y pares)
     pool_report: object = None         # oportunidad.Report: neto real de cada ciclo (rentable o no)
+    power4_6h: tuple | None = None     # (etapa, motivo) Power4 en velas de 6 h (solo criptomonedas)
 
     @property
     def key(self) -> str:
@@ -135,6 +136,8 @@ class AssetResult:
         return {"simbolo": self.symbol, "tipo": self.kind, "error": self.error or None,
                 "token_ondo": _jsonable(self.token) if self.token else None,
                 "marcos": {k: v.to_dict() for k, v in self.timeframes.items()},
+                "power4_6h": ({"etapa": self.power4_6h[0], "motivo": self.power4_6h[1]}
+                              if self.power4_6h else None),
                 "liquidez": self.liquidity.to_dict() if self.liquidity is not None else None}
 
 
@@ -198,7 +201,8 @@ def analyze_candles(candles: Candles, cfg: TimeframeConfig, provisional: bool = 
     res.source = candles.source
     res.history, res.candles = hist, df
     res.last_price = _f(candles.current["close"]) if candles.current is not None else res.price
-    res.power4, res.power4_reason = power4.latest(df, cfg.pivot_window)
+    res.power4, res.power4_reason = power4.latest(
+        df, cfg.pivot_window, candles.current if cfg.key in power4.LIVE else None)
     if res.status == "ok":
         low, high = expected_range(df, hist["atr"], RANGE_QUANTILE, cfg.range_lookback)
         res.est_low, res.est_high, res.est_period = _f(low), _f(high), cfg.period_name
@@ -209,6 +213,22 @@ def analyze_candles(candles: Candles, cfg: TimeframeConfig, provisional: bool = 
         res.provisional = snapshot(classify(cur, cfg, ma_len), cfg, ma_len)
         res.provisional.label = f"{cfg.label} (PROVISIONAL)"
     return res
+
+
+def _power4_month_to_date(results: dict) -> None:
+    """Power4 mensual como MetaPro: el mes en curso cuenta hasta el último cierre diario (su «Cierre
+    Mensual» es el cierre de ayer), no hasta el precio de este momento."""
+    m, d = results.get("1M"), results.get("1d")
+    if m is None or d is None or m.status != "ok" or d.candles is None or m.candles is None or not len(d.candles):
+        return
+    month = m.candles.index[-1] + pd.DateOffset(months=1)   # apertura del mes en curso
+    days = d.candles[d.candles.index >= month]
+    if days.empty:
+        cur = None
+    else:
+        cur = pd.Series({"open": days["open"].iloc[0], "high": days["high"].max(), "low": days["low"].min(),
+                         "close": days["close"].iloc[-1], "volume": days["volume"].sum()}, name=month)
+    m.power4, m.power4_reason = power4.latest(m.candles, TIMEFRAMES["1M"].pivot_window, cur)
 
 
 def analyze_symbol(symbol: str, provisional: bool = True,
@@ -233,8 +253,16 @@ def analyze_symbol(symbol: str, provisional: bool = True,
             errors.append(str(e))
             continue
         results[key] = analyze_candles(candles, cfg, provisional)
+    _power4_month_to_date(results)
     error = errors[0] if len(errors) == len(ORDER) else ""
     asset = AssetResult(ticker, results, error, kind)
+    if kind == "cripto" and not error:
+        try:
+            c6 = fetch(ticker, TF_6H)
+            stage, why = power4.latest(c6.df, TF_6H.pivot_window)
+            asset.power4_6h = (stage, why) if stage is not None else None
+        except Exception:  # el 6H es un complemento: si falla, el informe sigue sin él
+            pass
     if kind == "accion" and not error:
         asset.token = fetch_ondo_token(ticker)
         if asset.token and asset.last_price:

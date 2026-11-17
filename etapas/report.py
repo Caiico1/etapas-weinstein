@@ -82,7 +82,15 @@ def power4_text(r: TimeframeResult) -> str:
 
 POWER4_NOTE = ("Power4: la etapa con las reglas de MetaPro (SMA20 y SMA40, último máximo o mínimo "
                "relevante, 3 cierres al otro lado de la SMA20), para comparar. Usa medias más cortas "
-               "que Weinstein y cambia antes.")
+               "que Weinstein y cambia antes. Como MetaPro, en el mensual cuenta la vela en curso, y "
+               "añade el marco de 6 h, que Weinstein no calcula.")
+
+
+def power4_6h_text(asset: AssetResult) -> str | None:
+    if not asset.power4_6h:
+        return None
+    st, why = asset.power4_6h
+    return f"{st} · {power4.NAMES[st]}. {why}"
 
 
 def table_row(r: TimeframeResult) -> list[str]:
@@ -260,6 +268,8 @@ def render_text(asset: AssetResult) -> str:
     out.append(POWER4_NOTE)
     out.extend(f"  {r.label}: {power4_text(r)}. {r.power4_reason}" for k in ORDER
                if (r := asset.timeframes[k]).power4 is not None)
+    if t6 := power4_6h_text(asset):
+        out.append(f"  6H: {t6}")
     out.extend(f"⚠ {r.label}: {d}" for r, d in divergences(asset))
     zone = key_zone(asset)
     if zone:
@@ -467,6 +477,8 @@ def write_html(asset: AssetResult, out_dir: Path, index_link: bool = False,
     p4 = "".join(f"<li><b>{html.escape(r.label)}</b>: {html.escape(power4_text(r))}. "
                  f"{html.escape(r.power4_reason)}</li>" for k in ORDER
                  if (r := asset.timeframes[k]).power4 is not None)
+    if t6 := power4_6h_text(asset):
+        p4 += f"<li><b>6H</b>: {html.escape(t6)}</li>"
     summary = html.escape(alignment_summary(asset)).replace("\n", "<br>")
     back = ('<p><a href="index.html">← Todos los activos</a> · '
             '<a href="guia.html">Guía: qué significa cada dato</a></p>') if index_link else ""
