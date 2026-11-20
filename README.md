@@ -311,6 +311,18 @@ eso la habilidad a menudo responde
 «mejor esperar», y cuando propone algo es porque el volumen del pool compensa con margen.
 Tests: `tests/test_oportunidad.py` (sin red) y `tests/test_pools_red.py` (con `ETAPAS_TEST_RED=1`).
 
+### Timing con la media de 20 («Barrio Sésamo»)
+
+Regla de la Píldora 3 de *La Semana del Trading Rentable*: las aperturas se hacen en el entorno de la
+media de 20 y los cierres lejos de ella; si el precio está lejos, mantenerse al margen. En un pool
+abrir y reajustar son aperturas. `etapas/sesamo.py` mide la distancia del precio a la SMA20 del marco
+de cada ciclo en ATR(14): cerca < 1, a media distancia 1-2, **lejos ≥ 2 ATR**. Si una combinación es
+rentable pero su ciclo está lejos, la decisión pasa a **vigilar** («mantenerse al margen»); el
+seguimiento añade la lectura de cierre (lejos = zona de cierre). Calibrado con
+`python tools/estudio_sma20.py` (nov-2026, ~10.000 aperturas del método en BTC, ETH, ETH/BTC, SOL y
+LINK): hasta 2 ATR el rango rinde igual; desde 2 ATR el precio pasa menos tiempo dentro (semanal
+84-87 % → 71 %, 38 % desde 3 ATR) y la pérdida frente a mantener crece (semanal −1,1 % → −3,2 %).
+
 ### Seguimiento de una posición abierta
 
 ```bash

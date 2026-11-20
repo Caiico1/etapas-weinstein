@@ -44,6 +44,20 @@ muestra). Si tú calcularas o redondearas algo por tu cuenta, el usuario perder�
      «precaución»: en el histórico fue la más floja para un rango, y su pérdida frente a mantener ya
      se estima solo con los ciclos pasados en esa etapa. Ninguna etapa impide abrir por sí sola: no
      digas que la etapa 4 (bajista) veta un pool, porque se midió y no rinde peor.
+   - **Paso 1 · ¿Es buen momento? (timing con la media de 20, «Barrio Sésamo»)** Copia la línea
+     «Paso 1 · ¿Es buen momento…?» (campo `paso1_timing` con `--json`): por cada ciclo, la distancia del
+     precio a la **SMA20** de su marco (diaria, semanal, mensual) en ATR y en %, con la zona **cerca**
+     (< 1 ATR), **a media distancia** (1-2 ATR) o **lejos** (≥ 2 ATR). Regla de la fuente (Píldora 3 de
+     La Semana del Trading Rentable): las **aperturas** se hacen en el entorno de la media de 20 y los
+     **cierres** lejos de ella; si está lejos, mantenerse al margen aunque otros lo recomienden. En un
+     pool, abrir y **reajustar** son aperturas: si el ciclo está «lejos», la decisión es **vigilar
+     (MANTENERSE AL MARGEN / NO ENTRAR)** aunque sea rentable, y la salida dice a qué SMA20 esperar.
+     Dilo con la fila «Paso 1 · Timing» del checklist (OPERACIÓN VÁLIDA o MANTENERSE AL MARGEN) y una
+     frase llana: «abre cuando el precio esté junto a la media de 20; así no persigues al mercado».
+     Está validado en el histórico del método (abrir a ≥ 2 ATR dejó el precio menos tiempo dentro y más
+     pérdida frente a mantener; hasta 2 ATR no hubo diferencia), así que no lo presentes como opinión.
+     La fuente no habla de stop-loss, apalancamiento ni otras medias: el stop y el resto salen del
+     método de la herramienta, no de Barrio Sésamo; no los atribuyas a la fuente.
    - **Paso 2 · ¿Es rentable?** Copia la línea «Paso 2» con su neto, o el motivo si no lo es.
    - **Decisión** (campo `decision`): **abrir** (apta y rentable), **abrir con precaución** (rentable
      con la etapa en precaución) o **vigilar** (no rentable). En «vigilar», di cuántas veces las
@@ -135,6 +149,12 @@ analiza el par en la red de la posición; tarda 1-3 minutos, `--sin-hoy` lo omit
 (dentro y hoy se volvería a abrir), **mantener sin reajustar si sale** (dentro, pero hoy no se
 abriría), **reajustar** al rango que da (fuera y hoy sí se abriría) o **no reajustar** (fuera y hoy no
 se abriría: cerrar o quedarse con el token según su stop-loss). Cópiala tal cual con su paso 1.
+
+La lectura incluye además el **cierre según la media de 20** (campo `cierre` en `today`): si el
+precio está **lejos** de la SMA20 es zona de cierre («los cierres se realizan lejos de la media de
+20»): si piensa cerrar o recoger, es buen momento; si está en su entorno, no es zona de cierre y
+cerrar solo tendría sentido por el stop-loss o por los dos pasos. Y **reajustar** es una apertura:
+la herramienta solo dice «reajustar» si el precio está en el entorno de la media de 20.
 
 Después viene **añadir o quitar liquidez** en la misma posición, sin cambiar el rango (campo
 `liquidez` con `--json`). Cópialo tal cual:

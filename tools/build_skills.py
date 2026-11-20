@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC, SKILLS, OUT = ROOT / "etapas", ROOT / "tools" / "skills", ROOT / "out"
 SKILL_NAMES = ("pool-liquidez", "pool-cribado", "defi-rendimiento")
 MODULES = ("__init__", "aave", "analysis", "classifier", "config", "cribado", "data", "descubrir", "estrategia", "indicators",
-           "keccak", "liquidez", "oportunidad", "pools", "power4", "seguimiento", "tema")
+           "keccak", "liquidez", "oportunidad", "pools", "power4", "seguimiento", "sesamo", "tema")
 # Importaciones internas del motor: «from .x import ...» y «from . import x, y»
 LOCAL_IMPORT = re.compile(r"^\s*from \.(\w*) import \(?([\w, ]+)", re.M)
 

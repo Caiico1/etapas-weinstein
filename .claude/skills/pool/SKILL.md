@@ -30,6 +30,20 @@ ejecutarlo y presentar su resultado **sin cambiar ni inventar ningún número**.
      «precaución». Solo la etapa 2 (alcista) en semanal o mensual da «precaución» (en el histórico
      fue la más floja para un rango, y su pérdida ya se estima solo con los ciclos de esa etapa).
      Ninguna etapa veta por sí sola: no digas que la etapa 4 impide abrir, porque se midió y no rinde peor.
+   - **Paso 1 · ¿Es buen momento? (timing con la media de 20, «Barrio Sésamo»)** Copia la línea
+     «Paso 1 · ¿Es buen momento…?» (campo `paso1_timing` con `--json`): por cada ciclo, la distancia del
+     precio a la **SMA20** de su marco (diaria, semanal, mensual) en ATR y en %, con la zona **cerca**
+     (< 1 ATR), **a media distancia** (1-2 ATR) o **lejos** (≥ 2 ATR). Regla de la fuente (Píldora 3 de
+     La Semana del Trading Rentable): las **aperturas** se hacen en el entorno de la media de 20 y los
+     **cierres** lejos de ella; si está lejos, mantenerse al margen aunque otros lo recomienden. En un
+     pool, abrir y **reajustar** son aperturas: si el ciclo está «lejos», la decisión es **vigilar
+     (MANTENERSE AL MARGEN / NO ENTRAR)** aunque sea rentable, y la salida dice a qué SMA20 esperar.
+     Dilo con la fila «Paso 1 · Timing» del checklist (OPERACIÓN VÁLIDA o MANTENERSE AL MARGEN) y una
+     frase llana: «abre cuando el precio esté junto a la media de 20; así no persigues al mercado».
+     Está validado en el histórico del método (abrir a ≥ 2 ATR dejó el precio menos tiempo dentro y más
+     pérdida frente a mantener; hasta 2 ATR no hubo diferencia), así que no lo presentes como opinión.
+     La fuente no habla de stop-loss, apalancamiento ni otras medias: el stop y el resto salen del
+     método de la herramienta, no de Barrio Sésamo; no los atribuyas a la fuente.
    - **Paso 2 · ¿Es rentable?** La línea «Paso 2» con su neto o el motivo.
    - **Decisión**: abrir, abrir con precaución o vigilar (con cuántas veces las comisiones de hoy
      harían falta, y la opción de dejarlo en `oportunidades.txt` para que la rutina avise).
@@ -89,6 +103,12 @@ tabla: variación de la posición sin comisiones, comisiones, resultado frente a
 frente a mantener los dos tokens, con la lectura final («las comisiones compensan» o no). Las
 comisiones ya cobradas antes solo cuentan si las indica con `--cobradas`. Solo lee datos públicos
 de la blockchain: no necesita su cartera. Las posiciones de Orca (Solana) no se pueden seguir aún.
+
+La lectura incluye además el **cierre según la media de 20** (campo `cierre` en `today`): si el
+precio está **lejos** de la SMA20 es zona de cierre («los cierres se realizan lejos de la media de
+20»): si piensa cerrar o recoger, es buen momento; si está en su entorno, no es zona de cierre y
+cerrar solo tendría sentido por el stop-loss o por los dos pasos. Y **reajustar** es una apertura:
+la herramienta solo dice «reajustar» si el precio está en el entorno de la media de 20.
 
 ## Probar una estrategia contra el histórico (backtest)
 

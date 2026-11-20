@@ -37,6 +37,7 @@ import pandas as pd
 
 from . import aave as A
 from . import pools as P
+from . import sesamo as S
 from .analysis import AssetResult, TimeframeResult, analyze_symbol
 from .config import DISCLAIMER, LP_QUANTILE, TIMEFRAMES
 from .data import STABLES, DataError, canonical_pair, fetch_candles, fetch_pair_candles
@@ -163,6 +164,8 @@ class Opportunity:
     # el tiempo fuera del rango) que hacen falta para recuperarla: el periodo de recuperación.
     max_loss: float | None = None
     recovery_days: float | None = None
+    # Rentable, pero el precio está lejos de la SMA20 del marco del ciclo: esperar (sesamo.py)
+    timing_wait: bool = False
     scenarios: dict = field(default_factory=dict)   # resultado frente a USDC (fracción) en cada precio
     vol_tvl: float | None = None           # volumen diario (mediana 30 días) / TVL
     fees_tvl: float | None = None          # comisiones diarias de todo el pool / TVL
@@ -199,6 +202,7 @@ class Report:
     backtests: dict = field(default_factory=dict)
     stops: dict = field(default_factory=dict)
     permanence: dict = field(default_factory=dict)
+    timing: dict = field(default_factory=dict)      # {ciclo: sesamo.Timing} distancia a la SMA20
     opportunities: list[Opportunity] = field(default_factory=list)
     proposals: list[Opportunity] = field(default_factory=list)
     illiquid: list[str] = field(default_factory=list)
@@ -424,6 +428,7 @@ def _analyze(pair: str, capital: float, chains) -> Report:
                                     f"{MIN_BACKTEST}); la pérdida se estima con todo el histórico")
         rep.stops[key] = stop_range(r, rep.price)
         rep.permanence[key] = permanence(r, daily, BACKTEST[key])
+        rep.timing[key] = S.of_result(r, rep.price)
 
     found, warn = discover(base, quote)
     rep.warnings += warn
@@ -553,6 +558,9 @@ def _analyze(pair: str, capital: float, chains) -> Report:
                     o.excluded = "rentable solo por poco: negativo con el margen de seguridad"
                 elif o.aave_apy is not None and o.net_safe_apr <= o.aave_apy:
                     o.excluded = "rinde menos que depositar los mismos tokens en Aave"
+                elif (tm := rep.timing.get(key)) is not None and not tm.can_open:
+                    # Timing (Barrio Sésamo): abrir solo en el entorno de la media de 20
+                    o.excluded, o.timing_wait = S.wait_reason(tm), True
             rep.opportunities.append(o)
     rep.proposals = choose(rep.opportunities)
     return rep
@@ -624,7 +632,9 @@ def fee_gap(o: Opportunity, capital: float) -> float | None:
 
 
 def decision(o: Opportunity, capital: float) -> tuple[str, str]:
-    """Paso 1 (etapa) y paso 2 (rentabilidad) de una combinación: (estado, motivo)."""
+    """Paso 1 (etapa y timing) y paso 2 (rentabilidad) de una combinación: (estado, motivo)."""
+    if o.timing_wait:
+        return VIGILAR, o.excluded
     if not o.excluded:
         return (ABRIR, "etapa apta y rentable") if o.level == "apta" else (
             PRECAUCION, "rentable aun estimando la pérdida solo con los ciclos de esta etapa")
@@ -673,6 +683,15 @@ def step1_line(rep: Report) -> str:
         r = rep.asset.timeframes.get(key) if rep.asset else None
         stage = f" (etapa {r.stage})" if r is not None and r.status == "ok" and level == "precaución" else ""
         parts.append(f"{name.lower()} {level}{stage}")
+    return " · ".join(parts)
+
+
+def timing_line(rep: Report) -> str:
+    """'diario cerca de la SMA20 (...) · semanal lejos ... → esperar'."""
+    parts = []
+    for key, name, _ in CYCLES:
+        t = rep.timing.get(key)
+        parts.append(f"{name.lower()} {S.describe(t)}" + ("" if t is None or t.can_open else " → no abrir"))
     return " · ".join(parts)
 
 
@@ -749,6 +768,10 @@ def checklist(rep: Report, o: Opportunity) -> tuple[list[tuple[str, str, str, st
             if bt.stage is not None and bt.inside is not None else "")
     rows.append(("Paso 1 · Etapa", {"apta": OK, "precaución": WARN}.get(o.level, FAIL),
                  "La etapa permite abrir", f"{_stage_line(rep, o.cycle)} → {o.level}{cond}"))
+    tm = rep.timing.get(o.cycle)
+    rows.append(("Paso 1 · Timing", WARN if tm is None else OK if tm.can_open else FAIL,
+                 f"Apertura en el entorno de la media de 20 ({S.SOURCE})",
+                 f"{S.describe(tm)} → {S.open_verdict(tm)}"))
     rows.append(("Veto", OK if q.tvl is not None and q.tvl >= MIN_TVL else WARN,
                  "El pool tiene liquidez suficiente",
                  ("TVL desconocido" if q.tvl is None else f"TVL {q.tvl / 1e6:,.1f} M$")
@@ -871,6 +894,10 @@ def headline(rep: Report) -> Opportunity | None:
     if rep.proposals:
         return rep.proposals[0]
     ok = [o for o in rep.opportunities if o.net_apr is not None]
+    # Rentables a la espera de que el precio vuelva a la media de 20 antes que las no rentables
+    wait = [o for o in ok if o.timing_wait]
+    if wait:
+        return min(wait, key=_recovery_key)
     return max(ok, key=lambda o: o.net_apr) if ok else None
 
 
@@ -925,7 +952,9 @@ def short_answer(rep: Report) -> list[str]:
                 "datos); ver los descartes más abajo.", ""]
     il = o.expected_result * rep.capital
     state, why = decision(o, rep.capital)
-    lines = [f"- **Paso 1 · ¿La etapa permite abrir?** {step1_line(rep)}."]
+    lines = [f"- **Paso 1 · ¿La etapa permite abrir?** {step1_line(rep)}.",
+             f"- **Paso 1 · ¿Es buen momento (media de 20, {S.SOURCE})?** {timing_line(rep)}. Se abre o "
+             f"reajusta solo en el entorno de la media; desde {S.FAR_ATR:.0f} ATR, mantenerse al margen."]
     if rep.proposals:
         lines += [f"- **Paso 2 · ¿Es rentable?** Sí: **{o.pool.label}, ciclo {o.name.lower()}**. Neto estimado "
                   f"{_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual), positivo incluso con la pérdida "
@@ -940,6 +969,13 @@ def short_answer(rep: Report) -> list[str]:
             lines.append(f"- **Pérdida máxima (stop-loss en {_p(o.stop_low)} {rep.quote}"
                          + (f" o {_p(o.stop_high)}" if o.stop_high else "") + f")**: {loss_txt(rep, o)}. "
                          "Entre las que pasan los dos pasos se propone primero la de menor periodo de recuperación.")
+    elif o.timing_wait:
+        lines += [f"- **Paso 2 · ¿Es rentable?** Sí: **{o.pool.label}, ciclo {o.name.lower()}**, neto estimado "
+                  f"{_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual).",
+                  f"- **Decisión: {state.upper()} (MANTENERSE AL MARGEN / NO ENTRAR)**: {why}. Vuelve a "
+                  f"consultar al cerrar la vela del ciclo o cuando el precio se acerque a la SMA20 "
+                  f"({_p(rep.timing[o.cycle].sma)}).",
+                  address_line(o.pool)]
     elif o.excluded == "resultado neto estimado negativo":
         lines += [f"- **Paso 2 · ¿Es rentable?** No. El pool que menos pierde es **{o.pool.label}** "
                   f"(ciclo {o.name.lower()}): neto {_usd(o.net_cycle)} por ciclo ({_pct(o.net_apr)} anual), "
@@ -1082,7 +1118,11 @@ def how_it_works() -> list[str]:
                 "sola: en «precaución» la pérdida frente a mantener se estima solo con los ciclos pasados "
                 "abiertos en esa etapa. Paso 2, la rentabilidad: neto positivo con el margen de seguridad y "
                 "por encima de Aave. Decisión: abrir (apta y rentable), abrir con precaución (rentable en "
-                "precaución) o vigilar (no rentable; se indica cuántas veces las comisiones de hoy harían falta).",
+                "precaución) o vigilar (no rentable; se indica cuántas veces las comisiones de hoy harían falta). "
+                "Timing (media de 20, Barrio Sésamo): se abre o reajusta solo con el precio en el entorno de la "
+                f"SMA20 del marco del ciclo; desde {S.FAR_ATR:.0f} ATR de distancia, aunque sea rentable, la "
+                "decisión es vigilar hasta que vuelva (en el histórico, abrir tan lejos dejó el precio menos "
+                "tiempo dentro del rango y más pérdida frente a mantener).",
             "", "**Cómo se calcula.** Rango: hasta dónde llegó el precio del par en el 90 % de los ciclos "
                 "pasados, por cada lado, con la volatilidad actual. «Dentro» y «resultado medio» salen de "
                 "aplicar el mismo método a los ciclos pasados sin ver el futuro; el resultado se reescala "
@@ -1264,6 +1304,10 @@ def to_json(rep: Report) -> dict:
             "error": rep.error or None,
             "decision": state, "paso1_etapa": {name: rep.stages[key][0] for key, name, _ in CYCLES
                                                if key in rep.stages},
+            "paso1_timing": {name: None if (t := rep.timing.get(key)) is None else
+                             {"zona": t.zone, "sma20": t.sma, "distancia_atr": t.dist_atr,
+                              "distancia_pct": t.dist_pct, "apertura": S.open_verdict(t),
+                              "cierre": S.close_note(t)} for key, name, _ in CYCLES},
             "decision_por_ciclo": {o.name: {"decision": d[0], "motivo": d[1], "pool": o.pool.label}
                                    for o in decisions(rep).values() for d in [decision(o, rep.capital)]},
             "respuesta_corta": None if rep.error else "\n".join(short_answer(rep)[2:]).replace("**", "").strip(),

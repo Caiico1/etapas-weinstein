@@ -20,6 +20,7 @@ import sys
 from dataclasses import dataclass, field
 
 from . import pools as P
+from . import sesamo as S
 from .config import DISCLAIMER
 from .data import STABLES, DataError, canonical_pair
 from .descubrir import NATIVE, TOKENS
@@ -302,7 +303,9 @@ def add_today(t: Tracking, analyze=None) -> None:
                "rango": [o.quote.low, o.quote.high] if o and o.quote and o.quote.low else None,
                "mismo_pool": bool(o and t.pool and o.pool.address.lower() == t.pool.lower()),
                "gas": o.gas_usd if o else None,
-               "stop": [o.stop_low, o.stop_high] if o else None}
+               "stop": [o.stop_low, o.stop_high] if o else None,
+               "timing": op.timing_line(rep),
+               "cierre": S.close_note(rep.timing.get(o.cycle if o else "1d"))}
     # Lo que se espera de quedarse en el pool de la posición un ciclo más, sin tocarla (por dólar):
     # comisiones + resultado frente a mantener, sin gas ni cambio de tokens. La mejor combinación de ese pool.
     mine = [x for x in rep.opportunities if t.pool and x.pool.address.lower() == t.pool.lower()
@@ -392,7 +395,10 @@ def action(t: Tracking) -> str:
     else:
         txt = (f"**No reajustar**: está fuera y hoy /pool no la abriría ({d['decision']}: {d['motivo']}). "
                f"Cierra o quédate con el token que tienes, según tu stop-loss y tu exposición.")
-    return f"{txt} Paso 1 (etapa): {d['paso1']}."
+    txt += f" Paso 1 (etapa): {d['paso1']}."
+    if d.get("cierre"):
+        txt += f" Cierre (media de 20, {S.SOURCE}): {d['cierre']}."
+    return txt
 
 
 def verdict(t: Tracking) -> str:

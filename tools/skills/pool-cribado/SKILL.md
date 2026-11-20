@@ -39,7 +39,7 @@ que cada cifra sale de datos verificados.
 3. **Presenta el resultado** en español:
    - Toda la decisión sigue **dos pasos**, los mismos de pool-liquidez: **paso 1**, si la etapa del
      ciclo permite abrir («apta» o «precaución»: solo la etapa 2 en semanal o mensual pide
-     precaución; ninguna etapa veta por sí sola) y **paso 2**, si es rentable. Resultado: **abrir**,
+     precaución; ninguna etapa veta por sí sola; y el **timing con la media de 20** («Barrio Sésamo»: abrir solo en el entorno de la SMA20 del ciclo; desde 2 ATR, vigilar aunque sea rentable)) y **paso 2**, si es rentable. Resultado: **abrir**,
      **abrir con precaución** o **vigilar** (con cuántas veces las comisiones de hoy harían falta).
    - **Duplas recomendadas**: la tabla tal cual (par, ciclo, decisión, pool, rango, neto, neto anual, con
      margen, pérdida máxima si salta el stop, días de recuperación, Vol/TVL, comisiones/TVL y número de
