@@ -48,3 +48,37 @@ def test_rentable_pero_lejos_es_vigilar():
     o = SimpleNamespace(timing_wait=True, excluded=S.wait_reason(t))
     state, why = op.decision(o, 5000)
     assert state == op.VIGILAR and "media de 20" in why
+
+
+def test_ciclo_de_la_nota():
+    assert S.parse_cycle("semanal · v3 Base WETH/USDC") == ("1w", True)
+    assert S.parse_cycle("Mensual · Arbitrum") == ("1M", True)
+    assert S.parse_cycle("v4 Ethereum n.º 475067") == ("1w", False)
+
+
+def test_salida_lejos_y_mantener_cerca():
+    df = _candles([100.0] * 40)
+    accion, why = S.exit_signal(S.timing(df, price=110.0))
+    assert accion == S.SALIR and "zona de cierre" in why and "no reabras" in why
+    accion, why = S.exit_signal(S.timing(df, price=110.0), outside=True)
+    assert accion == S.SALIR and "no reajustes" in why
+    t = S.timing(df, price=101.0)
+    accion, why = S.exit_signal(t)
+    lo, hi = S.exit_band(t)
+    assert accion == S.MANTENER and lo < 100 < hi and "La salida salta" in why
+    assert S.exit_signal(None)[0] == S.SIN_DATOS
+
+
+def test_rutina_avisa_al_saltar_la_salida():
+    from types import SimpleNamespace
+    from etapas import rutina as R
+    df = _candles([100.0] * 40)
+    tf = SimpleNamespace(status="ok", candles=df, history=None)
+    asset = SimpleNamespace(timeframes={"1w": tf})
+    item = {"estado": "dentro", "precio": 110.0, "texto": "dentro", "aviso": False,
+            "simbolo": "ETH", "min": 90.0, "max": 120.0}
+    R.exit_hint(item, "semanal · Base", asset)
+    assert item["salida"] == "SALIR" and item["aviso"] and "ciclo semanal" in item["texto"]
+    alerts = R.position_alerts({"ETH 90-120": "dentro"}, [item])
+    assert len(alerts) == 1 and "SALIR" in alerts[0]["texto"]
+    assert R.position_alerts({"ETH 90-120": R.alert_state(item)}, [item]) == []

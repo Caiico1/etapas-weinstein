@@ -225,6 +225,7 @@ def position_status(path: Path, assets: list[AssetResult], log: list[str]) -> li
     prices = {a.symbol: a.last_price for a in assets if not a.error and a.kind in ("cripto", "par")}
     reports = {a.symbol: a.pool_report for a in assets
                if not a.error and a.kind in ("cripto", "par") and a.pool_report}
+    by_symbol = {a.symbol: a for a in assets if not a.error and a.kind in ("cripto", "par")}
     out = []
     for pos in positions:
         if pos.symbol not in prices:
@@ -233,8 +234,29 @@ def position_status(path: Path, assets: list[AssetResult], log: list[str]) -> li
         rep = reports.get(pos.symbol)
         if rep is not None and item["estado"] != "sin precio":
             item["texto"] += today_hint(rep, item["estado"].startswith("fuera"))
+        if pos.symbol in by_symbol and item["estado"] != "sin precio":
+            exit_hint(item, pos.label, by_symbol[pos.symbol])
         out.append(item)
     return out
+
+
+def exit_hint(item: dict, label: str, asset: AssetResult) -> None:
+    """Regla de cierre de Barrio Sésamo (sesamo.exit_signal) con la SMA20 del ciclo de la posición,
+    que se lee de su nota (diario, semanal o mensual; si no lo dice, semanal)."""
+    from . import sesamo as S
+    cycle, given = S.parse_cycle(label)
+    t = S.of_result(asset.timeframes.get(cycle), item["precio"])
+    action, why = S.exit_signal(t, item["estado"].startswith("fuera"))
+    item["salida"] = action
+    item["texto"] += (f". Salida (media de 20, ciclo {S.CYCLE_NAMES[cycle]}"
+                      + ("" if given else ", el que se usa si la nota no lo dice") + f"): {action}, {why}")
+    if action == S.SALIR:
+        item["aviso"] = True
+
+
+def alert_state(i: dict) -> str:
+    """Estado que se recuerda para avisar: el del rango y, si toca, la señal de salida."""
+    return i["estado"] + (" · salir (media de 20)" if i.get("salida") == "SALIR" else "")
 
 
 def today_hint(rep, outside: bool) -> str:
@@ -256,7 +278,7 @@ def position_alerts(prev: dict, items: list[dict]) -> list[dict]:
     for i in items:
         key = f"{i['simbolo']} {i['min']:g}-{i['max']:g}"
         old = prev.get(key)
-        if i["estado"] != old and (i["aviso"] or old is not None):
+        if alert_state(i) != old and (i["aviso"] or old is not None):
             alerts.append({"simbolo": i["simbolo"], "marco": "posición", "tipo": "posicion",
                            "texto": f"rango {i['min']:g}–{i['max']:g}: {i['texto']}"})
     return alerts
@@ -316,7 +338,7 @@ def run(watchlist: Path, out_dir: Path, now: pd.Timestamp | None = None,
     notifies = os.environ.get("ETAPAS_AVISA", "1") != "0"
     prev_pos = load_previous_positions(hist_dir, today)
     changes += position_alerts(prev_pos, positions)
-    pos_state = {f"{i['simbolo']} {i['min']:g}-{i['max']:g}": i["estado"] for i in positions}
+    pos_state = {f"{i['simbolo']} {i['min']:g}-{i['max']:g}": alert_state(i) for i in positions}
     if not notifies:
         pos_state = {k: prev_pos[k] for k in pos_state if k in prev_pos}
 

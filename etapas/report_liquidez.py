@@ -272,6 +272,15 @@ def index_cell(liq: LiquidityResult | None) -> str:
     return f'<td>{"<br>".join(parts)}{extra}</td>'
 
 
+def _exit_chip(i: dict) -> str:
+    """Señal de salida con la media de 20 (Barrio Sésamo), si se calculó."""
+    a = i.get("salida")
+    if not a or a == "sin datos":
+        return ""
+    color = "#dc2626" if a == "SALIR" else "#16a34a"
+    return f'<b style="color:{color}">salida: {html.escape(a)}</b><br>'
+
+
 def positions_html(items: list[dict]) -> str:
     if not items:
         return ""
@@ -279,7 +288,7 @@ def positions_html(items: list[dict]) -> str:
         f'<tr><td><b>{html.escape(i["simbolo"])}</b> {html.escape(i["nota"])}</td>'
         f'<td>{fmt(i["min"])} – {fmt(i["max"])}</td><td>{fmt(i["precio"])}</td>'
         f'<td><b style="color:{POS_COLORS.get(i["estado"], "#666")}">{html.escape(i["estado"])}</b><br>'
-        f'<span class="small">{html.escape(i["texto"])}</span></td></tr>' for i in items)
+        f'{_exit_chip(i)}<span class="small">{html.escape(i["texto"])}</span></td></tr>' for i in items)
     return ('<h2>Mis posiciones de liquidez (posiciones.txt)</h2><div class="wrap"><table><thead><tr>'
             '<th>Posición</th><th>Rango</th><th>Precio actual</th><th>Estado</th></tr></thead>'
             f'<tbody>{rows}</tbody></table></div>')

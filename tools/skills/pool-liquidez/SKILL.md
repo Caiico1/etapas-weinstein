@@ -134,9 +134,19 @@ Arbitrum), pídele el **número de la posición** o la **URL** de app.uniswap.or
 (`.../positions/v4/base/12345`), el **capital** que puso y el **precio** del par al abrirla, y ejecuta:
 
 ```bash
-python <carpeta de esta habilidad>/scripts/seguimiento.py https://app.uniswap.org/positions/v4/base/12345 --capital 4500 --precio 2650
-python <carpeta de esta habilidad>/scripts/seguimiento.py base 12345 --v4 --capital 4500 --precio 2650 --cobradas 12.5
+python <carpeta de esta habilidad>/scripts/seguimiento.py https://app.uniswap.org/positions/v4/base/12345 --capital 4500 --precio 2650 --ciclo semanal
+python <carpeta de esta habilidad>/scripts/seguimiento.py base 12345 --v4 --capital 4500 --precio 2650 --cobradas 12.5 --ciclo mensual
 ```
+
+**Cuándo salir (media de 20, «Barrio Sésamo»).** Pregunta (o deduce de lo que diga) el **ciclo** de la
+posición y pásalo con `--ciclo semanal|mensual|diario` (si no lo sabe, semanal). La salida incluye la
+línea «Salida (media de 20, ciclo …)» (campo `today.salida` con `--json`): **SALIR** si el precio está a
+2 ATR o más de la SMA20 de ese ciclo («los cierres se realizan lejos de la media de 20»): cerrar o
+recoger, y no reabrir ni reajustar hasta que vuelva a su entorno; o **MANTENER**, con los **precios a
+los que saltaría la salida**. Da siempre esos dos precios: son el nivel que hay que vigilar. Si es
+SALIR, la acción del día empieza por «Salir» aunque los dos pasos digan otra cosa: manda la regla de
+cierre. Las posiciones de `posiciones.txt` (rutina) llevan la misma señal, con el ciclo leído de la
+nota, y avisan por correo el día que salta.
 
 Presenta el estado (dentro o fuera del rango), los tokens y su valor, las comisiones pendientes y la
 tabla: variación de la posición sin comisiones, comisiones, resultado frente a dejarlo en USDC y
@@ -150,11 +160,8 @@ analiza el par en la red de la posición; tarda 1-3 minutos, `--sin-hoy` lo omit
 abriría), **reajustar** al rango que da (fuera y hoy sí se abriría) o **no reajustar** (fuera y hoy no
 se abriría: cerrar o quedarse con el token según su stop-loss). Cópiala tal cual con su paso 1.
 
-La lectura incluye además el **cierre según la media de 20** (campo `cierre` en `today`): si el
-precio está **lejos** de la SMA20 es zona de cierre («los cierres se realizan lejos de la media de
-20»): si piensa cerrar o recoger, es buen momento; si está en su entorno, no es zona de cierre y
-cerrar solo tendría sentido por el stop-loss o por los dos pasos. Y **reajustar** es una apertura:
-la herramienta solo dice «reajustar» si el precio está en el entorno de la media de 20.
+Recuerda que **reajustar** es una apertura: solo se reajusta con el precio en el entorno de la media
+de 20 (ver «Cuándo salir»).
 
 Después viene **añadir o quitar liquidez** en la misma posición, sin cambiar el rango (campo
 `liquidez` con `--json`). Cópialo tal cual:

@@ -94,9 +94,19 @@ Arbitrum), pídele el **número de la posición** o la **URL** de app.uniswap.or
 (`.../positions/v4/base/12345`), el **capital** que puso y el **precio** del par al abrirla, y ejecuta:
 
 ```bash
-python -m etapas.seguimiento https://app.uniswap.org/positions/v4/base/12345 --capital 4500 --precio 2650
-python -m etapas.seguimiento base 12345 --v4 --capital 4500 --precio 2650 --cobradas 12.5
+python -m etapas.seguimiento https://app.uniswap.org/positions/v4/base/12345 --capital 4500 --precio 2650 --ciclo semanal
+python -m etapas.seguimiento base 12345 --v4 --capital 4500 --precio 2650 --cobradas 12.5 --ciclo mensual
 ```
+
+**Cuándo salir (media de 20, «Barrio Sésamo»).** Pregunta (o deduce de lo que diga) el **ciclo** de la
+posición y pásalo con `--ciclo semanal|mensual|diario` (si no lo sabe, semanal). La salida incluye la
+línea «Salida (media de 20, ciclo …)» (campo `today.salida` con `--json`): **SALIR** si el precio está a
+2 ATR o más de la SMA20 de ese ciclo («los cierres se realizan lejos de la media de 20»): cerrar o
+recoger, y no reabrir ni reajustar hasta que vuelva a su entorno; o **MANTENER**, con los **precios a
+los que saltaría la salida**. Da siempre esos dos precios: son el nivel que hay que vigilar. Si es
+SALIR, la acción del día empieza por «Salir» aunque los dos pasos digan otra cosa: manda la regla de
+cierre. Las posiciones de `posiciones.txt` (rutina) llevan la misma señal, con el ciclo leído de la
+nota, y avisan por correo el día que salta.
 
 Presenta el estado (dentro o fuera del rango), los tokens y su valor, las comisiones pendientes y la
 tabla: variación de la posición sin comisiones, comisiones, resultado frente a dejarlo en USDC y
@@ -104,11 +114,8 @@ frente a mantener los dos tokens, con la lectura final («las comisiones compens
 comisiones ya cobradas antes solo cuentan si las indica con `--cobradas`. Solo lee datos públicos
 de la blockchain: no necesita su cartera. Las posiciones de Orca (Solana) no se pueden seguir aún.
 
-La lectura incluye además el **cierre según la media de 20** (campo `cierre` en `today`): si el
-precio está **lejos** de la SMA20 es zona de cierre («los cierres se realizan lejos de la media de
-20»): si piensa cerrar o recoger, es buen momento; si está en su entorno, no es zona de cierre y
-cerrar solo tendría sentido por el stop-loss o por los dos pasos. Y **reajustar** es una apertura:
-la herramienta solo dice «reajustar» si el precio está en el entorno de la media de 20.
+Recuerda que **reajustar** es una apertura: solo se reajusta con el precio en el entorno de la media
+de 20 (ver «Cuándo salir»).
 
 ## Probar una estrategia contra el histórico (backtest)
 

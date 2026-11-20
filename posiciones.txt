@@ -5,6 +5,8 @@
 # El símbolo tiene que estar en watchlist.txt. La rutina avisa por correo cuando una posición
 # se acerca a un borde (menos del 10 % de su anchura), sale del rango o vuelve a entrar.
 # Para dejar de vigilar una, bórrala o ponle # delante.
+# Pon en la nota el ciclo (diario, semanal o mensual): la señal de salida con la media de 20
+# (Barrio Sésamo: SALIR a 2 ATR o más de la SMA20 de ese ciclo) lo usa; si no lo dice, semanal.
 #
 # Ejemplos:
 # ETH  2410  2930   semanal · Base WETH/USDC 0,05 %

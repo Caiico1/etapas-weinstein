@@ -124,3 +124,52 @@ def close_note(t: Timing | None) -> str:
                 f"según {SOURCE}; si piensas cerrar o recoger, es buen momento")
     return (f"precio en el entorno de la media de 20 ({_num(abs(t.dist_atr))} ATR {t.side}): no es zona de "
             f"cierre ({SOURCE}); si vas a cerrar, que sea por el stop-loss o por los dos pasos, no por timing")
+
+
+# ---------------------------------------------------------------- salida de una posición abierta
+
+SALIR, MANTENER, SIN_DATOS = "SALIR", "MANTENER", "sin datos"
+CYCLE_WORDS = {"diario": "1d", "diaria": "1d", "semanal": "1w", "mensual": "1M"}
+CYCLE_NAMES = {"1d": "diario", "1w": "semanal", "1M": "mensual"}
+DEFAULT_CYCLE = "1w"
+
+
+def parse_cycle(text: str) -> tuple[str, bool]:
+    """Ciclo de una posición a partir de su nota ('semanal · v3 Base...'): (clave, indicado)."""
+    low = (text or "").lower()
+    for word, key in CYCLE_WORDS.items():
+        if word in low:
+            return key, True
+    return DEFAULT_CYCLE, False
+
+
+def exit_band(t: Timing) -> tuple[float, float]:
+    """Precios a los que, con la SMA20 y el ATR de hoy, el precio estaría «lejos» (salida)."""
+    return t.sma - FAR_ATR * t.atr, t.sma + FAR_ATR * t.atr
+
+
+def _price(x: float) -> str:
+    return _es(f"{x:,.2f}" if x >= 1000 else f"{x:.6g}")
+
+
+def exit_signal(t: Timing | None, outside: bool = False) -> tuple[str, str]:
+    """Regla de cierre de Barrio Sésamo para una posición abierta: (acción, explicación).
+    Lejos de la media de 20 (≥ FAR_ATR) es zona de cierre: SALIR; y reabrir o reajustar es una
+    apertura, que espera a que el precio vuelva a su entorno. Si no, MANTENER, con los precios a los
+    que saltaría la salida (la banda se mueve con la SMA20 y el ATR de cada vela)."""
+    if t is None:
+        return SIN_DATOS, "sin velas suficientes para la media de 20"
+    lo, hi = exit_band(t)
+    if t.close_zone:
+        txt = (f"precio lejos de la media de 20 ({_num(abs(t.dist_atr))} ATR {t.side}, {_pct(t.dist_pct)}): "
+               f"zona de cierre ({SOURCE}). Cierra la posición o recoge")
+        txt += (", y no reajustes hasta que el precio vuelva al entorno de la media "
+                f"({_price(lo)} – {_price(hi)})" if outside else
+                f"; no reabras hasta que vuelva al entorno de la media ({_price(lo)} – {_price(hi)})")
+        return SALIR, txt
+    where = "a media distancia de" if t.zone == "intermedio" else "en el entorno de"
+    txt = (f"precio {where} la media de 20 ({_num(abs(t.dist_atr))} ATR {t.side}): aún no es zona de cierre. "
+           f"La salida salta por debajo de {_price(lo)} o por encima de {_price(hi)}")
+    if outside:
+        txt += "; el timing permite reajustar (si /pool lo da por rentable)"
+    return MANTENER, txt

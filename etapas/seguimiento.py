@@ -208,7 +208,8 @@ class Tracking:
     notes: list[str] = field(default_factory=list)
     error: str = ""
     # Hoy, en dos pasos (oportunidad.decision) para el par en la misma red: ¿se volvería a abrir?
-    today: dict | None = None              # {"decision", "paso1", "motivo", "ciclo", "pool"}
+    today: dict | None = None              # {"decision", "paso1", "motivo", "ciclo", "pool", "salida"}
+    cycle: str | None = None               # ciclo de la posición (1d, 1w, 1M) para la regla de salida
 
 
 def track(chain: str, token_id: int, version: str = "v3", capital: float | None = None,
@@ -304,8 +305,12 @@ def add_today(t: Tracking, analyze=None) -> None:
                "mismo_pool": bool(o and t.pool and o.pool.address.lower() == t.pool.lower()),
                "gas": o.gas_usd if o else None,
                "stop": [o.stop_low, o.stop_high] if o else None,
-               "timing": op.timing_line(rep),
-               "cierre": S.close_note(rep.timing.get(o.cycle if o else "1d"))}
+               "timing": op.timing_line(rep)}
+    # Regla de cierre (Barrio Sésamo) con la SMA20 del ciclo de la posición
+    cycle = t.cycle or S.DEFAULT_CYCLE
+    accion, why = S.exit_signal(rep.timing.get(cycle), t.status.startswith("fuera"))
+    t.today["salida"] = {"accion": accion, "motivo": why, "ciclo": S.CYCLE_NAMES[cycle],
+                         "ciclo_indicado": t.cycle is not None}
     # Lo que se espera de quedarse en el pool de la posición un ciclo más, sin tocarla (por dólar):
     # comisiones + resultado frente a mantener, sin gas ni cambio de tokens. La mejor combinación de ese pool.
     mine = [x for x in rep.opportunities if t.pool and x.pool.address.lower() == t.pool.lower()
@@ -396,9 +401,20 @@ def action(t: Tracking) -> str:
         txt = (f"**No reajustar**: está fuera y hoy /pool no la abriría ({d['decision']}: {d['motivo']}). "
                f"Cierra o quédate con el token que tienes, según tu stop-loss y tu exposición.")
     txt += f" Paso 1 (etapa): {d['paso1']}."
-    if d.get("cierre"):
-        txt += f" Cierre (media de 20, {S.SOURCE}): {d['cierre']}."
+    x = d.get("salida")
+    if x and x["accion"] == S.SALIR:
+        # La regla de cierre manda: lejos de la media de 20 se sale, aunque hoy se abriría en otro ciclo
+        txt = f"**Salir**: {x['motivo']}. (Los dos pasos de /pool, para referencia: {txt})"
     return txt
+
+
+def exit_text(t: Tracking) -> str:
+    """'**Salida (media de 20, ciclo semanal): SALIR**: ...' o ''."""
+    x = (t.today or {}).get("salida")
+    if not x:
+        return ""
+    note = "" if x["ciclo_indicado"] else "; usa --ciclo si no es semanal"
+    return f"**Salida (media de 20, ciclo {x['ciclo']}{note}): {x['accion']}**. {x['motivo'][0].upper()}{x['motivo'][1:]}."
 
 
 def verdict(t: Tracking) -> str:
@@ -417,6 +433,8 @@ def verdict(t: Tracking) -> str:
         move = liquidity_move(t)
         if move:
             txt += "\n\n**Añadir o quitar liquidez** (misma posición y rango): " + move
+        if ex := exit_text(t):
+            txt += "\n\n" + ex
     elif t.status.startswith("fuera"):
         txt += (" La posición está fuera de rango y no cobra comisiones: vuelve a ejecutar /pool para "
                 "decidir si reajustar o cerrar (y revisa tu stop-loss).")
@@ -495,6 +513,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--capital", type=float, help="Dólares que pusiste al abrirla")
     ap.add_argument("--precio", type=float, help="Precio del par al abrirla (en la moneda de cotización)")
     ap.add_argument("--cobradas", type=float, default=0.0, help="Comisiones ya cobradas antes, en dólares")
+    ap.add_argument("--ciclo", choices=["diario", "semanal", "mensual"],
+                    help="Ciclo de la posición, para la regla de salida con la media de 20 (por defecto, semanal)")
     ap.add_argument("--json", action="store_true", help="Salida en JSON")
     ap.add_argument("--sin-hoy", action="store_true",
                     help="No hace el análisis de hoy del par (los dos pasos de /pool), que tarda 1-3 minutos")
@@ -505,6 +525,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"**No se puede seguir la posición**: {e}")
         return 1
     t = track(chain, token_id, version, args.capital, args.precio, args.cobradas)
+    t.cycle = S.CYCLE_WORDS.get(args.ciclo) if args.ciclo else None
     if not args.sin_hoy:
         add_today(t)
     print(json.dumps(to_json(t), ensure_ascii=False, indent=2, default=float) if args.json else render(t))

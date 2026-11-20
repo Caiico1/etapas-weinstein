@@ -157,6 +157,14 @@ correo **cuando cambia de estado**, no cada día: el estado se guarda en el hist
 `posiciones.txt` en GitHub relanza la rutina. **Ojo**: si el repositorio es público, las
 posiciones también lo son, tanto en el archivo como en la web publicada.
 
+**Cuándo salir (media de 20, Barrio Sésamo).** Cada posición lleva además una señal de salida con la
+SMA20 del marco de **su ciclo**, que se lee de la nota (`diario`, `semanal` o `mensual`; si no lo dice,
+semanal): **SALIR** si el precio está a 2 ATR o más de la media (zona de cierre; y no reabrir ni
+reajustar hasta que vuelva a su entorno) y **MANTENER** si no, con los precios a los que saltaría la
+salida (se mueven con cada vela). La rutina avisa por correo el día que aparece el SALIR
+(`rutina.exit_hint`, `sesamo.exit_signal`). En `python -m etapas.seguimiento`, el ciclo va con
+`--ciclo semanal|mensual|diario`.
+
 ### Aviso de factor de salud en Aave (`aave_aviso`)
 
 `python -m etapas.aave_aviso` lee tus posiciones de Aave V3 (como `aave_posicion`) y, si el factor de
