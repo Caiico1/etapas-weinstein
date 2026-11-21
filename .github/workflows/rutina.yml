@@ -54,9 +54,6 @@ jobs:
     # Las programadas de respaldo no hacen nada si hoy ya se ejecutó
     if: github.event_name != 'schedule' || needs.comprobar.outputs.hecho != '1'
     runs-on: ubuntu-24.04
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -114,5 +111,16 @@ jobs:
         with:
           path: out
 
+  # El despliegue va en su propio job (esquema oficial de GitHub Pages). Dentro del mismo job,
+  # deploy-pages buscaba el artefacto medio segundo después de subirlo y a veces GitHub aún no lo
+  # listaba ("No artifacts named github-pages", 20 y 21-nov-2026). Separado, hay margen y, si falla,
+  # se relanza solo este job ("Re-run failed jobs") sin repetir la rutina.
+  desplegar:
+    needs: rutina
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - id: deploy
         uses: actions/deploy-pages@v5
