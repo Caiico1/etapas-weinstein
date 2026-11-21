@@ -119,16 +119,16 @@
     }
   },
   "posiciones": {
-    "ETH 1808.09-2347.28": "fuera por abajo · salir (media de 20)",
+    "ETH 1808.09-2347.28": "cerca del mínimo",
     "ETH/BTC 0.0265741-0.0297531": "dentro",
     "ETH/BTC 0.0241901-0.0313411": "dentro"
   },
   "oportunidades": {
-    "BTC/USDC 3000 todas": "Mensual · Orca · Solana · cbBTC/USDC 0,04 %",
+    "BTC/USDC 3000 todas": "",
     "ETH/USDC 3000 todas": "",
     "ETH/USDT 3000 todas": "",
     "BTC/ETH 3000 todas": "Semanal · Uniswap v3 · Ethereum · WBTC/WETH 0,05 %",
     "ETH/USD 5000 todas": "",
-    "BTC/USD 5000 todas": "Mensual · Orca · Solana · cbBTC/USDC 0,04 %"
+    "BTC/USD 5000 todas": "Mensual · Uniswap v4 · Ethereum · WBTC/USDT 0,05 %"
   }
 }
