@@ -1,0 +1,116 @@
+"""Simulador de escenarios: paridad con el backtest y propiedades del bootstrap (series sintéticas, sin BD)."""
+import math
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from etapas import backtest as B
+from etapas import simulador as S
+
+POOL = {"chain": "base", "version": "v3", "pool_id": "0x0", "label": "WETH/USDC 0.05%", "fee": 500,
+        "tick_spacing": 10, "symbol0": "WETH", "symbol1": "USDC", "dec0": 18, "dec1": 6}
+POOL_INV = {**POOL, "label": "USDC/WETH 0.05%", "symbol0": "USDC", "symbol1": "WETH", "dec0": 6, "dec1": 18}
+
+
+def _walk(n=24 * 40, seed=1, vol=0.004, g0=2e-14, g1=4e-5, pool=POOL, eth0=2000.0):
+    rng = np.random.default_rng(seed)
+    eth = eth0 * np.exp(np.cumsum(rng.normal(0, vol, n)))
+    if pool["symbol0"] == "WETH":
+        p_raw = eth / 10 ** (pool["dec0"] - pool["dec1"])
+        usd0, usd1 = eth, np.ones(n)
+    else:
+        p_raw = (1 / eth) / 10 ** (pool["dec0"] - pool["dec1"])
+        usd0, usd1 = np.ones(n), eth
+    sp = np.sqrt(p_raw)
+    ticks = np.floor(np.log(p_raw) / math.log(B.TICK_BASE)).astype(int)
+    k = rng.uniform(0.2, 3, n)
+    return pd.DataFrame({"hour": pd.date_range("2026-01-01", periods=n, freq="h"), "tick": ticks,
+                         "sqrt_price": sp, "usd0": usd0, "usd1": usd1,
+                         "fee_growth0": g0 * k, "fee_growth1": g1 * k, "lp_fee": 500,
+                         "liquidity": 1e30})
+
+
+@pytest.mark.parametrize("pool", [POOL, POOL_INV])
+@pytest.mark.parametrize("width", [0.03, 0.10, 0.30])
+def test_paridad_con_el_backtest_al_reproducir_el_historico(pool, width):
+    df = _walk(pool=pool)
+    h = S.features(pool, df)
+    h.liquidity_now = 0                                     # sin dilución, como el backtest
+    tl, tu = B._range(int(df["tick"].iloc[0]), width, pool["tick_spacing"])
+    rg = S.Rango("x", tl, tu, 0, 0)
+    b = B.simulate(pool, df, B.Strategy(width, gas_usd=0.05), capital=5000)
+    s = S.simulate(h, S.replay(h), rg, capital=5000, gas=0.05)
+    assert float(s.final[0]) == pytest.approx(b.final, rel=1e-9)
+    assert float(s.fees[0]) == pytest.approx(b.fees_usd, rel=1e-9)
+    assert float(s.in_range[0]) == pytest.approx(b.in_range_pct, rel=1e-12)
+    assert s.costs == pytest.approx(b.costs_usd, rel=1e-12)
+    assert float(s.final[0] / s.hodl[0] - 1) == pytest.approx(b.vs_hodl_pct, rel=1e-9, abs=1e-12)
+
+
+def test_bootstrap_neutral_no_tiene_tendencia_y_es_reproducible():
+    df = _walk(n=24 * 200, vol=0.003)
+    df["sqrt_price"] *= np.exp(np.arange(len(df)) * 1e-4)    # tendencia fuerte al alza en el histórico
+    h = S.features(POOL, df)
+    p = S.bootstrap(h, 24 * 30, 3000, tendencia="neutral", seed=3)
+    drift = np.log(p.sp[:, -1] / p.sp[:, 0]).mean()
+    assert abs(drift) < 0.01
+    p_hist = S.bootstrap(h, 24 * 30, 3000, tendencia="historica", seed=3)
+    assert np.log(p_hist.sp[:, -1] / p_hist.sp[:, 0]).mean() > 0.02
+    p2 = S.bootstrap(h, 24 * 30, 3000, tendencia="neutral", seed=3)
+    assert np.array_equal(p.sp, p2.sp)
+    assert p.sp.shape == (3000, 24 * 30 + 1) and p.q0.shape == (3000, 24 * 30)
+
+
+def test_comisiones_invariantes_a_la_escala_del_precio():
+    """Las mismas horas reutilizadas con el precio a la mitad cobran la misma proporción del capital."""
+    df = _walk()
+    half = df.copy()
+    half["sqrt_price"] /= math.sqrt(2)
+    half["usd0"] /= 2
+    half["fee_growth0"] *= math.sqrt(2)                      # g0·√P invariante
+    half["fee_growth1"] /= math.sqrt(2)                      # g1/√P invariante
+    a, b = S.features(POOL, df), S.features(POOL, half)
+    a.liquidity_now = b.liquidity_now = 0
+    ra, rb = S.parse_rango("±10%", a), S.parse_rango("±10%", b)
+    sa = S.simulate(a, S.replay(a), ra, gas=0)
+    sb = S.simulate(b, S.replay(b), rb, gas=0)
+    assert float(sb.fees[0]) == pytest.approx(float(sa.fees[0]), rel=0.02)
+
+
+def test_dilucion_reduce_las_comisiones_en_proporcion():
+    df = _walk()
+    h = S.features(POOL, df)
+    rg = S.parse_rango("±10%", h)
+    h.liquidity_now = 0
+    full = float(S.simulate(h, S.replay(h), rg, gas=0).fees[0])
+    s0 = S.simulate(h, S.replay(h), rg, gas=0)
+    L = (5000 - s0.costs) / (sum(x * y for x, y in zip(B._amounts(h.df["sqrt_price"].iloc[0], B._sqrt(rg.tl), B._sqrt(rg.tu)),
+                                                         (h.df["sqrt_price"].iloc[0] ** 2, 1))) / 1e6)
+    h.liquidity_now = L                                      # tanta liquidez como la nuestra → la mitad
+    assert float(S.simulate(h, S.replay(h), rg, gas=0).fees[0]) == pytest.approx(full / 2, rel=1e-6)
+
+
+@pytest.mark.parametrize("pool", [POOL, POOL_INV])
+def test_parse_rango_en_precio_y_en_porcentaje(pool):
+    h = S.features(pool, _walk(pool=pool))
+    p = S.price_now(h)
+    assert 1000 < p < 5000                                   # ETH en USDC, sea cual sea el orden de tokens
+    r = S.parse_rango("±10%", h)
+    assert r.lo <= p * 0.9 <= r.lo * 1.002 and r.hi >= p * 1.1 >= r.hi / 1.002
+    r2 = S.parse_rango(f"{p * 0.8:.2f}-{p * 1.2:.2f}", h)
+    assert r2.lo == pytest.approx(p * 0.8, rel=2e-3) and r2.hi == pytest.approx(p * 1.2, rel=2e-3)
+    r3 = S.parse_rango("-5/+15", h)
+    assert r3.lo == pytest.approx(p * 0.95, rel=2e-3) and r3.hi == pytest.approx(p * 1.15, rel=2e-3)
+    assert r.tl % 10 == 0 and r.tu % 10 == 0
+    with pytest.raises(ValueError):
+        S.parse_rango("1900-1900", h)
+
+
+def test_side_en_precio_mostrado_para_pool_invertido():
+    df = _walk(pool=POOL_INV, n=200, vol=0.0)
+    h = S.features(POOL_INV, df)
+    p = S.price_now(h)
+    rg = S.parse_rango(f"{p * 0.5:.2f}-{p * 0.8:.2f}", h)    # rango por debajo del precio actual
+    s = S.simulate(h, S.replay(h), rg, gas=0)
+    assert int(s.side[0]) == 1                               # el precio acaba POR ENCIMA del rango

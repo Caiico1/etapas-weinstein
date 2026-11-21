@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulador de pools</title>
+<style>
+:root{
+  --bg:#0b0d1a; --panel:#141731; --panel2:#1a1e3d; --line:#272c55; --text:#e9ebf8; --muted:#8d93b8;
+  --green:#4fd18b; --red:#f06a6a; --accent:#f2c230; --band:#6f7cff;
+  --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1280px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:20px;margin:0 0 2px}
+.sub{color:var(--muted);font-size:13px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px 20px;margin-top:16px}
+.panel h2{font-size:17px;margin:0 0 12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+label{display:flex;flex-direction:column;gap:4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+input,select,button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+input:focus,select:focus{outline:2px solid var(--band);outline-offset:0}
+button{cursor:pointer}
+button.primary{background:var(--band);border-color:var(--band);color:#fff;font-weight:600}
+.pool-sel{grid-column:span 2}
+@media (max-width:560px){.pool-sel{grid-column:span 1}}
+.ranges{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+.rg{display:flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:4px 6px 4px 10px}
+.rg i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.rg input{width:150px;border:0;background:transparent;padding:4px;font-family:var(--mono)}
+.rg button{border:0;background:transparent;color:var(--muted);padding:2px 6px}
+.chip{font-size:12px;padding:5px 10px;border-radius:999px}
+.hint{color:var(--muted);font-size:12px;margin-top:8px}
+.facts{display:flex;flex-wrap:wrap;gap:6px 22px;color:var(--muted);font-size:13px;margin-top:10px}
+.facts b{color:var(--text);font-weight:600}
+svg{display:block;width:100%;height:auto}
+.axis{fill:var(--muted);font:12px var(--mono)}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:14px;min-width:1050px}
+th{font:600 11px system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:right;padding:10px 10px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+td{text-align:right;padding:14px 10px;border-bottom:1px solid #1f2349;white-space:nowrap}
+tr:hover td{background:#191d3c}
+.pos{color:var(--green)} .neg{color:var(--red)} .mut{color:var(--muted);font-size:12px}
+.name{font-family:system-ui,sans-serif}
+.err{color:var(--red);margin-top:10px}
+.busy{opacity:.55;transition:opacity .2s}
+details{color:var(--muted);font-size:13px}
+details p{margin:6px 0}
+summary{cursor:pointer;color:var(--text)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Simulador de pools</h1>
+  <div class="sub">Escenarios a futuro de una posición de rango fijo, construidos con el histórico real del pool (MetaProDB). Análisis de escenarios, no una predicción.</div>
+
+  <section class="panel">
+    <div class="grid">
+      <label class="pool-sel">Pool<select id="pool"></select></label>
+      <label>Capital ($)<input id="capital" type="number" value="5000" min="100" step="100"></label>
+      <label>Plazo (días)<select id="dias"><option>7</option><option>14</option><option selected>30</option><option>60</option><option>90</option><option>180</option></select></label>
+      <label>Histórico (días)<select id="historia"><option>90</option><option>180</option><option selected>365</option><option>730</option></select></label>
+      <label>Escenarios<select id="escenarios"><option>300</option><option selected>1000</option><option>3000</option></select></label>
+      <label>Tendencia<select id="tendencia"><option value="neutral" selected>Neutral</option><option value="historica">La del histórico</option></select></label>
+      <label>Ajuste comisiones<input id="ajuste" type="number" value="0.85" min="0.1" max="2" step="0.05"></label>
+    </div>
+    <div class="ranges" id="ranges"></div>
+    <div class="ranges">
+      <button class="chip" data-add="±2%">+ ±2 %</button>
+      <button class="chip" data-add="±5%">+ ±5 %</button>
+      <button class="chip" data-add="±10%">+ ±10 %</button>
+      <button class="chip" data-add="±20%">+ ±20 %</button>
+      <button class="chip" data-add="-5/+15">+ −5/+15 %</button>
+      <button class="chip" id="addPrice">+ rango en precio</button>
+      <button class="primary" id="run">Simular</button>
+    </div>
+    <div class="hint">Cada rango admite precios (<code>1500-1900</code>), un % simétrico (<code>±10%</code>) o asimétrico (<code>-5/+15</code>). Se ajusta hacia fuera a los ticks del pool.</div>
+    <div class="facts" id="facts"></div>
+    <div class="err" id="err"></div>
+  </section>
+
+  <section class="panel" id="outFan" hidden>
+    <h2>Precio en los escenarios y tus rangos</h2>
+    <svg id="fan" viewBox="0 0 1200 340"></svg>
+    <div class="hint">Banda clara: 90 % de los escenarios (P5–P95); oscura: la mitad central (P25–P75); línea: mediana.</div>
+  </section>
+
+  <section class="panel" id="outBars" hidden>
+    <h2>Resultado frente a lo invertido ($)</h2>
+    <svg id="bars" viewBox="0 0 1200 200"></svg>
+    <div class="hint">Barra: resultado mediano. Línea: del escenario malo (P10) al bueno (P90).</div>
+  </section>
+
+  <section class="panel" id="outTable" hidden>
+    <h2>Detalle</h2>
+    <div class="tw"><table>
+      <thead><tr><th>Estrategia</th><th>Invertido</th><th>Valor final</th><th>P10 – P90</th><th>vs mantener</th><th>Comisiones</th><th>APR</th><th>Rent</th><th>En rango</th><th>P(pérdida)</th><th>Acaba ↓ · = · ↑</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table></div>
+    <div class="hint" id="ref" style="font-size:13px;margin-top:12px"></div>
+    <details style="margin-top:14px"><summary>Cómo se calcula y sus límites</summary>
+      <p>Cada escenario encadena bloques de 7 días consecutivos sacados al azar del histórico del pool: precio y comisiones van juntos, así que las semanas movidas traen su volumen. Con tendencia «neutral» se quita la subida o bajada media del histórico: el simulador no apuesta por la dirección, solo por cuánto se mueve.</p>
+      <p>La posición se abre hoy con la matemática de Uniswap v3/v4 (la misma que el backtest, comprobada contra él). Cobra liquidez × fee_growth de la cadena en las horas en rango (la mitad si entra o sale en la hora), diluida por su propia liquidez. Se descuentan el gas de abrir y la comisión del cambio inicial. Valor final = posición + comisiones; «vs mantener» = frente a guardar los mismos tokens depositados.</p>
+      <p>Calibración fuera de muestra (30 días, 488 fechas en 3 pools): con el ajuste 0,85, lo real cayó dentro del P10–P90 el 79–84 % de las veces (lo ideal es el 80 %) y las comisiones reales fueron 0,94–0,99 de las simuladas. No modela MEV/JIT ni cambios bruscos de liquidez. Con rangos muy estrechos, el reparto por horas sobrestima.</p>
+    </details>
+  </section>
+</main>
+<script>
+const COLORS=["#f2c230","#6f7cff","#4fd18b","#f06a6a","#36c5e0","#c47dff","#ff9f43","#9aa3c7"];
+const nf0=new Intl.NumberFormat("es-ES",{maximumFractionDigits:0,useGrouping:"always"});
+const $=id=>document.getElementById(id);
+let ranges=["±5%","±10%","±20%"], last=null, timer=null;
+
+const usd=(x,s)=>(s&&x>0?"+":"")+nf0.format(Math.round(x))+" $";
+const pct=(x,d=1,s=true)=>(s&&x>0?"+":"")+(x*100).toLocaleString("es-ES",{minimumFractionDigits:d,maximumFractionDigits:d})+" %";
+const price=x=>x.toLocaleString("es-ES",{maximumFractionDigits:x>=100?2:x>=1?4:8,useGrouping:"always"});
+const cls=x=>x>0?"pos":x<0?"neg":"";
+
+function drawRanges(){
+  const box=$("ranges"); box.innerHTML="";
+  ranges.forEach((r,i)=>{
+    const d=document.createElement("div"); d.className="rg";
+    d.innerHTML=`<i style="background:${COLORS[i%COLORS.length]}"></i><input value="${r}" aria-label="Rango ${i+1}"><button title="Quitar" aria-label="Quitar rango">✕</button>`;
+    d.querySelector("input").addEventListener("change",e=>{ranges[i]=e.target.value.trim();schedule();});
+    d.querySelector("button").addEventListener("click",()=>{ranges.splice(i,1);drawRanges();schedule();});
+    box.appendChild(d);
+  });
+}
+document.querySelectorAll("[data-add]").forEach(b=>b.addEventListener("click",()=>{ranges.push(b.dataset.add);drawRanges();schedule();}));
+$("addPrice").addEventListener("click",()=>{
+  const p=last?last.precio:null;
+  ranges.push(p?`${price(p*0.9).replace(/\./g,"").replace(",",".")}-${price(p*1.1).replace(/\./g,"").replace(",",".")}`:"1500-1900");
+  drawRanges(); schedule();
+});
+$("run").addEventListener("click",run);
+["pool","capital","dias","historia","escenarios","tendencia","ajuste"].forEach(id=>$(id).addEventListener("change",schedule));
+function schedule(){clearTimeout(timer);timer=setTimeout(run,350);}
+
+async function loadPools(){
+  const r=await fetch("/api/pools"); const ps=await r.json();
+  const sel=$("pool"); const byChain={};
+  ps.forEach(p=>(byChain[p.chain]??=[]).push(p));
+  for(const [c,list] of Object.entries(byChain)){
+    const g=document.createElement("optgroup"); g.label=c;
+    list.forEach(p=>{const o=document.createElement("option");o.value=p.chain+"|"+p.pool_id;
+      o.textContent=`${p.label} · ${p.version} · TVL ${p.tvl?nf0.format(p.tvl/1e6)+" M$":"?"}`;g.appendChild(o);});
+    sel.appendChild(g);
+  }
+  const pref=ps.find(p=>p.chain==="base"&&p.label==="WETH/USDC 0.05%")||ps[0];
+  if(pref) sel.value=pref.chain+"|"+pref.pool_id;
+}
+
+async function run(){
+  const [chain,pool_id]=$("pool").value.split("|");
+  if(!pool_id) return;
+  const q=new URLSearchParams({chain,pool_id,capital:$("capital").value,dias:$("dias").value,historia:$("historia").value,
+    escenarios:$("escenarios").value,tendencia:$("tendencia").value,ajuste:$("ajuste").value,rangos:JSON.stringify(ranges.filter(Boolean))});
+  document.querySelectorAll("section.panel").forEach(s=>s.classList.add("busy"));
+  $("err").textContent="";
+  try{
+    const r=await fetch("/api/simular?"+q); const d=await r.json();
+    if(!r.ok) throw new Error(d.error||r.statusText);
+    last=d; render(d);
+  }catch(e){$("err").textContent="Error: "+e.message;}
+  finally{document.querySelectorAll("section.panel").forEach(s=>s.classList.remove("busy"));}
+}
+
+function render(d){
+  $("facts").innerHTML=[
+    `${d.par} hoy <b>${price(d.precio)}</b>`, `datos hasta <b>${d.hora.slice(0,16)}</b>`,
+    `histórico desde <b>${d.historia_desde.slice(0,10)}</b>`, `<b>${d.escenarios}</b> escenarios a <b>${d.dias}</b> días`,
+    `gas <b>${d.gas} $</b>`, `cambio inicial <b>${pct(d.comision_cambio,2,false)}</b>`,
+    d.aviso?`<span class="neg">${d.aviso}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
+  ["outFan","outBars","outTable"].forEach(id=>$(id).hidden=false);
+  fan(d); bars(d); table(d);
+}
+
+function fan(d){
+  const W=1200,H=340,L=80,R=20,T=14,B=34,a=d.abanico,n=a.horas.length,hmax=a.horas[n-1]||1;
+  let lo=Math.min(...a.p5), hi=Math.max(...a.p95);
+  d.rangos.forEach(r=>{lo=Math.min(lo,r.lo);hi=Math.max(hi,r.hi);});
+  const span=hi-lo; lo=Math.max(lo-span*0.05,Math.min(...a.p5)*0.5); hi=Math.min(hi+span*0.05,Math.max(...a.p95)*1.5);
+  const x=h=>L+(W-L-R)*h/hmax, y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
+  const area=(p,q)=>a.horas.map((h,i)=>`${x(h)},${y(a[p][i])}`).join(" ")+" "+a.horas.map((h,i)=>`${x(h)},${y(a[q][i])}`).reverse().join(" ");
+  let s="";
+  for(let k=0;k<=4;k++){const v=lo+(hi-lo)*k/4;s+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#1f2349"/><text class="axis" x="${L-8}" y="${y(v)+4}" text-anchor="end">${price(v)}</text>`;}
+  d.rangos.forEach((r,i)=>{const c=COLORS[i%COLORS.length];const y1=y(Math.min(r.hi,hi)),y2=y(Math.max(r.lo,lo));
+    s+=`<rect x="${L}" width="${W-L-R}" y="${y1}" height="${Math.max(1,y2-y1)}" fill="${c}" opacity=".10"/>`+
+       `<line x1="${L}" x2="${W-R}" y1="${y(r.lo)}" y2="${y(r.lo)}" stroke="${c}" stroke-dasharray="4 4" opacity=".8"/>`+
+       `<line x1="${L}" x2="${W-R}" y1="${y(r.hi)}" y2="${y(r.hi)}" stroke="${c}" stroke-dasharray="4 4" opacity=".8"/>`;});
+  s+=`<polygon points="${area("p95","p5")}" fill="#8d93b8" opacity=".16"/><polygon points="${area("p75","p25")}" fill="#8d93b8" opacity=".28"/>`;
+  s+=`<polyline points="${a.horas.map((h,i)=>`${x(h)},${y(a.p50[i])}`).join(" ")}" fill="none" stroke="#e9ebf8" stroke-width="2"/>`;
+  const days=d.dias, step=days<=14?1:days<=60?7:30;
+  for(let k=0;k<=days;k+=step){s+=`<text class="axis" x="${x(k*24)}" y="${H-10}" text-anchor="middle">${k===0?"hoy":"+"+k+" d"}</text>`;}
+  $("fan").innerHTML=s;
+}
+
+function bars(d){
+  const rows=d.rangos, rowH=46, T=10, B=36, L=260, R=30, W=1200, H=T+B+rows.length*rowH;
+  $("bars").setAttribute("viewBox",`0 0 ${W} ${H}`);
+  const vals=rows.flatMap(r=>[r.valor_final.p10-r.invertido,r.valor_final.p90-r.invertido,0]);
+  let m=Math.max(...vals.map(Math.abs))*1.1||1;
+  const x=v=>L+(W-L-R)*(v+m)/(2*m);
+  let s="";
+  const tick=niceStep(m); for(let v=-Math.floor(m/tick)*tick; v<=m; v+=tick){
+    s+=`<line x1="${x(v)}" x2="${x(v)}" y1="${T}" y2="${H-B}" stroke="${v===0?"#3a4078":"#1a1e3d"}"/><text class="axis" x="${x(v)}" y="${H-12}" text-anchor="middle">${nf0.format(v)}</text>`;}
+  rows.forEach((r,i)=>{
+    const c=COLORS[i%COLORS.length], cy=T+i*rowH+rowH/2, med=r.valor_final.p50-r.invertido;
+    s+=`<text x="${L-14}" y="${cy-3}" text-anchor="end" fill="#e9ebf8" font-size="14">${i+1} · ${r.texto}</text>`+
+       `<text x="${L-14}" y="${cy+14}" text-anchor="end" class="axis">${price(r.lo)}–${price(r.hi)}</text>`+
+       `<line x1="${x(r.valor_final.p10-r.invertido)}" x2="${x(r.valor_final.p90-r.invertido)}" y1="${cy}" y2="${cy}" stroke="${c}" stroke-width="2" opacity=".7"/>`+
+       `<rect x="${Math.min(x(0),x(med))}" y="${cy-10}" width="${Math.max(2,Math.abs(x(med)-x(0)))}" height="20" rx="3" fill="${c}"/>`+
+       `<text x="${x(med)+(med>=0?8:-8)}" y="${cy-14}" text-anchor="${med>=0?"start":"end"}" font-size="12" fill="${med>=0?"#4fd18b":"#f06a6a"}" font-family="ui-monospace,monospace">${usd(med,true)}</text>`;
+  });
+  $("bars").innerHTML=s;
+}
+function niceStep(m){const raw=m/3,p=10**Math.floor(Math.log10(raw)),f=raw/p;return (f<1.5?1:f<3.5?2:f<7.5?5:10)*p;}
+
+function table(d){
+  const ann=365/d.dias;
+  $("tbody").innerHTML=d.rangos.map((r,i)=>{
+    const vf=r.valor_final, vm=r.vs_mantener.p50, rent=r.rent.p50, ac=r.acaba;
+    return `<tr>
+      <td class="name"><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${COLORS[i%COLORS.length]};margin-right:8px"></i>Fijo ${price(r.lo)}–${price(r.hi)} <span class="mut">${r.texto}</span>${r.fuera_hoy?' <span class="neg" title="El precio de hoy no está dentro: la posición se abre con un solo token y no cobra hasta que el precio entre">· fuera de rango hoy</span>':''}</td>
+      <td>${usd(r.invertido)}</td>
+      <td class="${cls(vf.p50-r.invertido)}">${usd(vf.p50)}</td>
+      <td class="mut">${usd(vf.p10)} – ${usd(vf.p90)}</td>
+      <td class="${cls(vm)}">${usd(vm,true)}</td>
+      <td>${usd(r.comisiones.p50)}</td>
+      <td class="pos">${pct(r.apr,1,false)}</td>
+      <td class="${cls(rent)}">${pct(rent)} <span class="mut">(${pct(r.rent_anual)} anual)</span></td>
+      <td>${Math.round(r.en_rango*100)} %</td>
+      <td class="${r.prob_perdida>0.5?"neg":""}">${Math.round(r.prob_perdida*100)} %</td>
+      <td class="mut">${Math.round(ac.debajo*100)} · ${Math.round(ac.dentro*100)} · ${Math.round(ac.encima*100)} %</td></tr>`;}).join("");
+  const s=d.sin_riesgo;
+  $("ref").innerHTML=s?`Referencia en dólares: <b>${s.nombre}</b> al ${pct(s.apy,2,false)} → <b>${usd(s.valor_final)}</b> en ${d.dias} días (${usd(s.valor_final-d.capital,true)}), sin riesgo de precio. Dato de MetaProDB, ${s.hora.slice(0,16)}.`:"";
+}
+
+drawRanges();
+loadPools().then(run).catch(e=>$("err").textContent="No se pudo leer MetaProDB: "+e.message);
+</script>
+</body>
+</html>
