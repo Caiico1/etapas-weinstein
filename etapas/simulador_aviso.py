@@ -41,11 +41,10 @@ ANOMALOS = {("ethereum", "0x8a7e585048bda875e64024118c506b14f78166dd"),     # PA
 ANCHO, ULTIMOS, MIN_TVL = 0.10, 365, 2e6
 PRINCIPAL = 30                       # el plazo que fija AJUSTE_COMISIONES
 # plazo → (comisiones mín, máx, P10–P90 mín, máx, días entre aperturas). A 90 y 180 días las aperturas
-# de un año se solapan mucho (pocas pruebas independientes): banda de P10–P90 algo más ancha. Sus
-# comisiones (None) solo se registran: ya se sabe que se sobrestiman (simulador.SESGO_PLAZO, 0,75 y
-# 0,60) y la pantalla lo avisa; se activarán cuando el nivel reciente vuelva a la media con el plazo.
+# de un año se solapan mucho (pocas pruebas independientes): bandas algo más anchas. Una banda de
+# comisiones None las deja solo registradas (sin avisar).
 BANDAS = {7: (0.85, 1.15, 0.70, 0.90, 7), 30: (0.90, 1.10, 0.70, 0.90, 7),
-          90: (None, None, 0.65, 0.92, 14), 180: (None, None, 0.65, 0.92, 14)}
+          90: (0.80, 1.20, 0.65, 0.92, 14), 180: (0.80, 1.20, 0.65, 0.92, 14)}
 PLAZOS = tuple(BANDAS)
 LABEL = "simulador-calibracion"
 MARKER = f"<!-- {LABEL} -->"
@@ -184,8 +183,10 @@ def body(vs: list[Verdict], hoy: str) -> str:
                           "reiniciar `python -m etapas.simulador_web`.", ""]
             else:
                 lines += [f"**Qué hacer:** a {v.dias} días las comisiones simuladas se desvían (real/simulado "
-                          f"{v.ratio:.2f}). No toques el ajuste común (lo fija el plazo de {PRINCIPAL} días): a este plazo, "
-                          "tómalas con ese descuento y valora que el nivel reciente vuelva a la media con el plazo.", ""]
+                          f"{v.ratio:.2f}). No toques el ajuste común (lo fija el plazo de {PRINCIPAL} días): revisa "
+                          f"`EXPONENTE_PLAZO` ({S.EXPONENTE_PLAZO:.2f}) en `etapas/simulador.py`, que corrige las comisiones "
+                          "por plazo; si a un plazo largo salen altas, súbelo (y si salen bajas, bájalo), y compruébalo "
+                          f"con `--calibrar --dias {v.dias} --exponente …`.", ""]
         if not v.ok_cobertura:
             corta = v.cobertura < v.bandas[2]
             lines += [f"**Qué hacer:** a {v.dias} días la horquilla P10–P90 "

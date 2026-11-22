@@ -123,6 +123,17 @@ def test_rango_por_percentiles_del_precio_final(pool):
         S.parse_rango("P0-P90", h, paths)
 
 
+def test_factor_plazo_corrige_las_comisiones_segun_el_plazo():
+    assert S.factor_plazo(30) == pytest.approx(1.0)
+    assert S.factor_plazo(7) > 1.2 and S.factor_plazo(180) == pytest.approx(6 ** -0.15)
+    assert S.factor_plazo(1) == S.factor_plazo(7)                # fuera de lo validado, se limita
+    assert S.factor_plazo(90, 0) == 1.0
+    h = S.features(POOL, _walk(n=24 * 200))
+    con = S.bootstrap(h, 24 * 90, 200, ajuste=1.0, nivel_dias=None, seed=2)
+    sin = S.bootstrap(h, 24 * 90, 200, ajuste=1.0, nivel_dias=None, seed=2, exponente=0)
+    assert con.q0 == pytest.approx(sin.q0 * S.factor_plazo(90))
+
+
 def test_side_en_precio_mostrado_para_pool_invertido():
     df = _walk(pool=POOL_INV, n=200, vol=0.0)
     h = S.features(POOL_INV, df)

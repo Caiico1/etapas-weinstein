@@ -65,7 +65,7 @@ summary{cursor:pointer;color:var(--text)}
       <label>Escenarios<select id="escenarios"><option>300</option><option selected>1000</option><option>3000</option></select></label>
       <label>Tendencia<select id="tendencia"><option value="neutral" selected>Neutral</option><option value="historica">La del histórico</option></select></label>
       <label>Nivel comisiones<select id="nivel"><option value="0">Todo el histórico</option><option value="30">Últimos 30 días</option><option value="90" selected>Últimos 90 días</option></select></label>
-      <label>Ajuste comisiones<input id="ajuste" type="number" value="0.88" min="0.1" max="2" step="0.01"></label>
+      <label>Ajuste comisiones<input id="ajuste" type="number" value="0.85" min="0.1" max="2" step="0.01"></label>
     </div>
     <div class="ranges" id="ranges"></div>
     <div class="ranges">
@@ -107,7 +107,7 @@ summary{cursor:pointer;color:var(--text)}
     <details style="margin-top:14px"><summary>Cómo se calcula y sus límites</summary>
       <p>Cada escenario encadena bloques de 7 días consecutivos sacados al azar del histórico del pool (por defecto, los dos últimos años): precio y comisiones van juntos, así que las semanas movidas traen su volumen. Con tendencia «neutral» se quita la subida o bajada media del histórico: el simulador no apuesta por la dirección, solo por cuánto se mueve.</p>
       <p>La posición se abre hoy con la matemática de Uniswap v3/v4 (la misma que el backtest, comprobada contra él). Cobra liquidez × fee_growth de la cadena en las horas en rango (la mitad si entra o sale en la hora), diluida por su propia liquidez. Se descuentan el gas de abrir y la comisión del cambio inicial. Valor final = posición + comisiones; «vs mantener» = frente a guardar los mismos tokens depositados.</p>
-      <p>Las comisiones se reescalan al nivel de los últimos 90 días (frente a la media del histórico) y por un factor común de 0,88. Validado fuera de muestra en 23 pools y dos años: sesgo 0,94–1,07 y 83–87 % de los pools dentro de ±20 %, frente a 52–70 % sin nivel reciente. Cada mes una tarea de Windows recalibra y avisa si se desvía. No modela MEV/JIT ni cambios bruscos de liquidez. Con rangos muy estrechos, el reparto por horas sobrestima.</p>
+      <p>Las comisiones se reescalan al nivel de los últimos 90 días (frente a la media del histórico), por un factor común de 0,85 y por el plazo: × (días / 30)^−0,15 (×1,24 a 7 días, ×0,85 a 90, ×0,76 a 180), porque el nivel reciente no se mantiene igual todo un plazo largo. Validado fuera de muestra en 17 pools y dos años: real ÷ simulado 0,90–1,08 de 7 a 180 días (antes 0,64–1,16). Cada mes una tarea de Windows recalibra a 7, 30, 90 y 180 días y avisa si se desvía. No modela MEV/JIT ni cambios bruscos de liquidez. Con rangos muy estrechos, el reparto por horas sobrestima.</p>
     </details>
   </section>
 </main>
@@ -175,10 +175,9 @@ function render(d){
   $("facts").innerHTML=[
     `${d.par} hoy <b>${price(d.precio)}</b>`, `datos hasta <b>${d.hora.slice(0,16)}</b>`,
     `histórico desde <b>${d.historia_desde.slice(0,10)}</b>`, `<b>${d.escenarios}</b> escenarios a <b>${d.dias}</b> días`,
-    `comisiones ×<b>${(d.nivel_reciente*d.ajuste_comisiones).toLocaleString("es-ES",{maximumFractionDigits:2})}</b> (nivel ${d.nivel_dias?d.nivel_dias+" d":"histórico"} ×${d.nivel_reciente.toLocaleString("es-ES",{maximumFractionDigits:2})}, ajuste ${d.ajuste_comisiones.toLocaleString("es-ES")})`,
+    `comisiones ×<b>${(d.nivel_reciente*d.ajuste_comisiones*d.factor_plazo).toLocaleString("es-ES",{maximumFractionDigits:2})}</b> (nivel ${d.nivel_dias?d.nivel_dias+" d":"histórico"} ×${d.nivel_reciente.toLocaleString("es-ES",{maximumFractionDigits:2})}, ajuste ${d.ajuste_comisiones.toLocaleString("es-ES")}, plazo ×${d.factor_plazo.toLocaleString("es-ES",{maximumFractionDigits:2})})`,
     `gas <b>${d.gas} $</b>`, `cambio inicial <b>${pct(d.comision_cambio,2,false)}</b>`,
-    d.aviso?`<span class="neg">${d.aviso}</span>`:"",
-    d.aviso_plazo?`<span style="color:var(--accent)">⚠ ${d.aviso_plazo}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
+    d.aviso?`<span class="neg">${d.aviso}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
   ["outFan","outBars","outTable"].forEach(id=>$(id).hidden=false);
   fan(d); bars(d); table(d);
 }

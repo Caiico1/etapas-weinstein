@@ -38,10 +38,11 @@ def test_fuera_de_banda_por_comisiones_o_por_cobertura():
         A.combine([], 0.85)
 
 
-def test_plazos_largos_comisiones_informativas_y_horquilla_mas_ancha():
-    v30 = A.combine([_cal("A", 60, 100, GOOD)], 0.85, 30)
-    v180 = A.combine([_cal("A", 60, 100, GOOD)], 0.85, 180)
-    assert not v30.ok_comisiones and v180.ok_comisiones          # sesgo conocido: solo se registra
+def test_plazos_largos_bandas_mas_anchas():
+    v30 = A.combine([_cal("A", 85, 100, GOOD)], 0.85, 30)
+    v180 = A.combine([_cal("A", 85, 100, GOOD)], 0.85, 180)
+    assert not v30.ok_comisiones and v180.ok_comisiones
+    assert not A.combine([_cal("A", 70, 100, GOOD)], 0.85, 180).ok_comisiones
     pcts = [0.05] * 3 + [0.5] * 7                                # 70 % dentro
     assert A.combine([_cal("A", 100, 100, pcts)], 0.85, 180).ok_cobertura
     assert not A.combine([_cal("A", 100, 100, [0.05] * 4 + [0.5] * 6)], 0.85, 180).ok_cobertura

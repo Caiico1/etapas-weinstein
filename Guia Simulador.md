@@ -75,11 +75,14 @@ botón **Simular** fuerza una nueva simulación. Mientras calcula, la pantalla s
 | **Escenarios** | 1.000 | Cuántos futuros posibles se simulan. | 300 para probar rápido; 3.000 para una decisión final (afina los extremos, tarda ~3 veces más). No hace la simulación más «acertada», solo menos ruidosa. |
 | **Tendencia** | Neutral | **Neutral:** quita la subida o bajada media del histórico; el simulador no apuesta por la dirección del precio, solo por cuánto se mueve. **La del histórico:** mantiene la tendencia que tuvo el pasado. | Déjalo en Neutral. «La del histórico» solo para ver qué pasaría si se repitiera la tendencia de los últimos años. |
 | **Nivel comisiones** | Últimos 90 días | Reescala las comisiones de los escenarios al nivel reciente del pool. Si en los últimos 90 días el pool ha cobrado la mitad que su media, los escenarios cobran la mitad. Opciones: todo el histórico, 30 días, 90 días. | Déjalo en 90 días (es lo validado). 30 días reacciona más rápido pero es más ruidoso. «Todo el histórico» ignora si el pool se ha enfriado. |
-| **Ajuste comisiones** | 0,88 | Factor común que multiplica todas las comisiones. Corrige que el reparto por horas tiende a sobrestimar algo lo cobrado. Sale de la validación con datos reales. | No lo toques salvo que el aviso mensual proponga otro valor; aquí puedes probarlo antes de cambiarlo en el código. |
+| **Ajuste comisiones** | 0,85 | Factor común que multiplica todas las comisiones. Corrige que el reparto por horas tiende a sobrestimar algo lo cobrado. Sale de la validación con datos reales. | No lo toques salvo que el aviso mensual proponga otro valor; aquí puedes probarlo antes de cambiarlo en el código. |
 
-> **El efecto conjunto del nivel y del ajuste** aparece en la línea de datos: por ejemplo
-> «comisiones ×0,49 (nivel 90 d ×0,55, ajuste 0,88)» significa que los escenarios cobran el 49 % de la media
-> histórica: 0,55 por el nivel reciente × 0,88 por el ajuste.
+Además, el simulador aplica solo una **corrección por plazo** que no se elige en pantalla: ×1,24 a 7 días,
+×1 a 30, ×0,85 a 90 y ×0,76 a 180 (ver [sección 11](#11-fiabilidad-y-límites)).
+
+> **El efecto conjunto** aparece en la línea de datos: por ejemplo «comisiones ×0,47 (nivel 90 d ×0,55,
+> ajuste 0,85, plazo ×1)» significa que los escenarios cobran el 47 % de la media histórica:
+> 0,55 por el nivel reciente × 0,85 por el ajuste × 1 por el plazo de 30 días.
 
 ---
 
@@ -133,12 +136,10 @@ Debajo de los rangos aparece una línea con el contexto de la simulación:
 | Datos hasta | **2026-11-22 15:00** | Última hora registrada (UTC). Si es de hace más de un día, MetaProDB no se está actualizando. |
 | Histórico desde | **2024-11-22** | Primer día usado para construir escenarios (según el campo Histórico). |
 | Escenarios y plazo | **1000** escenarios a **30** días | Lo elegido arriba. |
-| Comisiones | ×**0,49** (nivel 90 d ×0,55, ajuste 0,88) | Cuánto cobran los escenarios frente a la media histórica del pool. Por debajo de 1: el pool cobra ahora menos que de media. |
+| Comisiones | ×**0,47** (nivel 90 d ×0,55, ajuste 0,85, plazo ×1) | Cuánto cobran los escenarios frente a la media histórica del pool: nivel reciente × ajuste × corrección por plazo. Por debajo de 1: el pool cobra ahora menos que de media. |
 | Gas | **0.05 $** | Coste de abrir la posición: 5 $ en Ethereum y 0,05 $ en Base y Arbitrum. Se resta al abrir. |
 | Cambio inicial | **0,05 %** | Comisión del intercambio para repartir el capital entre los dos tokens (la del propio pool, aplicada a la parte que hay que cambiar). |
 | Aviso (en rojo) | «hay huecos en el histórico…» | Solo si el pool tiene horas sin datos: se usa el tramo continuo más reciente. |
-| Aviso de plazo (en amarillo, ⚠) | «a 180 días las comisiones simuladas han salido altas…» | Solo con plazos de 60 días o más: en el pasado las comisiones reales fueron menos de lo simulado (×0,88 a 60 días, ×0,75 a 90 y ×0,60 a 180). Aplica ese descuento a las columnas Comisiones y APR. |
-
 ---
 
 ## 6. Gráfico 1: precio en los escenarios y tus rangos
@@ -213,10 +214,10 @@ escenario de en medio.
 
 | | ±5 % | ±10 % | ±20 % |
 |---|---|---|---|
-| Valor final (mediana) | 5.085 $ | 5.113 $ | 5.061 $ |
-| Malo (P10) | 4.007 $ | 4.061 $ | 4.189 $ |
-| vs mantener | −138 $ | −89 $ | −15 $ |
-| Comisiones | 114 $ | 104 $ | 79 $ |
+| Valor final (mediana) | 5.080 $ | 5.094 $ | 5.049 $ |
+| Malo (P10) | 3.972 $ | 4.009 $ | 4.143 $ |
+| vs mantener | −148 $ | −100 $ | −20 $ |
+| Comisiones | 110 $ | 102 $ | 76 $ |
 | En rango | 40 % | 63 % | 87 % |
 
 ```mermaid
@@ -224,7 +225,7 @@ xychart-beta
     title "Más ancho: menos comisiones pero más tiempo cobrando (ejemplo)"
     x-axis ["±5 %", "±10 %", "±20 %"]
     y-axis "Comisiones a 30 días ($)" 0 --> 130
-    bar [114, 104, 79]
+    bar [110, 102, 76]
 ```
 
 ```mermaid
@@ -235,9 +236,9 @@ xychart-beta
     bar [40, 63, 87]
 ```
 
-**Lectura:** el ±5 % cobra más comisiones, pero solo está dentro el 40 % del tiempo y pierde 138 $ frente a
+**Lectura:** el ±5 % cobra más comisiones, pero solo está dentro el 40 % del tiempo y pierde 148 $ frente a
 mantener los tokens. El ±20 % cobra menos, pero está dentro el 87 % del tiempo y casi empata con mantener
-(−15 $). Ninguno supera a mantener en la mediana: con las comisiones actuales de este pool (×0,49 de su
+(−20 $). Ninguno supera a mantener en la mediana: con las comisiones actuales de este pool (×0,47 de su
 media), el pool no compensa el movimiento del precio a 30 días. Si buscas solo renta en dólares, la
 referencia de Aave (+21 $ sin riesgo) es competitiva.
 
@@ -252,7 +253,7 @@ flowchart TD
     S --> T{"Tendencia neutral?"}
     T -->|sí| N["Se quita la subida o bajada media"]
     T -->|no| K["Se deja la del histórico"]
-    N --> C["Comisiones × nivel de los últimos 90 días × 0,88"]
+    N --> C["Comisiones × nivel de los últimos 90 días × 0,85<br/>× corrección por plazo (días/30)^−0,15"]
     K --> C
     C --> P["Se abre tu posición hoy con la matemática de Uniswap v3/v4<br/>(gas y cambio inicial descontados)"]
     P --> F["Hora a hora: si el precio está en tu rango,<br/>cobras tu parte de las comisiones del pool"]
@@ -317,35 +318,41 @@ verdad, en 23 pools y dos años, calculando el ajuste con un año y aplicándolo
 
 | Método de comisiones | Real ÷ simulado | Pools dentro de ±20 % |
 |---|---|---|
-| Ajuste fijo 0,85 (versión anterior) | 0,86–1,05 | 52–70 % |
-| **Nivel de 90 días × 0,88 (actual)** | **0,94–1,07** | **83–87 %** |
+| Ajuste fijo 0,85 (primera versión) | 0,86–1,05 | 52–70 % |
+| Nivel de 90 días × 0,88 (segunda versión, solo a 30 días) | 0,94–1,07 | 83–87 % |
 
-**Según el plazo** (aperturas del último año, 18–21 pools, 22-nov-2026):
+**La corrección por plazo.** Con un factor igual para todos los plazos, las comisiones salían bajas a
+7 días y muy altas a 90–180 días: el nivel de los últimos 90 días se arrastraba todo el plazo. Ahora
+se multiplican por **(días / 30)^−0,15**: ×1,24 a 7 días, ×1 a 30, ×0,85 a 90 y ×0,76 a 180. Se eligió
+probando cuatro modelos en 17 pools y 6.273 aperturas de dos años (ajustando con un año y midiendo en el
+otro). El exponente salió 0,15 con cualquiera de los dos años. Volver a la media del histórico empeoraba,
+porque las comisiones no rebotan, y prolongar su tendencia no aportaba nada.
 
-| Plazo | Comisiones reales ÷ simuladas | Real dentro del P10–P90 (ideal 80 %) | Lectura |
-|---|---|---|---|
-| 7 días | 1,12 | 83 % | Bien; las comisiones incluso algo por debajo de lo real |
-| 30 días | 1,05 | 71 % | Bien; la horquilla algo estrecha en este año bajista |
-| 60 días | 0,88 | 71 % | Comisiones algo altas |
-| 90 días | 0,79 | 86 % | Precio bien; comisiones un 20 % altas |
-| 180 días | 0,64 | 72 % | Precio aceptable; comisiones un 35–40 % altas |
+**Según el plazo** (calibración real con las aperturas del último año, 18–21 pools, 22-nov-2026):
+
+| Plazo | Comisiones real ÷ simulado, antes | **Ahora** | Pools dentro de ±20 % | Real dentro del P10–P90 (ideal 80 %) |
+|---|---|---|---|---|
+| 7 días | 1,12 | **0,93** | 95 % | 84 % |
+| 30 días | 1,05 | **1,09** | 86 % | 71 % |
+| 90 días | 0,79 | **0,96** | 85 % | 87 % |
+| 180 días | 0,64 | **0,88** | 72 % | 77 % |
 
 ```mermaid
 xychart-beta
-    title "Comisiones reales ÷ simuladas según el plazo (1 = exacto)"
-    x-axis ["7 d", "30 d", "60 d", "90 d", "180 d"]
+    title "Comisiones reales ÷ simuladas según el plazo, ahora (1 = exacto)"
+    x-axis ["7 d", "30 d", "90 d", "180 d"]
     y-axis "real ÷ simulado" 0 --> 1.3
-    bar [1.12, 1.05, 0.88, 0.79, 0.64]
-    line [1, 1, 1, 1, 1]
+    bar [0.93, 1.09, 0.96, 0.88]
+    line [1, 1, 1, 1]
 ```
 
-**Conclusión:** el riesgo de precio (las bandas) es fiable a cualquier plazo; las **comisiones**, hasta
-30 días. A partir de 60 días la pantalla muestra un aviso ⚠ con el descuento que hay que aplicar.
+**Conclusión:** el riesgo de precio (las bandas) y las comisiones son fiables de 7 a 180 días, con un
+error típico del ±10 %. A 180 días, uno de cada cuatro pools se desvía más de un 20 %.
 
 - **Vigilancia mensual:** el día 1 de cada mes una tarea de Windows («Simulador calibracion») repite la
   comprobación a **7, 30, 90 y 180 días**. Si algún plazo se desvía de su banda, abre una issue en
-  GitHub, que llega por correo, con lo que hay que mirar (y, a 30 días, el ajuste propuesto). A 90 y 180
-  días las comisiones solo se registran, porque su sesgo ya se conoce y la pantalla lo avisa.
+  GitHub, que llega por correo, con lo que hay que mirar: a 30 días, el ajuste propuesto; a los demás
+  plazos, revisar el exponente de la corrección por plazo.
 - **La horquilla P10–P90 se queda algo corta en años de tendencia fuerte** (72 % frente al 80 % ideal): con
   tendencia neutral, una caída sostenida como la de este año cae más a menudo por debajo del P10.
 
@@ -393,7 +400,8 @@ python -m etapas.simulador "WETH/USDC 0.05%" --red base --capital 5000 --dias 30
 | `--escenarios` | 1000 | Escenarios |
 | `--tendencia` | neutral | Tendencia (`neutral` o `historica`) |
 | `--nivel` | 90 | Nivel comisiones (0 = todo el histórico) |
-| `--ajuste` | 0.88 | Ajuste comisiones |
+| `--ajuste` | 0.85 | Ajuste comisiones |
+| `--exponente` | 0.15 | Corrección de comisiones por plazo (0 = sin corrección) |
 | `--gas` | según red | Gas de apertura en $ |
 | `--bloque` | 168 | Horas por bloque (solo para pruebas) |
 | `--json` | — | Salida en JSON |

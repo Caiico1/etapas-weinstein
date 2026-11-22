@@ -436,13 +436,14 @@ el ancho más equilibrado: casi el mejor «vs mantener» en la mediana con un P1
 que el de P25–P75. Opciones: `--historia` (días de histórico, 730),
 `--escenarios` (1000), `--bloque` (horas por bloque, 168), `--tendencia neutral|historica`,
 `--nivel` (días del nivel reciente de comisiones, 90; 0 = sin nivel), `--ajuste` (factor común de
-comisiones, 0,88), `--gas`, `--json`.
+comisiones, 0,85), `--exponente` (corrección por plazo, 0,15; 0 = sin corrección), `--gas`, `--json`.
 
 **Cómo funciona.** Cada escenario encadena bloques de 7 días consecutivos sacados al azar del
 histórico del pool: precio y comisiones van juntos (semanas movidas traen su volumen) y las
 comisiones se reescalan al precio de hoy (g0·√P y g1/√P son invariantes). El **nivel** de comisiones
 es el de los últimos 90 días: los escenarios conservan la forma del histórico (semanas tranquilas y
-movidas), pero se multiplican por (media de los últimos 90 días / media del histórico) × 0,88. Con tendencia «neutral»
+movidas), pero se multiplican por (media de los últimos 90 días / media del histórico) × 0,85 ×
+(días del plazo / 30)^−0,15 (corrección por plazo, ver abajo). Con tendencia «neutral»
 se quita la subida o bajada media: el simulador no apuesta por la dirección. La posición se abre
 hoy con la misma matemática que `backtest.simulate` (test de paridad), cobra L × fee_growth en las
 horas en rango diluido por la liquidez activa del pool, y paga el gas de abrir y la comisión del
@@ -464,7 +465,10 @@ a 30 días con ±10 %, el factor calibrado con un año y aplicado al otro, fuera
 | Sin ajuste | 0,73–0,90 | 13–74 % |
 | Factor fijo 0,85 | 0,86–1,05 | 52–70 % |
 | Factor por pool del año anterior | 0,81 | 39 % |
-| **Nivel de 90 días × 0,88 (por defecto)** | **0,94–1,07** | **83–87 %** |
+| Nivel de 90 días × 0,88 (hasta el 22-nov, solo medido a 30 días) | 0,94–1,07 | 83–87 % |
+
+Después se vio que ese factor único fallaba según el plazo (ver «Corrección por plazo»): hoy es
+nivel de 90 días × 0,85 × (días/30)^−0,15.
 
 El factor por pool empeora: el de un año va en contra del siguiente (correlación −0,59). Lo que se
 repite es una caída general de las comisiones por unidad de liquidez, que el nivel reciente recoge.
@@ -486,17 +490,30 @@ Ethereum; WBTC/USDT y USDC/WBTC 0,05 % en Arbitrum, donde el simulador no reprod
 |---|---|---|
 | 7 días | 0,85–1,15 | 70–90 % |
 | 30 días (fija `AJUSTE_COMISIONES`) | 0,90–1,10 | 70–90 % |
-| 90 y 180 días | solo se registra (sesgo conocido, ver abajo) | 65–92 % (pocas pruebas independientes) |
+| 90 y 180 días | 0,80–1,20 | 65–92 % (pocas pruebas independientes) |
 
 Si algún plazo sale de su banda, abre una issue «simulador-calibracion» (llega por correo) con lo que
-hay que mirar y, a 30 días, el ajuste propuesto; la cierra cuando todos vuelven a estar en banda.
+hay que mirar: a 30 días, el ajuste propuesto; a los demás, revisar `EXPONENTE_PLAZO`. La cierra
+cuando todos vuelven a estar en banda.
 Registro en `out/simulador_calibracion.jsonl` y `out/simulador_aviso.log`. Tarda un par de minutos.
 No va en la rutina de GitHub Actions porque necesita MetaProDB.
 
-**Plazos largos (22-nov-2026).** Las comisiones se sobrestiman cuanto más largo es el plazo, porque
-el nivel de los últimos 90 días se arrastra todo el plazo: real ÷ simulado 1,12 a 7 días, 1,05 a 30,
-0,88 a 60, 0,79 a 90 y 0,64 a 180. La pantalla lo avisa a partir de 60 días (`SESGO_PLAZO`). La
-horquilla de precio sí aguanta: 83 % dentro del P10–P90 a 7 días, 71 % a 30, 86 % a 90 y 72 % a 180.
+**Corrección por plazo (22-nov-2026).** Con un factor único (0,88) las comisiones salían bajas a
+plazos cortos y altas a largos, porque el nivel de los últimos 90 días se arrastraba todo el plazo:
+real ÷ simulado 1,12 a 7 días, 1,05 a 30, 0,88 a 60, 0,79 a 90 y 0,64 a 180. Se probaron cuatro
+modelos en 17 pools y 6.273 aperturas de dos años, ajustando con un año y midiendo en el otro:
+
+| Modelo | Resultado fuera de muestra (7–180 días) |
+|---|---|
+| Factor único (0,88, el anterior; reajustándolo, 0,74–1,34) | 0,64–1,16 |
+| Volver a la media del histórico | 0,63–1,49: peor, las comisiones no rebotan |
+| Prolongar la tendencia reciente | 0,72–1,31: no aporta |
+| **(días/30)^−β** | **0,90–1,08; β = 0,15 con cualquiera de los dos años** |
+
+`AJUSTE_COMISIONES = 0,85` y `EXPONENTE_PLAZO = 0,15` (el óptimo conjunto era 0,82, pero apenas
+cambia entre 0,82 y 0,86; con 0,85 los dos años quedan en 0,87–1,04). Calibración real con las
+aperturas del último año: 7 d 0,93 · 30 d 1,09 · 90 d 0,96 · 180 d 0,88, con 72–95 % de los pools
+dentro de ±20 %; P10–P90 84 %, 71 %, 87 % y 77 %, todo en banda.
 **Histórico:** 730 días iguala o supera a 365 y a 1.095 en todos los plazos (mismas aperturas,
 17–20 pools; a 180 días, 83 % dentro frente a 78 % con 1.095), así que es el valor para cualquier
 plazo (`historia_para`).
@@ -508,7 +525,7 @@ python -m etapas.simulador_aviso --simular      # calibra y dice qué haría, si
 Primera ejecución (22-nov-2026), con el método anterior (0,85 fijo): comisiones 0,80 (Arbitrum
 WBTC/WETH 0,62), porque las comisiones habían bajado de forma sostenida y el histórico completo lo
 tapaba. Con el nivel de 90 días × 0,88 y 730 días de histórico: comisiones 1,03 y P10–P90 del 72 %
-(21 pools, 1.113 pruebas), en banda.
+(21 pools, 1.113 pruebas), en banda. Con la corrección por plazo, los cuatro plazos en banda (arriba).
 
 Código: `etapas/simulador.py` (motor y calibración), `etapas/simulador_web.py` y
 `simulador_web.html` (pantalla, sin dependencias nuevas), `etapas/simulador_aviso.py`,
