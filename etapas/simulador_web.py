@@ -62,6 +62,34 @@ def simular(q: dict) -> dict:
                  nivel_dias=int(g("nivel", S.NIVEL_DIAS)) or None)
 
 
+def _comunes(q: dict) -> dict:
+    g = lambda k, d: q.get(k, [d])[0]
+    return {"pool_id": g("pool_id", ""), "chain": g("chain", ""), "historia": int(g("historia", S.HISTORIA_DIAS)),
+            "capital": float(g("capital", 5000)), "dias": int(g("dias", 30)),
+            "escenarios": int(g("escenarios", 1000)), "tendencia": g("tendencia", "neutral")}
+
+
+def _cargar(pool_id: str, chain: str, historia: int) -> S.History:
+    with _lock:
+        return _history(pool_id, chain, historia, _hora_actual())
+
+
+def optimizar(q: dict) -> dict:
+    c = _comunes(q)
+    g = lambda k, d: q.get(k, [d])[0]
+    h = _cargar(c["pool_id"], c["chain"], c["historia"])
+    return S.optimizar(c["pool_id"], c["chain"], c["capital"], c["dias"], c["historia"], c["escenarios"],
+                       tendencia=c["tendencia"], h=h, ajuste=float(g("ajuste", S.AJUSTE_COMISIONES)),
+                       nivel_dias=int(g("nivel", S.NIVEL_DIAS)) or None, criterio=g("criterio", "media"))
+
+
+def comparar(q: dict) -> dict:
+    c = _comunes(q)
+    g = lambda k, d: q.get(k, [d])[0]
+    return S.comparar(c["pool_id"], c["chain"], g("rango", "P10-P90"), c["capital"], c["dias"], c["historia"],
+                      min(c["escenarios"], 500), c["tendencia"], float(g("min_tvl", 100_000)), cargar=_cargar)
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code: int, body: bytes, ctype: str):
         self.send_response(code)
@@ -82,6 +110,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, pools())
             elif u.path == "/api/simular":
                 self._json(200, simular(parse_qs(u.query)))
+            elif u.path == "/api/optimizar":
+                self._json(200, optimizar(parse_qs(u.query)))
+            elif u.path == "/api/comparar":
+                self._json(200, comparar(parse_qs(u.query)))
             else:
                 self._send(404, b"no encontrado", "text/plain")
         except (B.BacktestError, ValueError) as e:

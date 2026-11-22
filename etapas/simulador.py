@@ -374,6 +374,128 @@ def referencia_sin_riesgo(chain: str) -> dict | None:
     return {"nombre": f"USDC en Aave {chain}", "apy": float(row[0]), "hora": str(row[1])}
 
 
+# --- buscador de rango ------------------------------------------------------------------------
+
+ANCHOS = (0.001, 0.002, 0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.12, 0.15, 0.20,
+          0.25, 0.30, 0.40, 0.50, 0.70)
+CRITERIOS = {"media": "vs_media", "mediana": "vs_mediana"}
+
+
+def ancho_minimo(h: History, k: float = 3.0) -> float:
+    """Ancho mínimo fiable: k × la volatilidad diaria del pool (±9 % en ETH/USDC, ±0,1 % en estables).
+    Validado el 23-nov-2026 (15 pools, 3.587 aperturas de dos años, a 7, 30 y 90 días): con datos hora a
+    hora el simulador sobrestima los rangos estrechos (real − simulado, «vs mantener» medio a 30 días:
+    −70 a −134 $ por 5.000 $ con ±0,1–2 % frente a −14 a −35 $ con ±30–70 %); sin este mínimo el buscador
+    elegía ±0,1 % y en la realidad perdía más; con él, su orden coincide con el real."""
+    return max(ANCHOS[0], k * float(np.std(h.ret_p)) * math.sqrt(24))
+
+
+def barrido(h: History, paths: Paths, capital: float = 5000, gas: float | None = None,
+            anchos: tuple[float, ...] = ANCHOS, min_ancho: float | None = None) -> list[dict]:
+    """Rangos simétricos de `ancho_minimo` a ±70 % con los mismos escenarios. Los que caen en los mismos
+    ticks se cuentan una vez. «vs mantener» = valor final − los mismos tokens guardados (incluye costes)."""
+    mn = ancho_minimo(h) if min_ancho is None else min_ancho
+    anchos = [w for w in anchos if w >= mn] or [anchos[-1]]
+    seen, out = set(), []
+    for w in anchos:
+        rg = parse_rango(f"{w * 100:g}", h)
+        if (rg.tl, rg.tu) in seen:
+            continue
+        seen.add((rg.tl, rg.tu))
+        s = simulate(h, paths, rg, capital, gas)
+        vm = s.final - s.hodl
+        out.append({"texto": f"±{w * 100:g}%", "ancho": w, "lo": rg.lo, "hi": rg.hi,
+                    "vs_media": float(vm.mean()), "vs_mediana": float(np.median(vm)),
+                    "vs_p10": float(np.percentile(vm, 10)), "comisiones": float(s.fees.mean()),
+                    "en_rango": float(s.in_range.mean()), "valor_media": float(s.final.mean()),
+                    "valor_mediana": float(np.median(s.final)), "valor_p10": float(np.percentile(s.final, 10))})
+    return out
+
+
+def mejor_rango(curva: list[dict], criterio: str = "media") -> dict:
+    """El ancho con más «vs mantener»: en media (cuenta los escenarios malos con su peso) o en mediana."""
+    return max(curva, key=lambda r: r[CRITERIOS[criterio]])
+
+
+def optimizar(key: str, chain: str | None, capital: float = 5000, dias: int = 30, historia: int = HISTORIA_DIAS,
+              escenarios: int = 1000, bloque: int = 168, tendencia: str = "neutral", gas: float | None = None,
+              h: History | None = None, ajuste: float = AJUSTE_COMISIONES, nivel_dias: int | None = NIVEL_DIAS,
+              exponente: float = EXPONENTE_PLAZO, criterio: str = "media") -> dict:
+    h = h or load(key, chain, historia)
+    paths = bootstrap(h, dias * 24, escenarios, bloque, tendencia, ajuste=ajuste, nivel_dias=nivel_dias,
+                      exponente=exponente)
+    curva = barrido(h, paths, capital, gas)
+    best = mejor_rango(curva, criterio)
+    return {"pool": {k: h.pool[k] for k in ("chain", "version", "label", "pool_id")}, "dias": dias,
+            "capital": capital, "criterio": criterio, "curva": curva, "ancho_minimo": ancho_minimo(h),
+            "mejor": best, "mejor_media": mejor_rango(curva, "media"),
+            "mejor_mediana": mejor_rango(curva, "mediana"), "en_el_borde": best is curva[-1]}
+
+
+# --- comparar el mismo par en varios pools ----------------------------------------------------
+
+def par_de(pool: dict) -> tuple[str, str]:
+    """Par comparable: ETH = WETH, BTC = WBTC = cbBTC, y cualquier estable cuenta como USD."""
+    asset, quote, _ = B.pair_of(pool)
+    estables = {s.upper() for s in B._STABLE}
+    return asset, ("USD" if quote.upper() in estables else quote)
+
+
+def pools_recientes() -> list[dict]:
+    """Pools con datos en los últimos 3 días, con símbolos, comisión y TVL de la última hora."""
+    con = B._connect()
+    try:
+        rows = con.execute("""
+            WITH last AS (SELECT chain, pool_id, max(hour) h FROM pool_hour_v
+                          WHERE hour > now() - INTERVAL 3 DAY AND usd0 IS NOT NULL GROUP BY 1, 2)
+            SELECT p.chain, p.version, p.pool_id, p.label, p.fee, p.tick_spacing, t0.symbol, t1.symbol,
+                   t0.decimals, t1.decimals, v.tvl_usd
+            FROM pools p JOIN last USING (chain, pool_id)
+            JOIN pool_hour_v v ON v.chain = p.chain AND v.pool_id = p.pool_id AND v.hour = last.h
+            JOIN tokens t0 ON t0.chain = p.chain AND t0.address = p.token0
+            JOIN tokens t1 ON t1.chain = p.chain AND t1.address = p.token1
+            ORDER BY v.tvl_usd DESC NULLS LAST""").fetchall()
+    finally:
+        con.close()
+    keys = ("chain", "version", "pool_id", "label", "fee", "tick_spacing", "symbol0", "symbol1", "dec0", "dec1", "tvl")
+    return [dict(zip(keys, r)) for r in rows]
+
+
+def comparar(pool_id: str, chain: str, rango: str = "P10-P90", capital: float = 5000, dias: int = 30,
+             historia: int = HISTORIA_DIAS, escenarios: int = 500, tendencia: str = "neutral",
+             min_tvl: float = 100_000, cargar=None, candidatos: list[dict] | None = None) -> dict:
+    """La misma estrategia (y el mejor ancho de cada uno) en todos los pools del mismo par con TVL ≥ min_tvl.
+    `cargar(pool_id, chain, historia)` permite reutilizar históricos ya leídos."""
+    cargar = cargar or (lambda p, c, hh: load(p, c, hh))
+    todos = candidatos if candidatos is not None else pools_recientes()
+    base = next((p for p in todos if p["pool_id"] == pool_id and p["chain"] == chain), None)
+    if base is None:
+        raise ValueError("ese pool no tiene datos recientes")
+    par = par_de(base)
+    grupo = [p for p in todos if par_de(p) == par and ((p["tvl"] or 0) >= min_tvl or p is base)]
+    filas = []
+    for p in grupo:
+        try:
+            h = cargar(p["pool_id"], p["chain"], historia)
+            paths = bootstrap(h, dias * 24, escenarios, tendencia=tendencia)
+            r = resumen(simulate(h, paths, parse_rango(rango, h, paths), capital))
+            best = mejor_rango(barrido(h, paths, capital), "media")
+            g = r["desglose"]
+            filas.append({"chain": p["chain"], "version": p["version"], "pool_id": p["pool_id"], "label": p["label"],
+                          "tvl": p["tvl"], "es_este": p is base,
+                          "fiabilidad": fiabilidad(h, dias, calibracion_pool(p["pool_id"], p["chain"], dias))["nivel"],
+                          "rango": {"lo": r["lo"], "hi": r["hi"], "comisiones": r["comisiones"]["p50"], "apr": r["apr"],
+                                    "vs_mediana": r["vs_mantener"]["p50"], "vs_media": g["total"] - g["precio"],
+                                    "valor_p50": r["valor_final"]["p50"], "valor_p10": r["valor_final"]["p10"],
+                                    "en_rango": r["en_rango"]},
+                          "mejor": {"texto": best["texto"], "vs_media": best["vs_media"], "vs_mediana": best["vs_mediana"]}})
+        except Exception as e:                                   # noqa: BLE001 (un pool no tumba la tabla)
+            filas.append({"chain": p["chain"], "version": p["version"], "pool_id": p["pool_id"], "label": p["label"],
+                          "tvl": p["tvl"], "es_este": p is base, "error": f"{type(e).__name__}: {e}"})
+    filas.sort(key=lambda f: -f["rango"]["vs_media"] if "rango" in f else float("inf"))
+    return {"par": f"{par[0]}/{par[1]}", "rango": rango, "dias": dias, "capital": capital, "pools": filas}
+
+
 # --- fiabilidad y conclusión ------------------------------------------------------------------
 
 CALIBRACION_LOG = Path(__file__).resolve().parent.parent / "out" / "simulador_calibracion.jsonl"

@@ -201,6 +201,46 @@ def test_conclusiones_dicen_si_compensa_frente_a_mantener_y_a_aave():
     assert any(t.startswith("Ojo con ±5%") and "192 $" in t for t in S.conclusiones(res))
 
 
+def test_barrido_de_anchos_y_mejor_rango():
+    h = S.features(POOL, _walk(n=24 * 200))
+    paths = S.bootstrap(h, 24 * 30, 400, seed=4)
+    curva = S.barrido(h, paths)
+    anchos = [r["ancho"] for r in curva]
+    assert anchos == sorted(anchos) and len({(r["lo"], r["hi"]) for r in curva}) == len(curva)
+    assert min(anchos) >= S.ancho_minimo(h) > 0.05                       # 3 × vol. diaria (≈ 2 %) ≈ 6 %
+    assert len(S.barrido(h, paths, min_ancho=0)) > len(curva)
+    assert curva[0]["en_rango"] < curva[-1]["en_rango"]                  # más ancho, más tiempo dentro
+    m = S.mejor_rango(curva, "media")
+    assert m["vs_media"] == max(r["vs_media"] for r in curva)
+    assert S.mejor_rango(curva, "mediana")["vs_mediana"] == max(r["vs_mediana"] for r in curva)
+    r = S.resumen(S.simulate(h, paths, S.parse_rango(m["texto"], h)))
+    g = r["desglose"]
+    assert g["total"] - g["precio"] == pytest.approx(m["vs_media"])       # el texto propuesto reproduce el ancho
+
+
+def test_par_de_agrupa_equivalentes():
+    assert S.par_de(POOL) == ("ETH", "USD")
+    assert S.par_de(POOL_INV) == ("ETH", "USD")
+    assert S.par_de({**POOL, "symbol0": "cbBTC", "symbol1": "USDT"}) == ("BTC", "USD")
+
+
+def test_comparar_misma_estrategia_en_los_pools_del_par():
+    otro = {**POOL, "pool_id": "0x1", "chain": "ethereum", "label": "WETH/USDT 0.3%", "symbol1": "USDT", "tvl": 9e6}
+    chico = {**POOL, "pool_id": "0x2", "tvl": 5e4}
+    btc = {**POOL, "pool_id": "0x3", "symbol0": "WBTC", "tvl": 9e6}
+    cand = [{**POOL, "tvl": 5e6}, otro, chico, btc]
+    series = {"0x0": _walk(seed=1), "0x1": _walk(seed=1, g0=4e-14, g1=8e-5)}
+    cargar = lambda p, c, hh: S.features(next(x for x in cand if x["pool_id"] == p), series[p])
+    res = S.comparar("0x0", "base", "±10%", dias=14, escenarios=200, cargar=cargar, candidatos=cand)
+    assert res["par"] == "ETH/USD"
+    assert {f["pool_id"] for f in res["pools"]} == {"0x0", "0x1"}        # ni el de poco TVL ni el de BTC
+    assert [f["es_este"] for f in res["pools"]].count(True) == 1
+    assert res["pools"][0]["rango"]["vs_media"] >= res["pools"][1]["rango"]["vs_media"]
+    assert res["pools"][0]["pool_id"] == "0x1"                           # cobra el doble con el mismo precio
+    with pytest.raises(ValueError):
+        S.comparar("0x9", "base", cargar=cargar, candidatos=cand)
+
+
 def test_side_en_precio_mostrado_para_pool_invertido():
     df = _walk(pool=POOL_INV, n=200, vol=0.0)
     h = S.features(POOL_INV, df)

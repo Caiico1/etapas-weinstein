@@ -461,6 +461,18 @@ resultado medio en precio de los tokens + pérdida impermanente + comisiones + c
 mediana pero pierde 192 $ de media, porque la pérdida impermanente de los escenarios malos (−336 $ de
 media) no tiene techo.
 
+**Buscador de ancho y comparación de pools (pantalla).** `optimizar` / `barrido` prueba rangos
+simétricos desde `ancho_minimo` (3 × la volatilidad diaria) hasta ±70 % y elige el de más «vs mantener»
+en la media (o en la mediana). `comparar` simula la misma estrategia en todos los pools del mismo par
+(`par_de`: ETH = WETH, BTC = WBTC = cbBTC, estables = USD) con TVL ≥ 0,1 M$, con el mejor ancho de cada
+uno. La página admite `#buscar,comparar` para abrir con los dos lanzados. Validación (23-nov-2026, 15
+pools, 3.587 aperturas de dos años a 7, 30 y 90 días, eligiendo con los datos de antes de cada fecha):
+sin ancho mínimo el buscador elegía ±0,1 % y perdía más que nadie (el reparto horario sobrestima los
+rangos estrechos); con él, su orden coincide con el real. En ese periodo ninguna posición ganó de media a
+mantener los tokens y cuanto más ancha menos perdió (30 d: −104 $ con ±5 %, −29 $ con ±70 %, por 5.000 $).
+También destapó que «vs mantener» sale optimista a 30 días o más: real − simulado −14 a −64 $ a 30 d y −38
+a −170 $ a 90 d (más cuanto más estrecho), porque el precio real se movió más que en los escenarios.
+
 **Fiabilidad.** `--calibrar` lanza el simulador desde muchas fechas pasadas con solo los datos
 anteriores y lo compara con lo que pasó:
 

@@ -20,6 +20,8 @@ cómo leer los resultados para elegir un rango.
 7. [Gráfico 2: resultado frente a lo invertido](#7-gráfico-2-resultado-frente-a-lo-invertido)
    - [7 b. Gráfico 3: de dónde sale el resultado](#7-b-gráfico-3-de-dónde-sale-el-resultado)
 8. [La tabla de detalle, columna a columna](#8-la-tabla-de-detalle-columna-a-columna)
+   - [8 b. Buscar el mejor ancho](#8-b-buscar-el-mejor-ancho)
+   - [8 c. Comparar con otros pools del mismo par](#8-c-comparar-con-otros-pools-del-mismo-par)
 9. [Cómo funciona por dentro](#9-cómo-funciona-por-dentro)
 10. [Cómo elegir un rango (receta)](#10-cómo-elegir-un-rango-receta)
 11. [Fiabilidad y límites](#11-fiabilidad-y-límites)
@@ -49,7 +51,7 @@ python -m etapas.simulador_web
 
 ## 2. La pantalla de un vistazo
 
-La pantalla tiene siete bloques, de arriba abajo:
+La pantalla tiene nueve bloques, de arriba abajo:
 
 ```mermaid
 flowchart TB
@@ -59,7 +61,12 @@ flowchart TB
     C --> D["⑤ Gráfico de resultado<br/>ganancia o pérdida de cada rango"]
     D --> G["⑥ De dónde sale el resultado<br/>precio, pérdida impermanente, comisiones, costes"]
     G --> E["⑦ Tabla de detalle<br/>todas las cifras + referencia sin riesgo"]
+    E --> O["⑧ Buscar el mejor ancho<br/>(botón Buscar)"]
+    O --> P["⑨ Comparar con otros pools del mismo par<br/>(botón Comparar)"]
 ```
+
+Los dos últimos no se calculan solos: pulsa su botón. Para abrir la página con los dos ya lanzados:
+**http://localhost:8768/#buscar,comparar**.
 
 Empieza por **③ En resumen**: dice en tres o cuatro frases lo que hay en los gráficos y en la tabla, y
 cuánto fiarte.
@@ -307,6 +314,61 @@ referencia de Aave (+21 $ sin riesgo) es competitiva.
 
 ---
 
+## 8 b. Buscar el mejor ancho
+
+![Buscar el mejor ancho](docs/img/simulador-5-buscador.png)
+
+Pulsa **Buscar**. Prueba rangos simétricos (±% del precio de hoy) con los mismos escenarios y dibuja
+cuánto gana o pierde cada uno **frente a mantener los tokens**:
+
+| Elemento | Qué es |
+|---|---|
+| **Línea verde** | «vs mantener» en la **media** de los escenarios: cuenta los malos con su peso. Es el criterio recomendado. |
+| **Línea azul discontinua** | «vs mantener» en la **mediana**: el caso típico. Suele preferir rangos más estrechos, que en la media salen peor. |
+| **Punto amarillo** | El mejor ancho según el criterio elegido. El botón **«+ añadir ±X % a mis rangos»** lo añade arriba para verlo en detalle. |
+| **Eje horizontal** | Ancho del rango, de un **mínimo fiable** a ±70 %. |
+
+**El ancho mínimo** es 3 × la volatilidad diaria del pool (unos ±10 % en ETH/USDC y ±0,1 % en un par de
+estables). Con datos hora a hora el simulador sobrestima los rangos más estrechos. Sin ese mínimo, el
+buscador elegía ±0,1 %, y en la realidad esos rangos perdían más que ninguno.
+
+**Mensajes que puede dar:**
+- «Ningún ancho gana a mantener en la media»: el pool no compensa ahora a ese plazo; mejor guardar los
+  tokens o la referencia sin riesgo.
+- «El mejor es el más ancho probado»: cuanto más ancho, mejor, es decir, cuanto más se parece a no estar
+  en el pool. Es otra forma de decir que no compensa.
+
+> **Qué dice la validación** (23-nov-2026; 15 pools, 3.587 aperturas de los dos últimos años, eligiendo el
+> ancho con los datos de antes de cada fecha y midiendo lo que pasó después): en ese periodo **ninguna
+> posición ganó de media a mantener los tokens**, y cuanto más ancha, menos perdió (a 30 días, −104 $ con
+> ±5 % frente a −29 $ con ±70 %, por cada 5.000 $). El buscador acierta esa dirección. Úsalo para saber si
+> un pool compensa y cuánto ancho necesita, no para exprimir un rango estrecho.
+
+---
+
+## 8 c. Comparar con otros pools del mismo par
+
+![Comparar con otros pools](docs/img/simulador-6-comparar.png)
+
+Elige un rango (por defecto `P10-P90` o cualquiera de los tuyos) y pulsa **Comparar**. Simula **la misma
+estrategia y el mismo plazo** en todos los pools del mismo par con TVL ≥ 0,1 M$:
+
+- **Mismo par:** ETH = WETH, BTC = WBTC = cbBTC, y cualquier estable cuenta como USD. Así, WETH/USDC,
+  WETH/USDT y DAI/WETH de Ethereum, Base y Arbitrum salen juntos.
+- **Orden:** de más a menos «vs mantener» en la media. La fila de tu pool aparece marcada como «este».
+- **Columnas:** TVL, semáforo de fiabilidad, comisiones, APR, «vs mantener» (media y mediana), valor final
+  (P50 y P10), tiempo en rango y **su mejor ancho** según el buscador.
+- **Haz clic en una fila** para abrir ese pool arriba.
+
+Tarda unos 2 segundos por pool (unos 25 segundos para ETH/USD, con 14 pools).
+
+**Cómo leerla:** con el mismo precio, lo que cambia entre pools son las comisiones por unidad de
+liquidez, que dependen de su volumen, su comisión y cuánta liquidez compite. El pool más grande no
+siempre es el mejor. En el ejemplo, WETH/USDT 0,05 % de Ethereum cobra 109 $ y WETH/USDC 0,05 % de Base
+67 $ con el mismo rango.
+
+---
+
 ## 9. Cómo funciona por dentro
 
 ```mermaid
@@ -418,6 +480,11 @@ error típico del ±10 %. A 180 días, uno de cada cuatro pools se desvía más 
   plazos, revisar el exponente de la corrección por plazo.
 - **La horquilla P10–P90 se queda algo corta en años de tendencia fuerte** (72 % frente al 80 % ideal): con
   tendencia neutral, una caída sostenida como la de este año cae más a menudo por debajo del P10.
+- **«vs mantener» sale optimista a 30 días o más** (descubierto el 23-nov-2026 al validar el buscador). Las
+  comisiones cuadran, pero la pérdida impermanente real fue mayor que la simulada, porque el precio se
+  movió más que en los escenarios. Media real − simulada por cada 5.000 $: a 7 días de −9 $ (±5 %) a 0 $; a 30
+  días −14 $ (±70 %) a −64 $ (±5 %); a 90 días −38 $ (±70 %) a −170 $ (±5 %). Cuanto más estrecho el
+  rango, más se nota. Si «vs mantener» sale positivo pero pequeño, tómalo como un empate.
 
 **Lo que NO modela:**
 
