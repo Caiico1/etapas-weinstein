@@ -71,7 +71,7 @@ botón **Simular** fuerza una nueva simulación. Mientras calcula, la pantalla s
 | **Pool** | WETH/USDC 0,05 % de Base | El pool donde abrirías la posición. La lista trae los pools de MetaProDB con datos de los últimos 3 días, agrupados por red y ordenados por TVL. Cada opción muestra par, comisión, versión (v3/v4) y TVL. | Siempre que quieras mirar otro pool. Solo están los de MetaProDB. |
 | **Capital ($)** | 5.000 | Dinero que metes, en dólares (mínimo 100). El simulador reparte ese capital entre los dos tokens en la proporción que exige el rango. | Para ver tu caso real. Las cifras escalan casi en proporción; solo el gas pesa más con capitales pequeños. |
 | **Plazo (días)** | 30 | Cuánto tiempo mantienes la posición **abierta sin tocarla**. Opciones: 7, 14, 30, 60, 90, 180. | Ajusta a tu marco: 7 semanal, 30 mensual, 90 trimestral. Ver [sección 10](#10-cómo-elegir-un-rango-receta). |
-| **Histórico (días)** | 730 | Cuántos días del pasado del pool se usan como «material» para construir los escenarios. Opciones: 90, 180, 365, 730, 1.095. | Déjalo en 730. Menos días = escenarios parecidos solo a lo reciente (horquilla más estrecha); más días = incluye épocas antiguas. |
+| **Histórico (días)** | 730 | Cuántos días del pasado del pool se usan como «material» para construir los escenarios. Opciones: 90, 180, 365, 730, 1.095. | Déjalo en 730 **para cualquier plazo**. Se comparó con 365 y 1.095 a 7, 60, 90 y 180 días (17–20 pools): 730 acertó igual o mejor en todos. Más histórico no ayuda: mete épocas que ya no se parecen al pool de hoy. |
 | **Escenarios** | 1.000 | Cuántos futuros posibles se simulan. | 300 para probar rápido; 3.000 para una decisión final (afina los extremos, tarda ~3 veces más). No hace la simulación más «acertada», solo menos ruidosa. |
 | **Tendencia** | Neutral | **Neutral:** quita la subida o bajada media del histórico; el simulador no apuesta por la dirección del precio, solo por cuánto se mueve. **La del histórico:** mantiene la tendencia que tuvo el pasado. | Déjalo en Neutral. «La del histórico» solo para ver qué pasaría si se repitiera la tendencia de los últimos años. |
 | **Nivel comisiones** | Últimos 90 días | Reescala las comisiones de los escenarios al nivel reciente del pool. Si en los últimos 90 días el pool ha cobrado la mitad que su media, los escenarios cobran la mitad. Opciones: todo el histórico, 30 días, 90 días. | Déjalo en 90 días (es lo validado). 30 días reacciona más rápido pero es más ruidoso. «Todo el histórico» ignora si el pool se ha enfriado. |
@@ -95,9 +95,18 @@ gráficos y en la tabla.
 | Porcentaje simétrico | `±10%` | De un 10 % por debajo a un 10 % por encima del precio de hoy |
 | Porcentaje asimétrico | `-5/+15` | De un 5 % por debajo a un 15 % por encima |
 | Precios | `1500-1900` | Entre esos dos precios exactos (decimales con punto: `1539.5-1883`) |
+| Percentiles | `P10-P90` | Entre los precios en los que acaba el 10 % y el 90 % de los escenarios al final del plazo: el precio acaba dentro en 8 de cada 10. Se recalcula solo al cambiar el pool, el plazo o el histórico. |
 
 - **Botones rápidos:** `+ ±2 %`, `+ ±5 %`, `+ ±10 %`, `+ ±20 %`, `+ −5/+15 %` añaden ese rango.
   **`+ rango en precio`** añade uno de ±10 % escrito en precios, para que lo edites.
+- **Botones por percentil:** `+ P25–P75` (estrecho: cobra más y se sale más), **`+ P10–P90`** (el punto
+  de partida más equilibrado) y `+ P5–P95` (ancho y prudente). Salen asimétricos (por ejemplo −24/+27 %),
+  porque en porcentaje el precio puede subir más de lo que puede bajar.
+
+> **Por qué P10–P90 como punto de partida.** Simulado en ETH y BTC a 7, 30 y 180 días (22-nov-2026):
+> el precio está dentro ~90 % del tiempo, su «vs mantener» mediano está entre los mejores y su caso malo
+> (P10) es bastante menos malo que el del P25–P75, que cobra un 30–40 % más de comisiones pero pierde
+> más cuando el precio se escapa. No arregla un pool que cobra poco: ahí ningún ancho supera a mantener.
 - **Editar:** haz clic en el texto del rango, cámbialo y pulsa Intro o sal del campo.
 - **Quitar:** la ✕ de cada rango.
 - **Ajuste a ticks:** Uniswap solo admite ciertos precios (los *ticks* del pool). El simulador mueve cada
@@ -128,6 +137,7 @@ Debajo de los rangos aparece una línea con el contexto de la simulación:
 | Gas | **0.05 $** | Coste de abrir la posición: 5 $ en Ethereum y 0,05 $ en Base y Arbitrum. Se resta al abrir. |
 | Cambio inicial | **0,05 %** | Comisión del intercambio para repartir el capital entre los dos tokens (la del propio pool, aplicada a la parte que hay que cambiar). |
 | Aviso (en rojo) | «hay huecos en el histórico…» | Solo si el pool tiene horas sin datos: se usa el tramo continuo más reciente. |
+| Aviso de plazo (en amarillo, ⚠) | «a 180 días las comisiones simuladas han salido altas…» | Solo con plazos de 60 días o más: en el pasado las comisiones reales fueron menos de lo simulado (×0,88 a 60 días, ×0,75 a 90 y ×0,60 a 180). Aplica ese descuento a las columnas Comisiones y APR. |
 
 ---
 
@@ -271,7 +281,7 @@ Claves:
 
 ```mermaid
 flowchart TD
-    A["Elige pool, capital y plazo"] --> B["Pon 3–4 rangos de distinto ancho"]
+    A["Elige pool, capital y plazo"] --> B["Pulsa + P25–P75, + P10–P90 y + P5–P95<br/>(y algún ± que quieras comparar)"]
     B --> C{"¿«En rango» ≥ 70–80 %?"}
     C -->|no| D["Demasiado estrecho para ese plazo:<br/>descártalo o acorta el plazo"]
     C -->|sí| E{"¿«vs mantener» positivo?"}
@@ -310,10 +320,32 @@ verdad, en 23 pools y dos años, calculando el ajuste con un año y aplicándolo
 | Ajuste fijo 0,85 (versión anterior) | 0,86–1,05 | 52–70 % |
 | **Nivel de 90 días × 0,88 (actual)** | **0,94–1,07** | **83–87 %** |
 
+**Según el plazo** (aperturas del último año, 18–21 pools, 22-nov-2026):
+
+| Plazo | Comisiones reales ÷ simuladas | Real dentro del P10–P90 (ideal 80 %) | Lectura |
+|---|---|---|---|
+| 7 días | 1,12 | 83 % | Bien; las comisiones incluso algo por debajo de lo real |
+| 30 días | 1,05 | 71 % | Bien; la horquilla algo estrecha en este año bajista |
+| 60 días | 0,88 | 71 % | Comisiones algo altas |
+| 90 días | 0,79 | 86 % | Precio bien; comisiones un 20 % altas |
+| 180 días | 0,64 | 72 % | Precio aceptable; comisiones un 35–40 % altas |
+
+```mermaid
+xychart-beta
+    title "Comisiones reales ÷ simuladas según el plazo (1 = exacto)"
+    x-axis ["7 d", "30 d", "60 d", "90 d", "180 d"]
+    y-axis "real ÷ simulado" 0 --> 1.3
+    bar [1.12, 1.05, 0.88, 0.79, 0.64]
+    line [1, 1, 1, 1, 1]
+```
+
+**Conclusión:** el riesgo de precio (las bandas) es fiable a cualquier plazo; las **comisiones**, hasta
+30 días. A partir de 60 días la pantalla muestra un aviso ⚠ con el descuento que hay que aplicar.
+
 - **Vigilancia mensual:** el día 1 de cada mes una tarea de Windows («Simulador calibracion») repite la
-  comprobación en ~21 pools. Si las comisiones se desvían (fuera de 0,90–1,10) o lo real cae fuera del
-  P10–P90 demasiado a menudo (fuera del 70–90 %), abre una issue en GitHub con el ajuste propuesto, que llega
-  por correo. Última medida (22-nov-2026): comisiones 1,03 y 72 % dentro del P10–P90, en banda.
+  comprobación a **7, 30, 90 y 180 días**. Si algún plazo se desvía de su banda, abre una issue en
+  GitHub, que llega por correo, con lo que hay que mirar (y, a 30 días, el ajuste propuesto). A 90 y 180
+  días las comisiones solo se registran, porque su sesgo ya se conoce y la pantalla lo avisa.
 - **La horquilla P10–P90 se queda algo corta en años de tendencia fuerte** (72 % frente al 80 % ideal): con
   tendencia neutral, una caída sostenida como la de este año cae más a menudo por debajo del P10.
 

@@ -3,15 +3,17 @@
     python -m etapas.simulador_aviso              # calibra, guarda el resultado y abre/cierra la issue
     python -m etapas.simulador_aviso --simular    # solo dice qué haría, sin tocar GitHub
 
-Lanza `simulador.calibrar` con las aperturas del último año (30 días, rango ±10 %, histórico de
-730 días) en los pools de referencia (≥ 3 años de datos y TVL > 2 M$, sin los de datos anómalos)
-y junta los resultados:
-  - mediana entre pools de comisiones reales / media simulada: fuera de 0,90–1,10 → el
-    `AJUSTE_COMISIONES` ya no vale;
-  - lo real dentro del P10–P90: fuera del 70–90 % → la horquilla es demasiado estrecha o ancha.
-Si se desvía, abre una issue de GitHub (etiqueta «simulador-calibracion», que GitHub envía por
-correo) con el ajuste propuesto; si vuelve a estar en banda, la cierra. Con la issue abierta no
-repite el aviso. Cada ejecución se añade a out/simulador_calibracion.jsonl.
+Lanza `simulador.calibrar` con las aperturas del último año a cuatro plazos (7, 30, 90 y 180 días,
+rango ±10 %, con el histórico que el simulador usa para cada plazo) en los pools de referencia (TVL
+> 2 M$, histórico suficiente para el plazo, sin los de datos anómalos ni pares de dos estables) y
+junta los resultados por plazo:
+  - mediana entre pools de comisiones reales / media simulada, fuera de su banda → el
+    `AJUSTE_COMISIONES` ya no vale (el de 30 días es el que lo fija; los demás avisan de que las
+    comisiones se desvían a ese plazo);
+  - lo real dentro del P10–P90: fuera de su banda → la horquilla es demasiado estrecha o ancha.
+Si algún plazo se desvía, abre una issue de GitHub (etiqueta «simulador-calibracion», que GitHub
+envía por correo) con lo que hay que mirar; si todos vuelven a estar en banda, la cierra. Con la
+issue abierta no repite el aviso. Cada ejecución se añade a out/simulador_calibracion.jsonl.
 
 Necesita MetaProDB (D:), así que no va en la rutina de GitHub Actions: lo lanza la tarea de Windows
 «Simulador calibración» una vez al mes (simulador_aviso.vbs → .bat, como el aviso de Aave).
@@ -23,6 +25,7 @@ import json
 import os
 import subprocess
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,18 +38,33 @@ ANOMALOS = {("ethereum", "0x8a7e585048bda875e64024118c506b14f78166dd"),     # PA
             ("arbitrum", "0x5969efdde3cf5c0d9a88ae51e47d721096a97203"),     # WBTC/USDT 0,05 %
             ("ethereum", "0x109830a1aaad605bbf02a9dfa7b0b92ec2fb7daa"),     # wstETH/WETH 0,01 %
             ("arbitrum", "0x0e4831319a50228b9e450861297ab92dee15b44f")}     # USDC/WBTC 0,05 %
-DIAS, ANCHO, HISTORIA, ULTIMOS = 30, 0.10, S.HISTORIA_DIAS, 365
-MIN_TVL, MIN_DIAS = 2e6, HISTORIA + ULTIMOS + 30
-COMIS_MIN, COMIS_MAX = 0.90, 1.10
-COBER_MIN, COBER_MAX = 0.70, 0.90
+ANCHO, ULTIMOS, MIN_TVL = 0.10, 365, 2e6
+PRINCIPAL = 30                       # el plazo que fija AJUSTE_COMISIONES
+# plazo → (comisiones mín, máx, P10–P90 mín, máx, días entre aperturas). A 90 y 180 días las aperturas
+# de un año se solapan mucho (pocas pruebas independientes): banda de P10–P90 algo más ancha. Sus
+# comisiones (None) solo se registran: ya se sabe que se sobrestiman (simulador.SESGO_PLAZO, 0,75 y
+# 0,60) y la pantalla lo avisa; se activarán cuando el nivel reciente vuelva a la media con el plazo.
+BANDAS = {7: (0.85, 1.15, 0.70, 0.90, 7), 30: (0.90, 1.10, 0.70, 0.90, 7),
+          90: (None, None, 0.65, 0.92, 14), 180: (None, None, 0.65, 0.92, 14)}
+PLAZOS = tuple(BANDAS)
 LABEL = "simulador-calibracion"
 MARKER = f"<!-- {LABEL} -->"
 REPO = os.environ.get("GITHUB_REPOSITORY", "Caiico1/etapas-weinstein")
 LOG = Path(__file__).resolve().parent.parent / "out" / "simulador_calibracion.jsonl"
 
 
+def historia(dias: int) -> int:
+    return S.historia_para(dias)
+
+
+def min_dias(dias: int) -> int:
+    """Histórico que necesita un pool para entrar en la referencia de ese plazo."""
+    return historia(dias) + ULTIMOS + dias + 30
+
+
 @dataclass
 class Verdict:
+    dias: int                 # plazo
     ratio: float              # mediana entre pools de comisiones reales / media simulada
     cobertura: float          # fracción con lo real dentro del P10–P90
     pruebas: int
@@ -54,12 +72,18 @@ class Verdict:
     por_pool: list[dict]
 
     @property
+    def bandas(self) -> tuple:
+        return BANDAS.get(self.dias, BANDAS[PRINCIPAL])
+
+    @property
     def ok_comisiones(self) -> bool:
-        return COMIS_MIN <= self.ratio <= COMIS_MAX
+        lo, hi = self.bandas[:2]
+        return lo is None or lo <= self.ratio <= hi
 
     @property
     def ok_cobertura(self) -> bool:
-        return COBER_MIN <= self.cobertura <= COBER_MAX
+        lo, hi = self.bandas[2:4]
+        return lo <= self.cobertura <= hi
 
     @property
     def ok(self) -> bool:
@@ -70,20 +94,20 @@ class Verdict:
         return round(self.ajuste * self.ratio, 2)
 
 
-def combine(results: list[dict], ajuste: float) -> Verdict:
+def combine(results: list[dict], ajuste: float, dias: int = PRINCIPAL) -> Verdict:
     rows = [r for c in results for r in c["detalle"]]
     if not rows:
-        raise ValueError("la calibración no produjo ninguna prueba")
+        raise ValueError(f"la calibración a {dias} días no produjo ninguna prueba")
     ratios = [c["comisiones_real_vs_p50"] for c in results]
     inside = sum(0.1 <= r["pct"] <= 0.9 for r in rows)
     per = [{"pool": c["pool"], "red": c["red"], "pruebas": c["pruebas"],
             "comisiones": round(c["comisiones_real_vs_p50"], 3), "cobertura": round(c["dentro_p10_p90"], 3)}
            for c in results]
-    return Verdict(float(pd.Series(ratios).median()), inside / len(rows), len(rows), ajuste, per)
+    return Verdict(dias, float(pd.Series(ratios).median()), inside / len(rows), len(rows), ajuste, per)
 
 
-def reference_pools() -> list[tuple[str, str]]:
-    """(pool_id, red) con al menos MIN_DIAS de histórico y TVL actual > MIN_TVL. Sin pares de dos
+def reference_pools(min_dias: int = min_dias(PRINCIPAL)) -> list[tuple[str, str]]:
+    """(pool_id, red) con al menos `min_dias` de histórico y TVL actual > MIN_TVL. Sin pares de dos
     estables: su valor final apenas se mueve y la horquilla P10–P90 no mide nada."""
     from . import backtest as B
     con = B._connect()
@@ -91,52 +115,85 @@ def reference_pools() -> list[tuple[str, str]]:
         rows = con.execute("""SELECT pool_id, chain, any_value(symbol0), any_value(symbol1) FROM pool_hour_v
                               GROUP BY pool_id, chain
                               HAVING max(hour) - min(hour) >= to_days(?) AND arg_max(tvl_usd, hour) > ?
-                              ORDER BY arg_max(tvl_usd, hour) DESC""", [MIN_DIAS, MIN_TVL]).fetchall()
+                              ORDER BY arg_max(tvl_usd, hour) DESC""", [min_dias, MIN_TVL]).fetchall()
     finally:
         con.close()
     return [(p, c) for p, c, s0, s1 in rows
             if (c, p) not in ANOMALOS and not (s0 in B._STABLE and s1 in B._STABLE)]
 
 
-def measure(ajuste: float = S.AJUSTE_COMISIONES, pools: list[tuple[str, str]] | None = None) -> Verdict:
-    results = []
-    for key, chain in pools or reference_pools():
-        try:
-            results.append(S.calibrar(key, chain, DIAS, ANCHO, HISTORIA, ajuste=ajuste, ultimos=ULTIMOS))
-        except Exception as e:                                   # noqa: BLE001 (un pool no tumba el resto)
-            print(f"{key} {chain}: {type(e).__name__}: {e}", file=sys.stderr)
-    return combine(results, ajuste)
+def _calibrar(args: tuple) -> dict | None:
+    key, chain, dias, ajuste = args
+    try:
+        return S.calibrar(key, chain, dias, ANCHO, historia(dias), ajuste=ajuste, ultimos=ULTIMOS,
+                          paso=BANDAS[dias][4])
+    except Exception as e:                                       # noqa: BLE001 (un pool no tumba el resto)
+        print(f"{key} {chain} {dias} d: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
 
 
-def title(v: Verdict) -> str:
+def measure(ajuste: float = S.AJUSTE_COMISIONES, plazos: tuple[int, ...] = PLAZOS,
+            pools: dict[int, list[tuple[str, str]]] | None = None, procesos: int = 4) -> list[Verdict]:
+    pools = pools or {d: reference_pools(min_dias(d)) for d in plazos}
+    jobs = [(k, c, d, ajuste) for d in plazos for k, c in pools[d]]
+    with ProcessPoolExecutor(procesos) as ex:
+        res = list(ex.map(_calibrar, jobs))
+    out = []
+    for d in plazos:
+        rs = [r for j, r in zip(jobs, res) if j[2] == d and r]
+        out.append(combine(rs, ajuste, d))
+    return out
+
+
+def _bandas_txt(v: Verdict) -> tuple[str, str]:
+    a, b, c, d, _ = v.bandas
+    return (f"{a:.2f}–{b:.2f}" if a is not None else "informativo"), f"{c:.0%}–{d:.0%}"
+
+
+def title(vs: list[Verdict]) -> str:
     what = []
-    if not v.ok_comisiones:
-        what.append(f"comisiones {v.ratio:.2f}")
-    if not v.ok_cobertura:
-        what.append(f"P10–P90 {v.cobertura:.0%}")
+    for v in vs:
+        if not v.ok_comisiones:
+            what.append(f"{v.dias} d comisiones {v.ratio:.2f}")
+        if not v.ok_cobertura:
+            what.append(f"{v.dias} d P10–P90 {v.cobertura:.0%}")
     return "Simulador de pools: recalibrar (" + ", ".join(what) + ")"
 
 
-def body(v: Verdict, hoy: str) -> str:
-    lines = [f"Calibración del {hoy}: aperturas del último año, {DIAS} días, rango ±{ANCHO:.0%}, "
-             f"{v.pruebas} pruebas en {len(v.por_pool)} pools.", "",
-             f"- **Comisiones reales / media simulada (mediana entre pools): {v.ratio:.2f}** (banda {COMIS_MIN:.2f}–{COMIS_MAX:.2f}) "
-             + ("✅" if v.ok_comisiones else "⚠️"),
-             f"- **Real dentro del P10–P90: {v.cobertura:.0%}** (banda {COBER_MIN:.0%}–{COBER_MAX:.0%}, ideal 80 %) "
-             + ("✅" if v.ok_cobertura else "⚠️"), "",
-             "| Pool | Red | Pruebas | Comisiones | P10–P90 |", "|---|---|---:|---:|---:|"]
-    lines += [f"| {p['pool']} | {p['red']} | {p['pruebas']} | {p['comisiones']:.2f} | {p['cobertura']:.0%} |"
-              for p in v.por_pool]
+def body(vs: list[Verdict], hoy: str) -> str:
+    lines = [f"Calibración del {hoy}: aperturas del último año, rango ±{ANCHO:.0%}, a {len(vs)} plazos.", "",
+             "| Plazo | Pools | Pruebas | Comisiones real/simulado | Banda | Real dentro del P10–P90 | Banda | |",
+             "|---:|---:|---:|---:|---|---:|---|---|"]
+    for v in vs:
+        bc, bp = _bandas_txt(v)
+        lines.append(f"| {v.dias} d | {len(v.por_pool)} | {v.pruebas} | {v.ratio:.2f} | {bc} | {v.cobertura:.0%} | {bp} | "
+                     + ("✅" if v.ok else "⚠️") + " |")
     lines += [""]
-    if not v.ok_comisiones:
-        lines += [f"**Qué hacer:** cambiar `AJUSTE_COMISIONES` en `etapas/simulador.py` de {v.ajuste:.2f} a "
-                  f"**{v.ajuste_propuesto:.2f}** (o probarlo antes en la pantalla, campo «Ajuste comisiones») y "
-                  "reiniciar `python -m etapas.simulador_web`.", ""]
-    if not v.ok_cobertura:
-        lines += ["**Qué hacer:** la horquilla P10–P90 "
-                  + ("se queda corta: la volatilidad reciente es mayor que la del último año. Probar `--historia 1095`."
-                     if v.cobertura < COBER_MIN else "es demasiado ancha: probar `--historia 365`.")
-                  + " Compruébalo con `python -m etapas.simulador \"WETH/USDC 0.05%\" --red base --calibrar --ultimos 365`.", ""]
+    for v in vs:
+        if v.ok:
+            continue
+        lines += [f"### Plazo de {v.dias} días", "", "| Pool | Red | Pruebas | Comisiones | P10–P90 |",
+                  "|---|---|---:|---:|---:|"]
+        lines += [f"| {p['pool']} | {p['red']} | {p['pruebas']} | {p['comisiones']:.2f} | {p['cobertura']:.0%} |"
+                  for p in v.por_pool]
+        lines += [""]
+        if not v.ok_comisiones:
+            if v.dias == PRINCIPAL:
+                lines += [f"**Qué hacer:** cambiar `AJUSTE_COMISIONES` en `etapas/simulador.py` de {v.ajuste:.2f} a "
+                          f"**{v.ajuste_propuesto:.2f}** (o probarlo antes en la pantalla, campo «Ajuste comisiones») y "
+                          "reiniciar `python -m etapas.simulador_web`.", ""]
+            else:
+                lines += [f"**Qué hacer:** a {v.dias} días las comisiones simuladas se desvían (real/simulado "
+                          f"{v.ratio:.2f}). No toques el ajuste común (lo fija el plazo de {PRINCIPAL} días): a este plazo, "
+                          "tómalas con ese descuento y valora que el nivel reciente vuelva a la media con el plazo.", ""]
+        if not v.ok_cobertura:
+            corta = v.cobertura < v.bandas[2]
+            lines += [f"**Qué hacer:** a {v.dias} días la horquilla P10–P90 "
+                      + (f"se queda corta: lo real se sale más de lo previsto. Prueba más histórico (`--historia "
+                         f"{historia(v.dias) + 365}`)." if corta else
+                         f"es demasiado ancha: prueba menos histórico (`--historia {max(365, historia(v.dias) - 365)}`).")
+                      + f" Compruébalo con `python -m etapas.simulador \"WETH/USDC 0.05%\" --red ethereum --calibrar "
+                        f"--dias {v.dias} --ultimos {ULTIMOS}`.", ""]
     lines += ["Esta issue se cierra sola en la siguiente calibración que esté en banda.", "", MARKER]
     return "\n".join(lines)
 
@@ -164,33 +221,41 @@ class GitHub:
         self._gh("issue", "close", str(n), "--comment", comment)
 
 
-def decide(v: Verdict, open_n: int | None) -> str | None:
+def decide(vs: list[Verdict], open_n: int | None) -> str | None:
     """abrir | cerrar | None."""
-    if not v.ok and open_n is None:
+    ok = all(v.ok for v in vs)
+    if not ok and open_n is None:
         return "abrir"
-    if v.ok and open_n is not None:
+    if ok and open_n is not None:
         return "cerrar"
     return None
 
 
-def run(gh: GitHub | None, simulate: bool = False, v: Verdict | None = None) -> str:
-    v = v or measure()
+def _corto(vs: list[Verdict]) -> str:
+    return " · ".join(f"{v.dias} d: comisiones {v.ratio:.2f}, P10–P90 {v.cobertura:.0%}" + ("" if v.ok else " ⚠")
+                      for v in vs)
+
+
+def run(gh: GitHub | None, simulate: bool = False, vs: list[Verdict] | None = None) -> str:
+    vs = vs or measure()
     hoy = pd.Timestamp.now().strftime("%Y-%m-%d")
     LOG.parent.mkdir(exist_ok=True)
     with LOG.open("a", encoding="utf-8") as f:
-        f.write(json.dumps({"fecha": hoy, "ratio": round(v.ratio, 4), "cobertura": round(v.cobertura, 4),
-                            "pruebas": v.pruebas, "ajuste": v.ajuste, "ok": v.ok, "pools": v.por_pool},
+        f.write(json.dumps({"fecha": hoy, "ok": all(v.ok for v in vs), "ajuste": vs[0].ajuste,
+                            "plazos": [{"dias": v.dias, "ratio": round(v.ratio, 4), "cobertura": round(v.cobertura, 4),
+                                        "pruebas": v.pruebas, "ok": v.ok, "pools": v.por_pool} for v in vs]},
                            ensure_ascii=False) + "\n")
-    summary = (f"{hoy}: comisiones {v.ratio:.2f}, P10–P90 {v.cobertura:.0%}, {v.pruebas} pruebas → "
-               + ("en banda" if v.ok else f"DESVIADO (ajuste propuesto {v.ajuste_propuesto:.2f})"))
+    principal = next((v for v in vs if v.dias == PRINCIPAL), None)
+    ok = all(v.ok for v in vs)
+    summary = f"{hoy}: {_corto(vs)} → " + ("en banda" if ok else "DESVIADO" + (
+        f" (ajuste propuesto {principal.ajuste_propuesto:.2f})" if principal and not principal.ok_comisiones else ""))
     open_n = gh.open_issue() if gh else None
-    act = decide(v, open_n)
+    act = decide(vs, open_n)
     if act and not simulate and gh:
         if act == "abrir":
-            gh.create(title(v), body(v, hoy))
+            gh.create(title(vs), body(vs, hoy))
         else:
-            gh.close(open_n, f"Calibración del {hoy} en banda: comisiones {v.ratio:.2f}, "
-                             f"P10–P90 {v.cobertura:.0%}. Se cierra el aviso.")
+            gh.close(open_n, f"Calibración del {hoy} en banda: {_corto(vs)}. Se cierra el aviso.")
     return summary + (f" · {act} issue" if act else "")
 
 

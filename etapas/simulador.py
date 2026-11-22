@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 from dataclasses import asdict, dataclass, field
 
@@ -51,6 +52,27 @@ NIVEL_DIAS = 90
 # (aperturas del último año: 68–77 % dentro frente a 64–75 % con 365) sin cambiar las comisiones.
 HISTORIA_DIAS = 730
 AJUSTE_COMISIONES = 0.88
+
+
+def historia_para(dias: int) -> int:
+    """Días de histórico por defecto para un plazo. Medido el 22-nov-2026 (aperturas comunes, 17–20
+    pools): 730 iguala o supera a 365 y a 1.095 en todos los plazos (P10–P90 a 7 d 83 % frente a 82 %;
+    60 d 71 % frente a 68 %; 90 d 89 % frente a 85 %; 180 d 83 % frente a 78 %), así que no cambia."""
+    return HISTORIA_DIAS
+
+
+# Comisiones reales ÷ simuladas según el plazo (mismas calibraciones del 22-nov-2026): el nivel
+# reciente se arrastra todo el plazo y a plazos largos sobrestima. Se muestra como aviso en pantalla.
+SESGO_PLAZO = {60: 0.88, 90: 0.75, 180: 0.60}
+
+
+def aviso_plazo(dias: int) -> str | None:
+    largos = [d for d in SESGO_PLAZO if d <= dias]
+    if not largos:
+        return None
+    d = max(largos)
+    return (f"a {dias} días las comisiones simuladas han salido altas en el pasado: lo real fue ×"
+            f"{SESGO_PLAZO[d]:.2f} de lo simulado a {d} días; aplica ese descuento a Comisiones y APR").replace(".", ",")
 
 
 # --- histórico → rasgos por hora ----------------------------------------------------------------
@@ -179,11 +201,27 @@ def _raw(pool: dict, shown: float) -> float:
     return human / 10 ** (pool["dec0"] - pool["dec1"])
 
 
-def parse_rango(texto: str, h: History) -> Rango:
-    """«1500-1900» (precios), «±10%» o «10%» (simétrico), «-5/+15» (% abajo / % arriba)."""
+_PCT_RANGO = re.compile(r"^P(\d{1,2})[-–/]P(\d{1,2})$", re.I)
+
+
+def percentiles_finales(h: History, paths: Paths, a: float, b: float) -> tuple[float, float]:
+    """Precios mostrados en los percentiles `a` y `b` del precio al final del plazo de los escenarios."""
+    shown = _display_arr(h.pool, paths.sp[:, -1] ** 2)
+    return float(np.percentile(shown, a)), float(np.percentile(shown, b))
+
+
+def parse_rango(texto: str, h: History, paths: Paths | None = None) -> Rango:
+    """«1500-1900» (precios), «±10%» o «10%» (simétrico), «-5/+15» (% abajo / % arriba) o
+    «P10-P90» (entre esos percentiles del precio al final del plazo; necesita los escenarios)."""
     t = texto.strip().replace(" ", "").replace(",", ".").replace("%", "").replace("±", "")
     p = price_now(h)
-    if "/" in t:
+    m = _PCT_RANGO.match(t)
+    if m:
+        a, b = sorted((int(m.group(1)), int(m.group(2))))
+        if paths is None or not 0 < a < b < 100:
+            raise ValueError(f"rango no válido: «{texto}» (percentiles entre 1 y 99, p. ej. P10-P90)")
+        lo, hi = percentiles_finales(h, paths, a, b)
+    elif "/" in t:
         a, b = t.split("/")
         lo, hi = p * (1 - abs(float(a)) / 100), p * (1 + abs(float(b)) / 100)
     elif "-" in t[1:]:
@@ -320,7 +358,7 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
         nivel_dias: int | None = NIVEL_DIAS) -> dict:
     h = h or load(key, chain, historia)
     paths = bootstrap(h, dias * 24, escenarios, bloque, tendencia, ajuste=ajuste, nivel_dias=nivel_dias)
-    out = [resumen(simulate(h, paths, parse_rango(r, h), capital, gas)) for r in rangos]
+    out = [resumen(simulate(h, paths, parse_rango(r, h, paths), capital, gas)) for r in rangos]
     asset, quote, _ = B.pair_of(h.pool)
     ref = referencia_sin_riesgo(h.pool["chain"])
     if ref:
@@ -332,7 +370,7 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
             "tendencia": tendencia, "comision_cambio": h.swap_fee, "ajuste_comisiones": ajuste,
             "nivel_dias": nivel_dias, "nivel_reciente": h.nivel(nivel_dias),
             "gas": GAS.get(h.pool["chain"], 0.05) if gas is None else gas,
-            "aviso": h.pool.get("aviso"), "rangos": out, "abanico": abanico(h, paths),
+            "aviso": h.pool.get("aviso"), "aviso_plazo": aviso_plazo(dias), "rangos": out, "abanico": abanico(h, paths),
             "sin_riesgo": ref}
 
 

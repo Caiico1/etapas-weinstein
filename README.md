@@ -428,8 +428,12 @@ desde este PC; en el móvil no carga porque el simulador solo corre aquí.
 python -m etapas.simulador "WETH/USDC 0.05%" --red base --capital 5000 --dias 30 --rangos "1500-1900,±10%,-5/+15"
 ```
 
-Rangos: precios (`1500-1900`), % simétrico (`±10%`) o asimétrico (`-5/+15`, % abajo / % arriba),
-ajustados hacia fuera a los ticks del pool. Opciones: `--historia` (días de histórico, 730),
+Rangos: precios (`1500-1900`), % simétrico (`±10%`), asimétrico (`-5/+15`, % abajo / % arriba) o
+percentiles del precio al final del plazo en los escenarios (`P10-P90`: acaba dentro en 8 de cada
+10; botones `+ P25–P75`, `+ P10–P90` y `+ P5–P95` en la pantalla), ajustados hacia fuera a los ticks
+del pool. Con P10–P90 el precio está dentro ~90 % del tiempo y fue, en ETH y BTC a 7, 30 y 180 días,
+el ancho más equilibrado: casi el mejor «vs mantener» en la mediana con un P10 bastante menos malo
+que el de P25–P75. Opciones: `--historia` (días de histórico, 730),
 `--escenarios` (1000), `--bloque` (horas por bloque, 168), `--tendencia neutral|historica`,
 `--nivel` (días del nivel reciente de comisiones, 90; 0 = sin nivel), `--ajuste` (factor común de
 comisiones, 0,88), `--gas`, `--json`.
@@ -474,14 +478,28 @@ sobrestima. Es un análisis de escenarios, no una predicción.
 **Vigilancia mensual de la calibración** (`etapas/simulador_aviso.py`). La tarea de Windows
 «Simulador calibracion» (día 1 de cada mes a las 10:30, o al encender el PC si se pasó;
 `simulador_aviso.vbs` → `.bat`, como el aviso de Aave) calibra con las aperturas del **último año**
-en los pools de referencia: ≥ 3 años de datos, TVL > 2 M$, sin pares de dos estables ni los de datos
-anómalos (PAXG/WETH 0,3 %, wstETH/WETH 0,01 % en Ethereum; WBTC/USDT y USDC/WBTC 0,05 % en Arbitrum,
-donde el simulador no reproduce las comisiones). Si la mediana entre pools de comisiones reales /
-simuladas sale de 0,90–1,10 o lo real
-dentro del P10–P90 sale del 70–90 %, abre una issue «simulador-calibracion» (llega por correo) con el
-ajuste propuesto; la cierra cuando vuelve a estar en banda. Registro en
-`out/simulador_calibracion.jsonl` y `out/simulador_aviso.log`. No va en la rutina de GitHub Actions
-porque necesita MetaProDB.
+a **7, 30, 90 y 180 días** en los pools de referencia: TVL > 2 M$, histórico suficiente para el
+plazo, sin pares de dos estables ni los de datos anómalos (PAXG/WETH 0,3 %, wstETH/WETH 0,01 % en
+Ethereum; WBTC/USDT y USDC/WBTC 0,05 % en Arbitrum, donde el simulador no reproduce las comisiones).
+
+| Plazo | Comisiones real / simulado (mediana entre pools) | Real dentro del P10–P90 |
+|---|---|---|
+| 7 días | 0,85–1,15 | 70–90 % |
+| 30 días (fija `AJUSTE_COMISIONES`) | 0,90–1,10 | 70–90 % |
+| 90 y 180 días | solo se registra (sesgo conocido, ver abajo) | 65–92 % (pocas pruebas independientes) |
+
+Si algún plazo sale de su banda, abre una issue «simulador-calibracion» (llega por correo) con lo que
+hay que mirar y, a 30 días, el ajuste propuesto; la cierra cuando todos vuelven a estar en banda.
+Registro en `out/simulador_calibracion.jsonl` y `out/simulador_aviso.log`. Tarda un par de minutos.
+No va en la rutina de GitHub Actions porque necesita MetaProDB.
+
+**Plazos largos (22-nov-2026).** Las comisiones se sobrestiman cuanto más largo es el plazo, porque
+el nivel de los últimos 90 días se arrastra todo el plazo: real ÷ simulado 1,12 a 7 días, 1,05 a 30,
+0,88 a 60, 0,79 a 90 y 0,64 a 180. La pantalla lo avisa a partir de 60 días (`SESGO_PLAZO`). La
+horquilla de precio sí aguanta: 83 % dentro del P10–P90 a 7 días, 71 % a 30, 86 % a 90 y 72 % a 180.
+**Histórico:** 730 días iguala o supera a 365 y a 1.095 en todos los plazos (mismas aperturas,
+17–20 pools; a 180 días, 83 % dentro frente a 78 % con 1.095), así que es el valor para cualquier
+plazo (`historia_para`).
 
 ```
 python -m etapas.simulador_aviso --simular      # calibra y dice qué haría, sin tocar GitHub

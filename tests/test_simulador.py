@@ -107,6 +107,22 @@ def test_parse_rango_en_precio_y_en_porcentaje(pool):
         S.parse_rango("1900-1900", h)
 
 
+@pytest.mark.parametrize("pool", [POOL, POOL_INV])
+def test_rango_por_percentiles_del_precio_final(pool):
+    h = S.features(pool, _walk(pool=pool, n=24 * 120))
+    paths = S.bootstrap(h, 24 * 30, 2000, seed=5)
+    r = S.parse_rango("P10-P90", h, paths)
+    s = S.simulate(h, paths, r, gas=0)
+    assert 0.77 <= float(np.mean(s.side == 0)) <= 0.83          # acaba dentro ~80 % (ajuste a ticks: algo más)
+    assert r.lo < S.price_now(h) < r.hi
+    ancho = S.parse_rango("P5–P95", h, paths)
+    assert ancho.lo <= r.lo and ancho.hi >= r.hi
+    with pytest.raises(ValueError):
+        S.parse_rango("P10-P90", h)                              # sin escenarios no se puede
+    with pytest.raises(ValueError):
+        S.parse_rango("P0-P90", h, paths)
+
+
 def test_side_en_precio_mostrado_para_pool_invertido():
     df = _walk(pool=POOL_INV, n=200, vol=0.0)
     h = S.features(POOL_INV, df)

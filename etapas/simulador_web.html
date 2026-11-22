@@ -75,9 +75,12 @@ summary{cursor:pointer;color:var(--text)}
       <button class="chip" data-add="±20%">+ ±20 %</button>
       <button class="chip" data-add="-5/+15">+ −5/+15 %</button>
       <button class="chip" id="addPrice">+ rango en precio</button>
+      <button class="chip" data-add="P25-P75" title="Entre los percentiles 25 y 75 del precio al final del plazo: estrecho, cobra más y se sale más">+ P25–P75</button>
+      <button class="chip" data-add="P10-P90" title="Entre los percentiles 10 y 90 del precio al final del plazo: el punto de partida más equilibrado">+ P10–P90</button>
+      <button class="chip" data-add="P5-P95" title="Entre los percentiles 5 y 95 del precio al final del plazo: ancho y prudente">+ P5–P95</button>
       <button class="primary" id="run">Simular</button>
     </div>
-    <div class="hint">Cada rango admite precios (<code>1500-1900</code>), un % simétrico (<code>±10%</code>) o asimétrico (<code>-5/+15</code>). Se ajusta hacia fuera a los ticks del pool.</div>
+    <div class="hint">Cada rango admite precios (<code>1500-1900</code>), un % simétrico (<code>±10%</code>) o asimétrico (<code>-5/+15</code>), o percentiles del precio al final del plazo (<code>P10-P90</code>: el precio acaba dentro en 8 de cada 10 escenarios; se recalcula al cambiar el plazo). Se ajusta hacia fuera a los ticks del pool.</div>
     <div class="facts" id="facts"></div>
     <div class="err" id="err"></div>
   </section>
@@ -174,7 +177,8 @@ function render(d){
     `histórico desde <b>${d.historia_desde.slice(0,10)}</b>`, `<b>${d.escenarios}</b> escenarios a <b>${d.dias}</b> días`,
     `comisiones ×<b>${(d.nivel_reciente*d.ajuste_comisiones).toLocaleString("es-ES",{maximumFractionDigits:2})}</b> (nivel ${d.nivel_dias?d.nivel_dias+" d":"histórico"} ×${d.nivel_reciente.toLocaleString("es-ES",{maximumFractionDigits:2})}, ajuste ${d.ajuste_comisiones.toLocaleString("es-ES")})`,
     `gas <b>${d.gas} $</b>`, `cambio inicial <b>${pct(d.comision_cambio,2,false)}</b>`,
-    d.aviso?`<span class="neg">${d.aviso}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
+    d.aviso?`<span class="neg">${d.aviso}</span>`:"",
+    d.aviso_plazo?`<span style="color:var(--accent)">⚠ ${d.aviso_plazo}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
   ["outFan","outBars","outTable"].forEach(id=>$(id).hidden=false);
   fan(d); bars(d); table(d);
 }
