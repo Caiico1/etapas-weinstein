@@ -400,6 +400,58 @@ de emisión de ese momento), que hay que reclamar y vender. Entre el 93 % y el 9
 está en stake, tiene tres fábricas de pools y sus recompensas cambian cada semana: no mejora el
 resultado lo bastante para justificar esa complejidad.
 
+## Simulador de pools a futuro (rango fijo)
+
+Simula cómo podría ir una posición de rango fijo en un pool de MetaProDB durante los próximos días:
+valor final, frente a mantener, comisiones, APR, rentabilidad, % del tiempo en rango, probabilidad
+de pérdida y por qué lado acaba, con la horquilla P10–P90 de los escenarios. Varios rangos del mismo
+pool a la vez, sin reajustes. Necesita `D:\MetaProDB\metapro.duckdb`; solo funciona en local.
+
+**Pantalla:** <http://localhost:8768>
+
+```
+python -m etapas.simulador_web                  # o --port 8770 si el 8768 está ocupado
+```
+
+(En Claude Code: `preview_start` con la configuración `simulador-pool` de `.claude/launch.json`.)
+
+**Consola:**
+
+```
+python -m etapas.simulador "WETH/USDC 0.05%" --red base --capital 5000 --dias 30 --rangos "1500-1900,±10%,-5/+15"
+```
+
+Rangos: precios (`1500-1900`), % simétrico (`±10%`) o asimétrico (`-5/+15`, % abajo / % arriba),
+ajustados hacia fuera a los ticks del pool. Opciones: `--historia` (días de histórico, 365),
+`--escenarios` (1000), `--bloque` (horas por bloque, 168), `--tendencia neutral|historica`,
+`--ajuste` (factor de comisiones, 0,85), `--gas`, `--json`.
+
+**Cómo funciona.** Cada escenario encadena bloques de 7 días consecutivos sacados al azar del
+histórico del pool: precio y comisiones van juntos (semanas movidas traen su volumen) y las
+comisiones se reescalan al precio de hoy (g0·√P y g1/√P son invariantes). Con tendencia «neutral»
+se quita la subida o bajada media: el simulador no apuesta por la dirección. La posición se abre
+hoy con la misma matemática que `backtest.simulate` (test de paridad), cobra L × fee_growth en las
+horas en rango diluido por la liquidez activa del pool, y paga el gas de abrir y la comisión del
+cambio inicial. «vs mantener» = guardar los mismos tokens depositados. Referencia: USDC en Aave en
+la misma red.
+
+**Fiabilidad.** `--calibrar` lanza el simulador desde muchas fechas pasadas con solo los datos
+anteriores y lo compara con lo que pasó:
+
+```
+python -m etapas.simulador "WETH/USDC 0.05%" --red base --calibrar --dias 30 --ancho 10
+```
+
+En nov-2026 (30 días, 488 fechas, WETH/USDC Base y Ethereum, WBTC/WETH Arbitrum, ±3/10/25 %): sin
+ajuste las comisiones reales fueron 0,80–0,91 de las simuladas; con el ajuste 0,85 (por defecto),
+lo real cayó dentro del P10–P90 el 79–84 % de las veces (ideal 80 %) y las comisiones reales fueron
+0,94–0,99 de las simuladas. Límites: supone que el próximo mes se parece al último año del pool; no
+modela MEV/JIT ni cambios bruscos de liquidez; con rangos muy estrechos el reparto horario
+sobrestima. Es un análisis de escenarios, no una predicción.
+
+Código: `etapas/simulador.py` (motor y calibración), `etapas/simulador_web.py` y
+`simulador_web.html` (pantalla, sin dependencias nuevas), `tests/test_simulador.py`.
+
 ## Versión en la nube (GitHub)
 
 El flujo [`.github/workflows/rutina.yml`](.github/workflows/rutina.yml) hace lo mismo que la
