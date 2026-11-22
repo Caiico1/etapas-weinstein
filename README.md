@@ -413,6 +413,11 @@ pool a la vez, sin reajustes. Necesita `D:\MetaProDB\metapro.duckdb`; solo funci
 python -m etapas.simulador_web                  # o --port 8770 si el 8768 está ocupado
 ```
 
+Arranca solo al iniciar sesión en Windows: la tarea programada «Simulador web» lanza
+`simulador_web.vbs` → `simulador_web.bat` (sin ventana, registro en `out\simulador_web.log`). También
+está en el panel Power4 (https://caiico1.github.io/power4-panel/, sección «Simulador»), que lo muestra
+desde este PC; en el móvil no carga porque el simulador solo corre aquí.
+
 (En Claude Code: `preview_start` con la configuración `simulador-pool` de `.claude/launch.json`.)
 
 **Consola:**
