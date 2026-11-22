@@ -449,8 +449,26 @@ lo real cayó dentro del P10–P90 el 79–84 % de las veces (ideal 80 %) y las 
 modela MEV/JIT ni cambios bruscos de liquidez; con rangos muy estrechos el reparto horario
 sobrestima. Es un análisis de escenarios, no una predicción.
 
+**Vigilancia mensual de la calibración** (`etapas/simulador_aviso.py`). La tarea de Windows
+«Simulador calibracion» (día 1 de cada mes a las 10:30, o al encender el PC si se pasó;
+`simulador_aviso.vbs` → `.bat`, como el aviso de Aave) calibra con las aperturas del **último año**
+en los tres pools de referencia. Si las comisiones reales / simuladas salen de 0,90–1,10 o lo real
+dentro del P10–P90 sale del 70–90 %, abre una issue «simulador-calibracion» (llega por correo) con el
+ajuste propuesto; la cierra cuando vuelve a estar en banda. Registro en
+`out/simulador_calibracion.jsonl` y `out/simulador_aviso.log`. No va en la rutina de GitHub Actions
+porque necesita MetaProDB.
+
+```
+python -m etapas.simulador_aviso --simular      # calibra y dice qué haría, sin tocar GitHub
+```
+
+Primera ejecución (22-nov-2026): con el ajuste 0,85, el último año dio comisiones 0,80 (Base 0,86,
+Ethereum 0,81, Arbitrum WBTC/WETH 0,62) y P10–P90 del 74 %: las comisiones de estos pools han
+bajado de forma sostenida y el histórico completo lo tapaba.
+
 Código: `etapas/simulador.py` (motor y calibración), `etapas/simulador_web.py` y
-`simulador_web.html` (pantalla, sin dependencias nuevas), `tests/test_simulador.py`.
+`simulador_web.html` (pantalla, sin dependencias nuevas), `etapas/simulador_aviso.py`,
+`tests/test_simulador.py` y `tests/test_simulador_aviso.py`.
 
 ## Versión en la nube (GitHub)
 

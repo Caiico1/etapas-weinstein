@@ -319,13 +319,15 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
 
 def calibrar(key: str, chain: str | None, dias: int = 30, ancho: float = 0.10, historia: int = 365,
              escenarios: int = 400, bloque: int = 168, paso: int = 7, tendencia: str = "neutral",
-             ajuste: float = AJUSTE_COMISIONES) -> dict:
+             ajuste: float = AJUSTE_COMISIONES, ultimos: int | None = None) -> dict:
     """Desde muchas fechas pasadas: escenarios con los datos de ANTES de la fecha y comparación con
     lo que pasó de verdad. Si está bien calibrado, el real cae dentro del P10–P90 ~80 % de las veces."""
     full = load(key, chain, historia=100_000)
     df, pool = full.df, full.pool
     hours = df["hour"]
     t = hours.iloc[0] + pd.Timedelta(days=historia)
+    if ultimos:                                   # solo las aperturas de los últimos `ultimos` días
+        t = max(t, hours.iloc[-1] - pd.Timedelta(days=ultimos + dias))
     rows = []
     while t + pd.Timedelta(days=dias) <= hours.iloc[-1]:
         past = df[(hours > t - pd.Timedelta(days=historia)) & (hours <= t)].reset_index(drop=True)
@@ -382,11 +384,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--calibrar", action="store_true")
     ap.add_argument("--ancho", type=float, default=10, help="calibración: ±%% del rango")
     ap.add_argument("--paso", type=int, default=7)
+    ap.add_argument("--ultimos", type=int, help="calibración: solo aperturas de los últimos N días")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     try:
         if a.calibrar:
-            c = calibrar(a.pool, a.red, a.dias, a.ancho / 100, a.historia, paso=a.paso, tendencia=a.tendencia, ajuste=a.ajuste)
+            c = calibrar(a.pool, a.red, a.dias, a.ancho / 100, a.historia, paso=a.paso, tendencia=a.tendencia, ajuste=a.ajuste,
+                         ultimos=a.ultimos)
             if a.json:
                 print(json.dumps(c, ensure_ascii=False, indent=1))
                 return 0
