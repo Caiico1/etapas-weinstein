@@ -402,6 +402,8 @@ resultado lo bastante para justificar esa complejidad.
 
 ## Simulador de pools a futuro (rango fijo)
 
+> Manual de uso, campo a campo y con capturas: **[Guía Simulador](Guia%20Simulador.md)**.
+
 Simula cómo podría ir una posición de rango fijo en un pool de MetaProDB durante los próximos días:
 valor final, frente a mantener, comisiones, APR, rentabilidad, % del tiempo en rango, probabilidad
 de pérdida y por qué lado acaba, con la horquilla P10–P90 de los escenarios. Varios rangos del mismo
