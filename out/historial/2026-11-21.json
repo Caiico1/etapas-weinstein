@@ -52,11 +52,11 @@
       "1d": {
         "etapa": 4,
         "transicion": "",
-        "vela": "2026-11-20",
+        "vela": "2026-11-21",
         "power4": 4,
-        "cierre": 1623.09,
-        "confirma": 1581.47,
-        "invalida": 2287.5122
+        "cierre": 1685.63,
+        "confirma": 1538.0,
+        "invalida": 2267.853
       }
     },
     "par:ETH/BTC": {
@@ -81,11 +81,11 @@
       "1d": {
         "etapa": 4,
         "transicion": "",
-        "vela": "2026-11-20",
+        "vela": "2026-11-21",
         "power4": 4,
-        "cierre": 0.02753,
+        "cierre": 0.02799,
         "confirma": 0.02728,
-        "invalida": 0.0293596
+        "invalida": 0.029287800000000003
       }
     },
     "accion:GLD": {
