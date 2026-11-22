@@ -40,9 +40,17 @@ from . import backtest as B
 
 GAS = {"ethereum": 5.0}            # $ por transacción; L2: 0,05 (igual que el backtest)
 PCTS = (5, 10, 25, 50, 75, 90, 95)
-# Las comisiones del pasado sobrestiman las del mes siguiente: calibrado fuera de muestra
-# (`--calibrar`, ±10 %, 30 días, 488 fechas en 3 pools) las reales fueron 0,80–0,91 de las simuladas.
-AJUSTE_COMISIONES = 0.85
+# Nivel de comisiones: los escenarios conservan la forma del histórico (semanas tranquilas y movidas)
+# pero se reescalan al nivel de los últimos NIVEL_DIAS (media de comisiones por unidad de liquidez,
+# invariante a la escala, frente a la media del histórico) y por un factor común AJUSTE_COMISIONES.
+# Validado fuera de muestra (22-nov-2026, 23 pools, aperturas de dos años, factor calibrado con un
+# año y aplicado al otro): sesgo 0,94–1,07 y 83–87 % de los pools dentro de ±20 %, frente a
+# 0,86–1,05 y 52–70 % con un factor fijo de 0,85 sin nivel reciente. El factor por pool empeoraba.
+NIVEL_DIAS = 90
+# Días de histórico de los escenarios: con 730 la horquilla P10–P90 recoge mejor los años movidos
+# (aperturas del último año: 68–77 % dentro frente a 64–75 % con 365) sin cambiar las comisiones.
+HISTORIA_DIAS = 730
+AJUSTE_COMISIONES = 0.88
 
 
 # --- histórico → rasgos por hora ----------------------------------------------------------------
@@ -60,6 +68,15 @@ class History:
     liquidity_now: float     # mediana de la liquidez activa de los últimos 7 días
     swap_fee: float          # comisión del pool (fracción) para el cambio al abrir
     hour_now: pd.Timestamp
+
+    def nivel(self, dias: int | None = NIVEL_DIAS) -> float:
+        """Comisiones por unidad de liquidez de los últimos `dias` frente a la media del histórico."""
+        y = self.q0 + self.q1
+        if not dias or not len(y) or y.mean() <= 0:
+            return 1.0
+        hrs = self.df["hour"].iloc[:-1].to_numpy()
+        recent = y[hrs > hrs[-1] - np.timedelta64(dias, "D")]
+        return float(recent.mean() / y.mean()) if len(recent) else 1.0
 
 
 def features(pool: dict, df: pd.DataFrame) -> History:
@@ -79,7 +96,7 @@ def features(pool: dict, df: pd.DataFrame) -> History:
                    float(np.median(recent)) if len(recent) else 0.0, fee, df["hour"].iloc[-1])
 
 
-def load(key: str, chain: str | None = None, historia: int = 365, hasta: str | None = None) -> History:
+def load(key: str, chain: str | None = None, historia: int = HISTORIA_DIAS, hasta: str | None = None) -> History:
     end = pd.Timestamp(hasta) if hasta else None
     start = ((end or pd.Timestamp.now(tz=None).floor("h")) - pd.Timedelta(days=historia)).strftime("%Y-%m-%d %H:00")
     pool, df = B.load_hours(key, chain, start, end.strftime("%Y-%m-%d %H:00") if end is not None else None)
@@ -97,7 +114,8 @@ class Paths:
 
 
 def bootstrap(h: History, horas: int, escenarios: int = 1000, bloque: int = 168,
-              tendencia: str = "neutral", seed: int | None = 7, ajuste: float = AJUSTE_COMISIONES) -> Paths:
+              tendencia: str = "neutral", seed: int | None = 7, ajuste: float = AJUSTE_COMISIONES,
+              nivel_dias: int | None = NIVEL_DIAS) -> Paths:
     m = len(h.ret_p)
     if m < 48:
         raise B.BacktestError("histórico demasiado corto para construir escenarios")
@@ -113,7 +131,8 @@ def bootstrap(h: History, horas: int, escenarios: int = 1000, bloque: int = 168,
     zero = np.zeros((escenarios, 1))
     sp = h.sp_now * np.exp(np.concatenate([zero, np.cumsum(rp, axis=1)], axis=1) / 2)
     u1 = h.usd1_now * np.exp(np.concatenate([zero, np.cumsum(ru, axis=1)], axis=1))
-    return Paths(sp, u1, h.q0[idx] * ajuste, h.q1[idx] * ajuste)
+    k = ajuste * h.nivel(nivel_dias)
+    return Paths(sp, u1, h.q0[idx] * k, h.q1[idx] * k)
 
 
 def replay(h: History) -> Paths:
@@ -296,10 +315,11 @@ def referencia_sin_riesgo(chain: str) -> dict | None:
 
 
 def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, dias: int = 30,
-        historia: int = 365, escenarios: int = 1000, bloque: int = 168, tendencia: str = "neutral",
-        gas: float | None = None, h: History | None = None, ajuste: float = AJUSTE_COMISIONES) -> dict:
+        historia: int = HISTORIA_DIAS, escenarios: int = 1000, bloque: int = 168, tendencia: str = "neutral",
+        gas: float | None = None, h: History | None = None, ajuste: float = AJUSTE_COMISIONES,
+        nivel_dias: int | None = NIVEL_DIAS) -> dict:
     h = h or load(key, chain, historia)
-    paths = bootstrap(h, dias * 24, escenarios, bloque, tendencia, ajuste=ajuste)
+    paths = bootstrap(h, dias * 24, escenarios, bloque, tendencia, ajuste=ajuste, nivel_dias=nivel_dias)
     out = [resumen(simulate(h, paths, parse_rango(r, h), capital, gas)) for r in rangos]
     asset, quote, _ = B.pair_of(h.pool)
     ref = referencia_sin_riesgo(h.pool["chain"])
@@ -310,6 +330,7 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
             "historia_desde": str(h.df["hour"].iloc[0]), "horas_historia": len(h.df),
             "capital": capital, "dias": dias, "escenarios": escenarios, "bloque_h": bloque,
             "tendencia": tendencia, "comision_cambio": h.swap_fee, "ajuste_comisiones": ajuste,
+            "nivel_dias": nivel_dias, "nivel_reciente": h.nivel(nivel_dias),
             "gas": GAS.get(h.pool["chain"], 0.05) if gas is None else gas,
             "aviso": h.pool.get("aviso"), "rangos": out, "abanico": abanico(h, paths),
             "sin_riesgo": ref}
@@ -317,13 +338,16 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
 
 # --- calibración: ¿habría acertado en el pasado? ----------------------------------------------
 
-def calibrar(key: str, chain: str | None, dias: int = 30, ancho: float = 0.10, historia: int = 365,
+def calibrar(key: str, chain: str | None, dias: int = 30, ancho: float = 0.10, historia: int = HISTORIA_DIAS,
              escenarios: int = 400, bloque: int = 168, paso: int = 7, tendencia: str = "neutral",
-             ajuste: float = AJUSTE_COMISIONES, ultimos: int | None = None) -> dict:
+             ajuste: float = AJUSTE_COMISIONES, ultimos: int | None = None, hasta: str | None = None,
+             full: History | None = None, nivel_dias: int | None = NIVEL_DIAS) -> dict:
     """Desde muchas fechas pasadas: escenarios con los datos de ANTES de la fecha y comparación con
     lo que pasó de verdad. Si está bien calibrado, el real cae dentro del P10–P90 ~80 % de las veces."""
-    full = load(key, chain, historia=100_000)
+    full = full or load(key, chain, historia=100_000)
     df, pool = full.df, full.pool
+    if hasta:                                     # como si hoy fuera `hasta`
+        df = df[df["hour"] <= pd.Timestamp(hasta)].reset_index(drop=True)
     hours = df["hour"]
     t = hours.iloc[0] + pd.Timedelta(days=historia)
     if ultimos:                                   # solo las aperturas de los últimos `ultimos` días
@@ -337,7 +361,8 @@ def calibrar(key: str, chain: str | None, dias: int = 30, ancho: float = 0.10, h
             hf = features(pool, fut)
             p = price_now(hp)
             rg = parse_rango(f"{ancho * 100}", hp)
-            sim = simulate(hp, bootstrap(hp, len(fut) - 1, escenarios, bloque, tendencia, seed=None, ajuste=ajuste), rg)
+            sim = simulate(hp, bootstrap(hp, len(fut) - 1, escenarios, bloque, tendencia, seed=None, ajuste=ajuste,
+                                        nivel_dias=nivel_dias), rg)
             hf.liquidity_now = hp.liquidity_now                   # lo que se sabía al abrir
             real = simulate(hf, replay(hf), rg)
             fv, rv = sim.final, float(real.final[0])
@@ -375,12 +400,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--capital", type=float, default=5000)
     ap.add_argument("--dias", type=int, default=30)
     ap.add_argument("--rangos", default="±5%,±10%,±20%", help="lista: 1500-1900,±10%%,-5/+15")
-    ap.add_argument("--historia", type=int, default=365, help="días de histórico para los escenarios")
+    ap.add_argument("--historia", type=int, default=HISTORIA_DIAS, help="días de histórico para los escenarios")
     ap.add_argument("--escenarios", type=int, default=1000)
     ap.add_argument("--bloque", type=int, default=168, help="horas consecutivas por bloque")
     ap.add_argument("--tendencia", choices=("neutral", "historica"), default="neutral")
     ap.add_argument("--gas", type=float)
-    ap.add_argument("--ajuste", type=float, default=AJUSTE_COMISIONES, help="factor sobre las comisiones del histórico (1 = sin ajuste)")
+    ap.add_argument("--ajuste", type=float, default=AJUSTE_COMISIONES, help="factor común sobre las comisiones (1 = sin ajuste)")
+    ap.add_argument("--nivel", type=int, default=NIVEL_DIAS, help="días del nivel reciente de comisiones (0 = sin nivel)")
     ap.add_argument("--calibrar", action="store_true")
     ap.add_argument("--ancho", type=float, default=10, help="calibración: ±%% del rango")
     ap.add_argument("--paso", type=int, default=7)
@@ -390,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if a.calibrar:
             c = calibrar(a.pool, a.red, a.dias, a.ancho / 100, a.historia, paso=a.paso, tendencia=a.tendencia, ajuste=a.ajuste,
-                         ultimos=a.ultimos)
+                         ultimos=a.ultimos, nivel_dias=a.nivel or None)
             if a.json:
                 print(json.dumps(c, ensure_ascii=False, indent=1))
                 return 0
@@ -403,7 +429,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         rangos = [r for r in a.rangos.split(",") if r.strip()]
         res = run(a.pool, a.red, rangos, a.capital, a.dias, a.historia, a.escenarios, a.bloque, a.tendencia, a.gas,
-                  ajuste=a.ajuste)
+                  ajuste=a.ajuste, nivel_dias=a.nivel or None)
     except (B.BacktestError, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
@@ -412,7 +438,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     print(f"{res['pool']['label']} ({res['pool']['chain']} {res['pool']['version']}) · {res['par']} = "
           f"{_fmt_price(res['precio'])} a {res['hora']} · {res['escenarios']} escenarios a {res['dias']} días "
-          f"(histórico desde {res['historia_desde'][:10]}, tendencia {res['tendencia']})")
+          f"(histórico desde {res['historia_desde'][:10]}, tendencia {res['tendencia']}, comisiones al nivel de "
+          f"{res['nivel_dias'] or 0} días ×{res['nivel_reciente']:.2f} y ajuste {res['ajuste_comisiones']:.2f})")
     print(f"{'Estrategia':<28}{'Valor final':>13}{'P10–P90':>22}{'vs mant.':>10}{'Comis.':>9}{'APR':>8}"
           f"{'Rent':>8}{'En rango':>10}{'P(pérd.)':>10}")
     for r in res["rangos"]:

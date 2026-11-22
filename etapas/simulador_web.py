@@ -52,13 +52,14 @@ def pools() -> list[dict]:
 def simular(q: dict) -> dict:
     g = lambda k, d: q.get(k, [d])[0]
     pool_id, chain = g("pool_id", ""), g("chain", "")
-    historia = int(g("historia", 365))
+    historia = int(g("historia", S.HISTORIA_DIAS))
     rangos = json.loads(g("rangos", "[]")) or ["±10%"]
     with _lock:
         h = _history(pool_id, chain, historia, _hora_actual())
     return S.run(pool_id, chain, rangos, float(g("capital", 5000)), int(g("dias", 30)), historia,
                  int(g("escenarios", 1000)), int(g("bloque", 168)), g("tendencia", "neutral"),
-                 float(g("gas")) if g("gas", "") else None, h=h, ajuste=float(g("ajuste", S.AJUSTE_COMISIONES)))
+                 float(g("gas")) if g("gas", "") else None, h=h, ajuste=float(g("ajuste", S.AJUSTE_COMISIONES)),
+                 nivel_dias=int(g("nivel", S.NIVEL_DIAS)) or None)
 
 
 class Handler(BaseHTTPRequestHandler):

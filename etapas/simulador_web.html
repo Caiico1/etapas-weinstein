@@ -61,10 +61,11 @@ summary{cursor:pointer;color:var(--text)}
       <label class="pool-sel">Pool<select id="pool"></select></label>
       <label>Capital ($)<input id="capital" type="number" value="5000" min="100" step="100"></label>
       <label>Plazo (días)<select id="dias"><option>7</option><option>14</option><option selected>30</option><option>60</option><option>90</option><option>180</option></select></label>
-      <label>Histórico (días)<select id="historia"><option>90</option><option>180</option><option selected>365</option><option>730</option></select></label>
+      <label>Histórico (días)<select id="historia"><option>90</option><option>180</option><option>365</option><option selected>730</option><option>1095</option></select></label>
       <label>Escenarios<select id="escenarios"><option>300</option><option selected>1000</option><option>3000</option></select></label>
       <label>Tendencia<select id="tendencia"><option value="neutral" selected>Neutral</option><option value="historica">La del histórico</option></select></label>
-      <label>Ajuste comisiones<input id="ajuste" type="number" value="0.85" min="0.1" max="2" step="0.05"></label>
+      <label>Nivel comisiones<select id="nivel"><option value="0">Todo el histórico</option><option value="30">Últimos 30 días</option><option value="90" selected>Últimos 90 días</option></select></label>
+      <label>Ajuste comisiones<input id="ajuste" type="number" value="0.88" min="0.1" max="2" step="0.01"></label>
     </div>
     <div class="ranges" id="ranges"></div>
     <div class="ranges">
@@ -101,9 +102,9 @@ summary{cursor:pointer;color:var(--text)}
     </table></div>
     <div class="hint" id="ref" style="font-size:13px;margin-top:12px"></div>
     <details style="margin-top:14px"><summary>Cómo se calcula y sus límites</summary>
-      <p>Cada escenario encadena bloques de 7 días consecutivos sacados al azar del histórico del pool: precio y comisiones van juntos, así que las semanas movidas traen su volumen. Con tendencia «neutral» se quita la subida o bajada media del histórico: el simulador no apuesta por la dirección, solo por cuánto se mueve.</p>
+      <p>Cada escenario encadena bloques de 7 días consecutivos sacados al azar del histórico del pool (por defecto, los dos últimos años): precio y comisiones van juntos, así que las semanas movidas traen su volumen. Con tendencia «neutral» se quita la subida o bajada media del histórico: el simulador no apuesta por la dirección, solo por cuánto se mueve.</p>
       <p>La posición se abre hoy con la matemática de Uniswap v3/v4 (la misma que el backtest, comprobada contra él). Cobra liquidez × fee_growth de la cadena en las horas en rango (la mitad si entra o sale en la hora), diluida por su propia liquidez. Se descuentan el gas de abrir y la comisión del cambio inicial. Valor final = posición + comisiones; «vs mantener» = frente a guardar los mismos tokens depositados.</p>
-      <p>Calibración fuera de muestra (30 días, 488 fechas en 3 pools): con el ajuste 0,85, lo real cayó dentro del P10–P90 el 79–84 % de las veces (lo ideal es el 80 %) y las comisiones reales fueron 0,94–0,99 de las simuladas. No modela MEV/JIT ni cambios bruscos de liquidez. Con rangos muy estrechos, el reparto por horas sobrestima.</p>
+      <p>Las comisiones se reescalan al nivel de los últimos 90 días (frente a la media del histórico) y por un factor común de 0,88. Validado fuera de muestra en 23 pools y dos años: sesgo 0,94–1,07 y 83–87 % de los pools dentro de ±20 %, frente a 52–70 % sin nivel reciente. Cada mes una tarea de Windows recalibra y avisa si se desvía. No modela MEV/JIT ni cambios bruscos de liquidez. Con rangos muy estrechos, el reparto por horas sobrestima.</p>
     </details>
   </section>
 </main>
@@ -135,7 +136,7 @@ $("addPrice").addEventListener("click",()=>{
   drawRanges(); schedule();
 });
 $("run").addEventListener("click",run);
-["pool","capital","dias","historia","escenarios","tendencia","ajuste"].forEach(id=>$(id).addEventListener("change",schedule));
+["pool","capital","dias","historia","escenarios","tendencia","nivel","ajuste"].forEach(id=>$(id).addEventListener("change",schedule));
 function schedule(){clearTimeout(timer);timer=setTimeout(run,350);}
 
 async function loadPools(){
@@ -156,7 +157,7 @@ async function run(){
   const [chain,pool_id]=$("pool").value.split("|");
   if(!pool_id) return;
   const q=new URLSearchParams({chain,pool_id,capital:$("capital").value,dias:$("dias").value,historia:$("historia").value,
-    escenarios:$("escenarios").value,tendencia:$("tendencia").value,ajuste:$("ajuste").value,rangos:JSON.stringify(ranges.filter(Boolean))});
+    escenarios:$("escenarios").value,tendencia:$("tendencia").value,nivel:$("nivel").value,ajuste:$("ajuste").value,rangos:JSON.stringify(ranges.filter(Boolean))});
   document.querySelectorAll("section.panel").forEach(s=>s.classList.add("busy"));
   $("err").textContent="";
   try{
@@ -171,6 +172,7 @@ function render(d){
   $("facts").innerHTML=[
     `${d.par} hoy <b>${price(d.precio)}</b>`, `datos hasta <b>${d.hora.slice(0,16)}</b>`,
     `histórico desde <b>${d.historia_desde.slice(0,10)}</b>`, `<b>${d.escenarios}</b> escenarios a <b>${d.dias}</b> días`,
+    `comisiones ×<b>${(d.nivel_reciente*d.ajuste_comisiones).toLocaleString("es-ES",{maximumFractionDigits:2})}</b> (nivel ${d.nivel_dias?d.nivel_dias+" d":"histórico"} ×${d.nivel_reciente.toLocaleString("es-ES",{maximumFractionDigits:2})}, ajuste ${d.ajuste_comisiones.toLocaleString("es-ES")})`,
     `gas <b>${d.gas} $</b>`, `cambio inicial <b>${pct(d.comision_cambio,2,false)}</b>`,
     d.aviso?`<span class="neg">${d.aviso}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
   ["outFan","outBars","outTable"].forEach(id=>$(id).hidden=false);

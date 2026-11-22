@@ -114,3 +114,17 @@ def test_side_en_precio_mostrado_para_pool_invertido():
     rg = S.parse_rango(f"{p * 0.5:.2f}-{p * 0.8:.2f}", h)    # rango por debajo del precio actual
     s = S.simulate(h, S.replay(h), rg, gas=0)
     assert int(s.side[0]) == 1                               # el precio acaba POR ENCIMA del rango
+
+
+def test_nivel_reciente_reescala_las_comisiones_de_los_escenarios():
+    df = _walk(n=24 * 360, vol=0.002)
+    recent = df["hour"] > df["hour"].iloc[-1] - pd.Timedelta(days=90)
+    df.loc[recent, ["fee_growth0", "fee_growth1"]] *= 0.5        # las comisiones han caído a la mitad
+    h = S.features(POOL, df)
+    k = h.nivel(90)
+    assert 0.5 < k < 0.7                                         # mitad frente a la media del año
+    assert h.nivel(None) == 1.0
+    con = S.bootstrap(h, 24 * 30, 500, ajuste=1.0, nivel_dias=90, seed=1)
+    sin = S.bootstrap(h, 24 * 30, 500, ajuste=1.0, nivel_dias=None, seed=1)
+    assert con.q1 == pytest.approx(sin.q1 * k)
+    assert np.array_equal(con.sp, sin.sp)                        # el precio no cambia

@@ -422,13 +422,16 @@ python -m etapas.simulador "WETH/USDC 0.05%" --red base --capital 5000 --dias 30
 ```
 
 Rangos: precios (`1500-1900`), % simétrico (`±10%`) o asimétrico (`-5/+15`, % abajo / % arriba),
-ajustados hacia fuera a los ticks del pool. Opciones: `--historia` (días de histórico, 365),
+ajustados hacia fuera a los ticks del pool. Opciones: `--historia` (días de histórico, 730),
 `--escenarios` (1000), `--bloque` (horas por bloque, 168), `--tendencia neutral|historica`,
-`--ajuste` (factor de comisiones, 0,85), `--gas`, `--json`.
+`--nivel` (días del nivel reciente de comisiones, 90; 0 = sin nivel), `--ajuste` (factor común de
+comisiones, 0,88), `--gas`, `--json`.
 
 **Cómo funciona.** Cada escenario encadena bloques de 7 días consecutivos sacados al azar del
 histórico del pool: precio y comisiones van juntos (semanas movidas traen su volumen) y las
-comisiones se reescalan al precio de hoy (g0·√P y g1/√P son invariantes). Con tendencia «neutral»
+comisiones se reescalan al precio de hoy (g0·√P y g1/√P son invariantes). El **nivel** de comisiones
+es el de los últimos 90 días: los escenarios conservan la forma del histórico (semanas tranquilas y
+movidas), pero se multiplican por (media de los últimos 90 días / media del histórico) × 0,88. Con tendencia «neutral»
 se quita la subida o bajada media: el simulador no apuesta por la dirección. La posición se abre
 hoy con la misma matemática que `backtest.simulate` (test de paridad), cobra L × fee_growth en las
 horas en rango diluido por la liquidez activa del pool, y paga el gas de abrir y la comisión del
@@ -442,17 +445,32 @@ anteriores y lo compara con lo que pasó:
 python -m etapas.simulador "WETH/USDC 0.05%" --red base --calibrar --dias 30 --ancho 10
 ```
 
-En nov-2026 (30 días, 488 fechas, WETH/USDC Base y Ethereum, WBTC/WETH Arbitrum, ±3/10/25 %): sin
-ajuste las comisiones reales fueron 0,80–0,91 de las simuladas; con el ajuste 0,85 (por defecto),
-lo real cayó dentro del P10–P90 el 79–84 % de las veces (ideal 80 %) y las comisiones reales fueron
-0,94–0,99 de las simuladas. Límites: supone que el próximo mes se parece al último año del pool; no
+Cómo se eligió el método de comisiones (22-nov-2026, 23 pools con ≥ 2 años de datos, aperturas
+a 30 días con ±10 %, el factor calibrado con un año y aplicado al otro, fuera de muestra):
+
+| Método | Sesgo (real / simulado) | Pools dentro de ±20 % |
+|---|---|---|
+| Sin ajuste | 0,73–0,90 | 13–74 % |
+| Factor fijo 0,85 | 0,86–1,05 | 52–70 % |
+| Factor por pool del año anterior | 0,81 | 39 % |
+| **Nivel de 90 días × 0,88 (por defecto)** | **0,94–1,07** | **83–87 %** |
+
+El factor por pool empeora: el de un año va en contra del siguiente (correlación −0,59). Lo que se
+repite es una caída general de las comisiones por unidad de liquidez, que el nivel reciente recoge.
+Con 730 días de histórico la horquilla recoge mejor los años movidos (aperturas del último año:
+68–77 % dentro del P10–P90 frente a 64–75 % con 365). En un año bajista lo que queda fuera cae sobre
+todo por debajo del P10: el simulador no apuesta por la dirección. Límites: supone que el próximo
+mes se parece a los dos últimos años del pool en volatilidad y al último trimestre en comisiones; no
 modela MEV/JIT ni cambios bruscos de liquidez; con rangos muy estrechos el reparto horario
 sobrestima. Es un análisis de escenarios, no una predicción.
 
 **Vigilancia mensual de la calibración** (`etapas/simulador_aviso.py`). La tarea de Windows
 «Simulador calibracion» (día 1 de cada mes a las 10:30, o al encender el PC si se pasó;
 `simulador_aviso.vbs` → `.bat`, como el aviso de Aave) calibra con las aperturas del **último año**
-en los tres pools de referencia. Si las comisiones reales / simuladas salen de 0,90–1,10 o lo real
+en los pools de referencia: ≥ 3 años de datos, TVL > 2 M$, sin pares de dos estables ni los de datos
+anómalos (PAXG/WETH 0,3 %, wstETH/WETH 0,01 % en Ethereum; WBTC/USDT y USDC/WBTC 0,05 % en Arbitrum,
+donde el simulador no reproduce las comisiones). Si la mediana entre pools de comisiones reales /
+simuladas sale de 0,90–1,10 o lo real
 dentro del P10–P90 sale del 70–90 %, abre una issue «simulador-calibracion» (llega por correo) con el
 ajuste propuesto; la cierra cuando vuelve a estar en banda. Registro en
 `out/simulador_calibracion.jsonl` y `out/simulador_aviso.log`. No va en la rutina de GitHub Actions
@@ -462,9 +480,10 @@ porque necesita MetaProDB.
 python -m etapas.simulador_aviso --simular      # calibra y dice qué haría, sin tocar GitHub
 ```
 
-Primera ejecución (22-nov-2026): con el ajuste 0,85, el último año dio comisiones 0,80 (Base 0,86,
-Ethereum 0,81, Arbitrum WBTC/WETH 0,62) y P10–P90 del 74 %: las comisiones de estos pools han
-bajado de forma sostenida y el histórico completo lo tapaba.
+Primera ejecución (22-nov-2026), con el método anterior (0,85 fijo): comisiones 0,80 (Arbitrum
+WBTC/WETH 0,62), porque las comisiones habían bajado de forma sostenida y el histórico completo lo
+tapaba. Con el nivel de 90 días × 0,88 y 730 días de histórico: comisiones 1,03 y P10–P90 del 72 %
+(21 pools, 1.113 pruebas), en banda.
 
 Código: `etapas/simulador.py` (motor y calibración), `etapas/simulador_web.py` y
 `simulador_web.html` (pantalla, sin dependencias nuevas), `etapas/simulador_aviso.py`,

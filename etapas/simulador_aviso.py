@@ -4,8 +4,10 @@
     python -m etapas.simulador_aviso --simular    # solo dice qué haría, sin tocar GitHub
 
 Lanza `simulador.calibrar` con las aperturas del último año (30 días, rango ±10 %, histórico de
-365 días) en los pools de referencia y junta los resultados:
-  - comisiones reales / media simulada: fuera de 0,90–1,10 → el `AJUSTE_COMISIONES` ya no vale;
+730 días) en los pools de referencia (≥ 3 años de datos y TVL > 2 M$, sin los de datos anómalos)
+y junta los resultados:
+  - mediana entre pools de comisiones reales / media simulada: fuera de 0,90–1,10 → el
+    `AJUSTE_COMISIONES` ya no vale;
   - lo real dentro del P10–P90: fuera del 70–90 % → la horquilla es demasiado estrecha o ancha.
 Si se desvía, abre una issue de GitHub (etiqueta «simulador-calibracion», que GitHub envía por
 correo) con el ajuste propuesto; si vuelve a estar en banda, la cierra. Con la issue abierta no
@@ -28,8 +30,13 @@ import pandas as pd
 
 from . import simulador as S
 
-POOLS = [("WETH/USDC 0.05%", "base"), ("WETH/USDC 0.05%", "ethereum"), ("WBTC/WETH 0.05%", "arbitrum")]
-DIAS, ANCHO, HISTORIA, ULTIMOS = 30, 0.10, 365, 365
+# Datos que el simulador no reproduce (fee_growth anómalo en MetaProDB): fuera de la referencia.
+ANOMALOS = {("ethereum", "0x8a7e585048bda875e64024118c506b14f78166dd"),     # PAXG/WETH 0,3 %
+            ("arbitrum", "0x5969efdde3cf5c0d9a88ae51e47d721096a97203"),     # WBTC/USDT 0,05 %
+            ("ethereum", "0x109830a1aaad605bbf02a9dfa7b0b92ec2fb7daa"),     # wstETH/WETH 0,01 %
+            ("arbitrum", "0x0e4831319a50228b9e450861297ab92dee15b44f")}     # USDC/WBTC 0,05 %
+DIAS, ANCHO, HISTORIA, ULTIMOS = 30, 0.10, S.HISTORIA_DIAS, 365
+MIN_TVL, MIN_DIAS = 2e6, HISTORIA + ULTIMOS + 30
 COMIS_MIN, COMIS_MAX = 0.90, 1.10
 COBER_MIN, COBER_MAX = 0.70, 0.90
 LABEL = "simulador-calibracion"
@@ -40,7 +47,7 @@ LOG = Path(__file__).resolve().parent.parent / "out" / "simulador_calibracion.js
 
 @dataclass
 class Verdict:
-    ratio: float              # comisiones reales / media simulada (todas las pruebas juntas)
+    ratio: float              # mediana entre pools de comisiones reales / media simulada
     cobertura: float          # fracción con lo real dentro del P10–P90
     pruebas: int
     ajuste: float             # el que se usó
@@ -67,18 +74,33 @@ def combine(results: list[dict], ajuste: float) -> Verdict:
     rows = [r for c in results for r in c["detalle"]]
     if not rows:
         raise ValueError("la calibración no produjo ninguna prueba")
-    real = sum(r["fees_real"] for r in rows)
-    sim = sum(r["fees_p50"] for r in rows)
+    ratios = [c["comisiones_real_vs_p50"] for c in results]
     inside = sum(0.1 <= r["pct"] <= 0.9 for r in rows)
     per = [{"pool": c["pool"], "red": c["red"], "pruebas": c["pruebas"],
             "comisiones": round(c["comisiones_real_vs_p50"], 3), "cobertura": round(c["dentro_p10_p90"], 3)}
            for c in results]
-    return Verdict(real / sim if sim else float("nan"), inside / len(rows), len(rows), ajuste, per)
+    return Verdict(float(pd.Series(ratios).median()), inside / len(rows), len(rows), ajuste, per)
 
 
-def measure(ajuste: float = S.AJUSTE_COMISIONES) -> Verdict:
+def reference_pools() -> list[tuple[str, str]]:
+    """(pool_id, red) con al menos MIN_DIAS de histórico y TVL actual > MIN_TVL. Sin pares de dos
+    estables: su valor final apenas se mueve y la horquilla P10–P90 no mide nada."""
+    from . import backtest as B
+    con = B._connect()
+    try:
+        rows = con.execute("""SELECT pool_id, chain, any_value(symbol0), any_value(symbol1) FROM pool_hour_v
+                              GROUP BY pool_id, chain
+                              HAVING max(hour) - min(hour) >= to_days(?) AND arg_max(tvl_usd, hour) > ?
+                              ORDER BY arg_max(tvl_usd, hour) DESC""", [MIN_DIAS, MIN_TVL]).fetchall()
+    finally:
+        con.close()
+    return [(p, c) for p, c, s0, s1 in rows
+            if (c, p) not in ANOMALOS and not (s0 in B._STABLE and s1 in B._STABLE)]
+
+
+def measure(ajuste: float = S.AJUSTE_COMISIONES, pools: list[tuple[str, str]] | None = None) -> Verdict:
     results = []
-    for key, chain in POOLS:
+    for key, chain in pools or reference_pools():
         try:
             results.append(S.calibrar(key, chain, DIAS, ANCHO, HISTORIA, ajuste=ajuste, ultimos=ULTIMOS))
         except Exception as e:                                   # noqa: BLE001 (un pool no tumba el resto)
@@ -98,7 +120,7 @@ def title(v: Verdict) -> str:
 def body(v: Verdict, hoy: str) -> str:
     lines = [f"Calibración del {hoy}: aperturas del último año, {DIAS} días, rango ±{ANCHO:.0%}, "
              f"{v.pruebas} pruebas en {len(v.por_pool)} pools.", "",
-             f"- **Comisiones reales / media simulada: {v.ratio:.2f}** (banda {COMIS_MIN:.2f}–{COMIS_MAX:.2f}) "
+             f"- **Comisiones reales / media simulada (mediana entre pools): {v.ratio:.2f}** (banda {COMIS_MIN:.2f}–{COMIS_MAX:.2f}) "
              + ("✅" if v.ok_comisiones else "⚠️"),
              f"- **Real dentro del P10–P90: {v.cobertura:.0%}** (banda {COBER_MIN:.0%}–{COBER_MAX:.0%}, ideal 80 %) "
              + ("✅" if v.ok_cobertura else "⚠️"), "",
@@ -112,8 +134,8 @@ def body(v: Verdict, hoy: str) -> str:
                   "reiniciar `python -m etapas.simulador_web`.", ""]
     if not v.ok_cobertura:
         lines += ["**Qué hacer:** la horquilla P10–P90 "
-                  + ("se queda corta: la volatilidad reciente es mayor que la del último año. Probar `--historia 180`."
-                     if v.cobertura < COBER_MIN else "es demasiado ancha: probar `--historia 730`.")
+                  + ("se queda corta: la volatilidad reciente es mayor que la del último año. Probar `--historia 1095`."
+                     if v.cobertura < COBER_MIN else "es demasiado ancha: probar `--historia 365`.")
                   + " Compruébalo con `python -m etapas.simulador \"WETH/USDC 0.05%\" --red base --calibrar --ultimos 365`.", ""]
     lines += ["Esta issue se cierra sola en la siguiente calibración que esté en banda.", "", MARKER]
     return "\n".join(lines)
