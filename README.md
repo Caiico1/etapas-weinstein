@@ -450,6 +450,17 @@ horas en rango diluido por la liquidez activa del pool, y paga el gas de abrir y
 cambio inicial. «vs mantener» = guardar los mismos tokens depositados. Referencia: USDC en Aave en
 la misma red.
 
+**Resumen, semáforo y desglose (pantalla y `--json`).** `conclusiones` escribe 3–4 frases a partir de
+la tabla: si algún rango supera a mantener, si supera a la referencia sin riesgo, el riesgo de cola
+(mediana que gana con media que pierde) y los rangos que se salen mucho. `fiabilidad` da un semáforo
+alta/media/baja con sus motivos: histórico (≥ 2 años validado), TVL (> 2 M$), plazo (> 90 días baja a
+media), pools con datos anómalos y, si existe, la calibración mensual del propio pool
+(`calibracion_pool`, que lee `out/simulador_calibracion.jsonl`, local y sin subir). `desglose` reparte el
+resultado medio en precio de los tokens + pérdida impermanente + comisiones + costes (suma exacta;
+«vs mantener» = las tres últimas). Ejemplo: WETH/USDC de Base a 30 días con ±5 % gana 80 $ en la
+mediana pero pierde 192 $ de media, porque la pérdida impermanente de los escenarios malos (−336 $ de
+media) no tiene techo.
+
 **Fiabilidad.** `--calibrar` lanza el simulador desde muchas fechas pasadas con solo los datos
 anteriores y lo compara con lo que pasó:
 

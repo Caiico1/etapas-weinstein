@@ -33,6 +33,7 @@ import math
 import re
 import sys
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -91,6 +92,11 @@ class History:
     liquidity_now: float     # mediana de la liquidez activa de los últimos 7 días
     swap_fee: float          # comisión del pool (fracción) para el cambio al abrir
     hour_now: pd.Timestamp
+    tvl_now: float = 0.0     # TVL de la última hora con dato ($)
+
+    @property
+    def dias_historia(self) -> float:
+        return (self.df["hour"].iloc[-1] - self.df["hour"].iloc[0]) / pd.Timedelta(days=1)
 
     def nivel(self, dias: int | None = NIVEL_DIAS) -> float:
         """Comisiones por unidad de liquidez de los últimos `dias` frente a la media del histórico."""
@@ -114,9 +120,11 @@ def features(pool: dict, df: pd.DataFrame) -> History:
     fee = (float(lp_fee.iloc[-1]) if len(lp_fee) else pool["fee"]) / 1e6
     if fee > 0.1:                                  # comisión dinámica sin dato: la del pool nominal no sirve
         fee = 0.003
+    tvl = df["tvl_usd"].dropna() if "tvl_usd" in df else pd.Series(dtype=float)
     return History(pool, df, 2 * np.log(sp[1:] / sp[:-1]), np.log(u1[1:] / u1[:-1]),
                    g0 * sp[1:], g1 / sp[1:], float(sp[-1]), float(u1[-1]),
-                   float(np.median(recent)) if len(recent) else 0.0, fee, df["hour"].iloc[-1])
+                   float(np.median(recent)) if len(recent) else 0.0, fee, df["hour"].iloc[-1],
+                   float(tvl.iloc[-1]) if len(tvl) else 0.0)
 
 
 def load(key: str, chain: str | None = None, historia: int = HISTORIA_DIAS, hasta: str | None = None) -> History:
@@ -319,7 +327,20 @@ def resumen(s: Sim) -> dict:
         "prob_gana_mantener": float(np.mean(s.final > s.hodl)),
         "acaba": {"dentro": float(np.mean(s.side == 0)), "debajo": float(np.mean(s.side < 0)),
                   "encima": float(np.mean(s.side > 0))},
+        "desglose": desglose(s),
     }
+
+
+def desglose(s: Sim) -> dict:
+    """De dónde sale el resultado (media de los escenarios, en $; suma exacta):
+    precio = lo que cambian de valor los tokens depositados; perdida_impermanente = lo que la posición
+    vale menos que esos mismos tokens guardados; comisiones; costes = gas + cambio inicial.
+    «vs mantener» = perdida_impermanente + comisiones + costes."""
+    tokens = s.hodl - s.costs                              # los tokens depositados, guardados, al final
+    return {"precio": float(np.mean(tokens - (s.capital - s.costs))),
+            "perdida_impermanente": float(np.mean(s.final - s.fees - tokens)),
+            "comisiones": float(np.mean(s.fees)), "costes": -float(s.costs),
+            "total": float(np.mean(s.final - s.capital))}
 
 
 def abanico(h: History, paths: Paths, puntos: int = 60) -> dict:
@@ -353,6 +374,121 @@ def referencia_sin_riesgo(chain: str) -> dict | None:
     return {"nombre": f"USDC en Aave {chain}", "apy": float(row[0]), "hora": str(row[1])}
 
 
+# --- fiabilidad y conclusión ------------------------------------------------------------------
+
+CALIBRACION_LOG = Path(__file__).resolve().parent.parent / "out" / "simulador_calibracion.jsonl"
+_NIVELES = ("alta", "media", "baja")
+
+
+def calibracion_pool(pool_id: str, chain: str, dias: int, log: Path | None = None) -> dict | None:
+    """Resultado de este pool en la última calibración mensual, al plazo más parecido (o None)."""
+    log = log or CALIBRACION_LOG
+    try:
+        lines = log.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if "plazos" not in rec:
+            continue
+        found = [(p["dias"], x) for p in rec["plazos"] for x in p["pools"]
+                 if x.get("pool_id") == pool_id and x.get("red") == chain]
+        if not found:
+            return None
+        d, x = min(found, key=lambda dx: abs(math.log(dx[0] / max(dias, 1))))
+        return {"dias": d, "comisiones": x["comisiones"], "cobertura": x["cobertura"],
+                "pruebas": x["pruebas"], "fecha": rec.get("fecha")}
+    return None
+
+
+def fiabilidad(h: History, dias: int, calib: dict | None = None) -> dict:
+    """Semáforo: alta / media / baja, con los motivos. Se basa en lo validado (pools con ≥ 2 años y
+    TVL > 2 M$; 7–180 días) y, si existe, en la calibración mensual del propio pool."""
+    from .simulador_aviso import ANOMALOS, MIN_TVL
+    malos: list[tuple[int, str]] = []          # (0 media / 1 baja, motivo)
+    buenos: list[str] = []
+    pool = h.pool
+    if (pool["chain"], pool["pool_id"]) in ANOMALOS:
+        malos.append((1, "MetaProDB tiene comisiones anómalas en este pool: el simulador no las reproduce"))
+    hist = h.dias_historia
+    if hist < 180:
+        malos.append((1, f"solo {hist:.0f} días de histórico"))
+    elif hist < HISTORIA_DIAS * 0.9:
+        malos.append((0, f"{hist:.0f} días de histórico (lo validado es {HISTORIA_DIAS})"))
+    if h.tvl_now < MIN_TVL / 4:
+        malos.append((1, f"TVL de {h.tvl_now / 1e6:.2f} M$: comisiones muy ruidosas"))
+    elif h.tvl_now < MIN_TVL:
+        malos.append((0, f"TVL de {h.tvl_now / 1e6:.1f} M$ (lo validado es > {MIN_TVL / 1e6:.0f} M$)"))
+    if dias > 90:
+        malos.append((0, f"a {dias} días el error por pool es mayor (1 de cada 4 se desvía más de un 20 %)"))
+    if calib:
+        r, c = calib["comisiones"], calib["cobertura"]
+        txt = (f"en su calibración a {calib['dias']} días lo real fue ×{r:.2f} de las comisiones simuladas "
+               f"y cayó dentro del P10–P90 el {_pct(c)}").replace(".", ",")
+        if not 0.5 <= r <= 2 or c < 0.4:
+            malos.append((1, txt))
+        elif not 0.75 <= r <= 1.33 or c < 0.6:
+            malos.append((0, txt))
+        else:
+            buenos.append(txt)
+    elif not malos:
+        buenos.append("pool como los validados (≥ 2 años de histórico, TVL > 2 M$)")
+    nivel = _NIVELES[max((m for m, _ in malos), default=-1) + 1]
+    return {"nivel": nivel, "motivos": [t for _, t in malos], "a_favor": buenos}
+
+
+def _pct(x: float) -> str:
+    return f"{x * 100:.0f} %"
+
+
+def _usd(x: float, signo: bool = True) -> str:
+    return (f"{x:+,.0f}" if signo else f"{x:,.0f}").replace(",", ".").replace("-", "−") + " $"
+
+
+def conclusiones(res: dict) -> list[str]:
+    """Tres o cuatro frases que resumen la tabla."""
+    rs = res["rangos"]
+    if not rs:
+        return []
+    out = []
+    best = max(rs, key=lambda r: r["vs_mantener"]["p50"])
+    vm = best["vs_mantener"]["p50"]
+    if vm > 0:
+        out.append(f"Frente a mantener los tokens, el mejor es {best['texto']}: {_usd(vm)} en la mediana, "
+                   f"y gana a mantener en el {_pct(best['prob_gana_mantener'])} de los escenarios.")
+    else:
+        out.append(f"Ningún rango supera a mantener los tokens en la mediana (el mejor, {best['texto']}: "
+                   f"{_usd(vm)}): las comisiones no compensan lo que se pierde por el movimiento del precio.")
+    top = max(rs, key=lambda r: r["valor_final"]["p50"])
+    gana = top["valor_final"]["p50"] - res["capital"]
+    ref = res.get("sin_riesgo")
+    if ref:
+        sr = ref["valor_final"] - res["capital"]
+        if sr >= gana:
+            out.append(f"{ref['nombre']} da {_usd(sr)} en {res['dias']} días sin riesgo de precio, más que la "
+                       f"mediana de cualquier rango (la mejor, {top['texto']}: {_usd(gana)}).")
+        else:
+            out.append(f"{top['texto']} supera en la mediana a {ref['nombre']} ({_usd(gana)} frente a {_usd(sr)}), "
+                       f"pero en el escenario malo (P10) acaba en {_usd(top['valor_final']['p10'], False)} y pierde "
+                       f"dinero en el {_pct(top['prob_perdida'])} de los escenarios.")
+    cola = [r for r in rs if "desglose" in r and r["desglose"]["total"] < 0 < r["valor_final"]["p50"] - res["capital"]]
+    if cola:
+        r = min(cola, key=lambda r: r["desglose"]["total"])
+        out.append(f"Ojo con {r['texto']}: la mediana gana {_usd(r['valor_final']['p50'] - res['capital'])}, pero la "
+                   f"media de los escenarios pierde {_usd(-r['desglose']['total'], False)}: cuando sale mal, sale muy mal "
+                   f"(pérdida impermanente media {_usd(r['desglose']['perdida_impermanente'])}).")
+    cortos = [r["texto"] for r in rs if r["en_rango"] < 0.6]
+    if cortos:
+        out.append(f"{', '.join(cortos)}: dentro menos del 60 % del tiempo, estrecho para {res['dias']} días.")
+    f = res.get("fiabilidad")
+    if f and f["nivel"] != "alta":
+        out.append(f"Fiabilidad {f['nivel']}: {'; '.join(f['motivos'])}.")
+    return out
+
+
 def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, dias: int = 30,
         historia: int = HISTORIA_DIAS, escenarios: int = 1000, bloque: int = 168, tendencia: str = "neutral",
         gas: float | None = None, h: History | None = None, ajuste: float = AJUSTE_COMISIONES,
@@ -365,15 +501,18 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
     ref = referencia_sin_riesgo(h.pool["chain"])
     if ref:
         ref["valor_final"] = capital * (1 + ref["apy"]) ** (dias / 365)
-    return {"pool": {k: h.pool[k] for k in ("chain", "version", "label", "pool_id", "fee", "tick_spacing")},
-            "par": f"{asset}/{quote}", "precio": price_now(h), "hora": str(h.hour_now),
+    fiab = fiabilidad(h, dias, calibracion_pool(h.pool["pool_id"], h.pool["chain"], dias))
+    res = {"pool": {k: h.pool[k] for k in ("chain", "version", "label", "pool_id", "fee", "tick_spacing")},
+            "par": f"{asset}/{quote}", "precio": price_now(h), "hora": str(h.hour_now), "tvl": h.tvl_now,
             "historia_desde": str(h.df["hour"].iloc[0]), "horas_historia": len(h.df),
             "capital": capital, "dias": dias, "escenarios": escenarios, "bloque_h": bloque,
             "tendencia": tendencia, "comision_cambio": h.swap_fee, "ajuste_comisiones": ajuste,
             "nivel_dias": nivel_dias, "nivel_reciente": h.nivel(nivel_dias), "factor_plazo": factor_plazo(dias, exponente),
             "gas": GAS.get(h.pool["chain"], 0.05) if gas is None else gas,
             "aviso": h.pool.get("aviso"), "rangos": out, "abanico": abanico(h, paths),
-            "sin_riesgo": ref}
+            "sin_riesgo": ref, "fiabilidad": fiab}
+    res["conclusiones"] = conclusiones(res)
+    return res
 
 
 # --- calibración: ¿habría acertado en el pasado? ----------------------------------------------
@@ -417,7 +556,8 @@ def calibrar(key: str, chain: str | None, dias: int = 30, ancho: float = 0.10, h
         raise B.BacktestError("no hay fechas suficientes para calibrar con ese histórico")
     r = pd.DataFrame(rows)
     pct = r["pct"].to_numpy()
-    return {"pool": pool["label"], "red": pool["chain"], "dias": dias, "ancho": ancho, "historia": historia,
+    return {"pool": pool["label"], "red": pool["chain"], "pool_id": pool["pool_id"], "dias": dias, "ancho": ancho,
+            "historia": historia,
             "pruebas": len(r), "dentro_p10_p90": float(np.mean((pct >= 0.1) & (pct <= 0.9))),
             "dentro_p5_p95": float(np.mean((pct >= 0.05) & (pct <= 0.95))),
             "por_debajo_p10": float(np.mean(pct < 0.1)), "por_encima_p90": float(np.mean(pct > 0.9)),

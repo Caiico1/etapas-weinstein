@@ -1,4 +1,5 @@
 """Simulador de escenarios: paridad con el backtest y propiedades del bootstrap (series sintéticas, sin BD)."""
+import json
 import math
 
 import numpy as np
@@ -132,6 +133,72 @@ def test_factor_plazo_corrige_las_comisiones_segun_el_plazo():
     con = S.bootstrap(h, 24 * 90, 200, ajuste=1.0, nivel_dias=None, seed=2)
     sin = S.bootstrap(h, 24 * 90, 200, ajuste=1.0, nivel_dias=None, seed=2, exponente=0)
     assert con.q0 == pytest.approx(sin.q0 * S.factor_plazo(90))
+
+
+@pytest.mark.parametrize("pool", [POOL, POOL_INV])
+def test_desglose_suma_el_resultado_y_vs_mantener(pool):
+    h = S.features(pool, _walk(pool=pool, n=24 * 120))
+    paths = S.bootstrap(h, 24 * 30, 500, seed=3)
+    s = S.simulate(h, paths, S.parse_rango("±5%", h))
+    r = S.resumen(s)
+    g = r["desglose"]
+    assert g["precio"] + g["perdida_impermanente"] + g["comisiones"] + g["costes"] == pytest.approx(g["total"])
+    assert g["total"] == pytest.approx(float(np.mean(s.final - s.capital)))
+    vm = g["perdida_impermanente"] + g["comisiones"] + g["costes"]
+    assert vm == pytest.approx(float(np.mean(s.final - s.hodl)))
+    assert g["perdida_impermanente"] <= 1e-9 and g["comisiones"] > 0 and g["costes"] < 0
+
+
+def _hist_fiab(dias_hist, tvl, pool=POOL):
+    h = S.features(pool, _walk(n=24 * dias_hist))
+    h.tvl_now = tvl
+    return h
+
+
+def test_fiabilidad_semaforo():
+    alta = S.fiabilidad(_hist_fiab(740, 5e6), 30)
+    assert alta["nivel"] == "alta" and alta["a_favor"]
+    assert S.fiabilidad(_hist_fiab(400, 5e6), 30)["nivel"] == "media"         # poco histórico
+    assert S.fiabilidad(_hist_fiab(740, 1e6), 30)["nivel"] == "media"         # TVL bajo
+    assert S.fiabilidad(_hist_fiab(740, 5e6), 180)["nivel"] == "media"        # plazo largo
+    assert S.fiabilidad(_hist_fiab(100, 5e6), 30)["nivel"] == "baja"
+    assert S.fiabilidad(_hist_fiab(740, 1e5), 30)["nivel"] == "baja"
+    h = _hist_fiab(740, 5e6)
+    ok = {"dias": 30, "comisiones": 1.05, "cobertura": 0.8, "pruebas": 50}
+    assert S.fiabilidad(h, 30, ok)["nivel"] == "alta"
+    assert S.fiabilidad(h, 30, {**ok, "comisiones": 0.6})["nivel"] == "media"
+    assert S.fiabilidad(h, 30, {**ok, "comisiones": 0.4})["nivel"] == "baja"
+
+
+def test_calibracion_pool_lee_el_plazo_mas_parecido(tmp_path):
+    log = tmp_path / "cal.jsonl"
+    pools = lambda r: [{"pool": "X", "red": "base", "pool_id": "0xabc", "pruebas": 9, "comisiones": r, "cobertura": 0.8}]
+    rec = {"fecha": "2026-12-01", "plazos": [{"dias": 7, "pools": pools(1.1)}, {"dias": 90, "pools": pools(0.9)}]}
+    log.write_text('{"fecha": "viejo", "ratio": 1}\n' + json.dumps(rec) + "\n", encoding="utf-8")
+    assert S.calibracion_pool("0xabc", "base", 60, log)["dias"] == 90
+    assert S.calibracion_pool("0xabc", "base", 14, log)["comisiones"] == 1.1
+    assert S.calibracion_pool("0xdef", "base", 30, log) is None
+    assert S.calibracion_pool("0xabc", "base", 30, tmp_path / "no.jsonl") is None
+
+
+def test_conclusiones_dicen_si_compensa_frente_a_mantener_y_a_aave():
+    def rg(texto, vm, vf, en=0.9):
+        return {"texto": texto, "vs_mantener": {"p50": vm}, "valor_final": {"p50": vf, "p10": 4500},
+                "prob_gana_mantener": 0.6, "prob_perdida": 0.4, "en_rango": en}
+    res = {"capital": 5000, "dias": 30, "rangos": [rg("±5%", -50, 5040, 0.4), rg("±20%", -10, 5030)],
+           "sin_riesgo": {"nombre": "USDC en Aave base", "valor_final": 5021},
+           "fiabilidad": {"nivel": "media", "motivos": ["TVL bajo"]}}
+    c = S.conclusiones(res)
+    assert "Ningún rango supera a mantener" in c[0] and "±20%" in c[0]
+    assert "supera en la mediana a USDC en Aave" in c[1]
+    assert any("±5%" in t and "60 %" in t for t in c) and c[-1].startswith("Fiabilidad media")
+    res["rangos"] = [rg("±10%", 30, 5010)]
+    c = S.conclusiones(res)
+    assert "el mejor es ±10%" in c[0] and "más que la mediana" in c[1]
+    cola = rg("±5%", -50, 5080)
+    cola["desglose"] = {"total": -192, "perdida_impermanente": -340}
+    res["rangos"] = [cola]
+    assert any(t.startswith("Ojo con ±5%") and "192 $" in t for t in S.conclusiones(res))
 
 
 def test_side_en_precio_mostrado_para_pool_invertido():

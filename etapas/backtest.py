@@ -121,7 +121,8 @@ def load_hours(key: str, chain: str | None = None, start: str | None = None, end
     try:
         pool = find_pool(con, key, chain)
         df = con.execute("""
-            SELECT v.hour, v.tick, h.sqrt_price, v.usd0, v.usd1, v.fee_growth0, v.fee_growth1, v.lp_fee, v.liquidity
+            SELECT v.hour, v.tick, h.sqrt_price, v.usd0, v.usd1, v.fee_growth0, v.fee_growth1, v.lp_fee, v.liquidity,
+                   v.tvl_usd
             FROM pool_hour_v v JOIN pool_hour h USING (chain, pool_id, hour)
             WHERE v.chain = ? AND v.pool_id = ? AND (? IS NULL OR v.hour >= ?) AND (? IS NULL OR v.hour <= ?)
             ORDER BY v.hour""", [pool["chain"], pool["pool_id"], start, start, end, end]).df()

@@ -15,8 +15,10 @@ cómo leer los resultados para elegir un rango.
 3. [Campos de entrada](#3-campos-de-entrada)
 4. [Los rangos](#4-los-rangos)
 5. [La línea de datos](#5-la-línea-de-datos)
+   - [5 b. En resumen: conclusión y semáforo de fiabilidad](#5-b-en-resumen-conclusión-y-semáforo-de-fiabilidad)
 6. [Gráfico 1: precio en los escenarios](#6-gráfico-1-precio-en-los-escenarios-y-tus-rangos)
 7. [Gráfico 2: resultado frente a lo invertido](#7-gráfico-2-resultado-frente-a-lo-invertido)
+   - [7 b. Gráfico 3: de dónde sale el resultado](#7-b-gráfico-3-de-dónde-sale-el-resultado)
 8. [La tabla de detalle, columna a columna](#8-la-tabla-de-detalle-columna-a-columna)
 9. [Cómo funciona por dentro](#9-cómo-funciona-por-dentro)
 10. [Cómo elegir un rango (receta)](#10-cómo-elegir-un-rango-receta)
@@ -47,15 +49,20 @@ python -m etapas.simulador_web
 
 ## 2. La pantalla de un vistazo
 
-La pantalla tiene cuatro bloques, de arriba abajo:
+La pantalla tiene siete bloques, de arriba abajo:
 
 ```mermaid
 flowchart TB
     A["① Controles<br/>pool, capital, plazo, histórico,<br/>escenarios, tendencia, comisiones"] --> B["② Rangos<br/>uno o varios, cada uno con su color"]
-    B --> C["③ Gráfico de precio<br/>abanico de escenarios y tus rangos"]
-    C --> D["④ Gráfico de resultado<br/>ganancia o pérdida de cada rango"]
-    D --> E["⑤ Tabla de detalle<br/>todas las cifras + referencia sin riesgo"]
+    B --> R["③ En resumen<br/>conclusión en frases + semáforo de fiabilidad"]
+    R --> C["④ Gráfico de precio<br/>abanico de escenarios y tus rangos"]
+    C --> D["⑤ Gráfico de resultado<br/>ganancia o pérdida de cada rango"]
+    D --> G["⑥ De dónde sale el resultado<br/>precio, pérdida impermanente, comisiones, costes"]
+    G --> E["⑦ Tabla de detalle<br/>todas las cifras + referencia sin riesgo"]
 ```
+
+Empieza por **③ En resumen**: dice en tres o cuatro frases lo que hay en los gráficos y en la tabla, y
+cuánto fiarte.
 
 Cada vez que cambias un campo o un rango, **vuelve a simular solo** (en menos de medio segundo). El
 botón **Simular** fuerza una nueva simulación. Mientras calcula, la pantalla se atenúa.
@@ -140,6 +147,36 @@ Debajo de los rangos aparece una línea con el contexto de la simulación:
 | Gas | **0.05 $** | Coste de abrir la posición: 5 $ en Ethereum y 0,05 $ en Base y Arbitrum. Se resta al abrir. |
 | Cambio inicial | **0,05 %** | Comisión del intercambio para repartir el capital entre los dos tokens (la del propio pool, aplicada a la parte que hay que cambiar). |
 | Aviso (en rojo) | «hay huecos en el histórico…» | Solo si el pool tiene horas sin datos: se usa el tramo continuo más reciente. |
+
+---
+
+## 5 b. En resumen: conclusión y semáforo de fiabilidad
+
+![En resumen](docs/img/simulador-1b-resumen.png)
+
+**La conclusión** son tres o cuatro frases calculadas a partir de la tabla:
+
+| Frase | Cuándo sale | Qué responde |
+|---|---|---|
+| «El mejor frente a mantener es…» o «Ningún rango supera a mantener…» | Siempre | ¿Compensa el pool frente a guardar los tokens? Usa la mediana de «vs mantener». |
+| «USDC en Aave da… más que cualquier rango» o «… supera a USDC en Aave, pero en el escenario malo…» | Si hay referencia sin riesgo | ¿Compensa el riesgo frente a no arriesgar? |
+| «Ojo con ±5 %: la mediana gana…, pero la media pierde…» | Si la mediana gana y la media pierde | Riesgo de cola (ver [7 b](#7-b-gráfico-3-de-dónde-sale-el-resultado)). |
+| «±5 %: dentro menos del 60 % del tiempo…» | Si algún rango se sale mucho | Rango demasiado estrecho para el plazo. |
+| «Fiabilidad media: …» | Si la fiabilidad no es alta | Por qué fiarse menos. |
+
+**El semáforo de fiabilidad** (junto al título) dice cuánto fiarte de las cifras **de este pool a este
+plazo**. Debajo, en gris, aparecen los motivos (⚠ en contra, ✓ a favor):
+
+| Nivel | Cuándo |
+|---|---|
+| 🟢 **Alta** | Pool como los validados (≥ 2 años de histórico y TVL > 2 M$), plazo de hasta 90 días y, si el pool está en la calibración mensual, con un resultado razonable (comisiones reales entre ×0,75 y ×1,33 de las simuladas y al menos el 60 % de los casos reales dentro del P10–P90). |
+| 🟡 **Media** | Algo se sale de lo validado: menos de ~2 años de histórico, TVL de 0,5 a 2 M$, plazo de 180 días, o su calibración algo desviada. |
+| 🔴 **Baja** | Menos de 180 días de histórico, TVL < 0,5 M$, comisiones anómalas en MetaProDB, o su calibración muy desviada (comisiones fuera de ×0,5–×2 o menos del 40 % dentro del P10–P90). |
+
+La calibración de cada pool la deja la tarea mensual en un archivo local
+(`out/simulador_calibracion.jsonl`, no se sube a GitHub). Solo los ~21 pools de referencia la tienen;
+los demás se juzgan por su histórico, su TVL y el plazo.
+
 ---
 
 ## 6. Gráfico 1: precio en los escenarios y tus rangos
@@ -178,7 +215,33 @@ Una fila por rango. Todo en dólares **respecto a lo invertido** (el 0 es «acab
 avisa de que en un mal escenario puedes perder bastante, aunque el mediano sea positivo.
 
 > Ojo: el resultado incluye **lo que cambia el precio de los tokens**. Si ETH cae, pierdes aunque cobres
-> comisiones. Para separar el efecto del pool del efecto del precio, mira la columna «vs mantener».
+> comisiones. Para separar el efecto del pool del efecto del precio, mira la columna «vs mantener» o el
+> gráfico siguiente.
+
+---
+
+## 7 b. Gráfico 3: de dónde sale el resultado
+
+![De dónde sale el resultado](docs/img/simulador-3b-desglose.png)
+
+Descompone el resultado de cada rango en sus cuatro piezas. Las piezas suman exactamente el resultado:
+
+| Pieza | Color | Qué es |
+|---|---|---|
+| **Precio de los tokens** | gris | Lo que habrían ganado o perdido los tokens que depositas si los hubieras guardado sin abrir posición. Con tendencia neutral, ronda el 0. |
+| **Pérdida impermanente** | rojo | Lo que la posición vale **menos** que esos mismos tokens guardados. Siempre es ≤ 0: cuando el precio se mueve, el pool te deja con más del token que baja y menos del que sube. Cuanto más estrecho el rango y más se mueve el precio, mayor. |
+| **Comisiones** | verde | Lo que cobras. |
+| **Costes** | naranja | Gas y comisión del cambio inicial (casi invisible en Base y Arbitrum). |
+| **Rombo blanco** | — | El resultado: la suma de las cuatro piezas. |
+
+**«vs mantener» = pérdida impermanente + comisiones + costes.** Si la barra verde no llega a tapar la
+roja, el pool no compensa frente a guardar los tokens.
+
+> **Es una media, no la mediana de la tabla.** La media cuenta con su peso los escenarios malos, y en un
+> pool los malos son muy malos: si el precio se escapa mucho, la pérdida impermanente crece sin límite
+> mientras las comisiones se paran. En el ejemplo, el ±5 % gana 80 $ en la mediana, pero **pierde 192 $
+> de media**. Cuando el rombo sale mucho peor que la mediana de la tabla, el rango tiene riesgo de cola:
+> el resumen lo avisa con un «Ojo con…».
 
 ---
 

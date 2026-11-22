@@ -49,7 +49,7 @@ PLAZOS = tuple(BANDAS)
 LABEL = "simulador-calibracion"
 MARKER = f"<!-- {LABEL} -->"
 REPO = os.environ.get("GITHUB_REPOSITORY", "Caiico1/etapas-weinstein")
-LOG = Path(__file__).resolve().parent.parent / "out" / "simulador_calibracion.jsonl"
+LOG = S.CALIBRACION_LOG               # la pantalla lee de aquí la calibración de cada pool
 
 
 def historia(dias: int) -> int:
@@ -99,7 +99,7 @@ def combine(results: list[dict], ajuste: float, dias: int = PRINCIPAL) -> Verdic
         raise ValueError(f"la calibración a {dias} días no produjo ninguna prueba")
     ratios = [c["comisiones_real_vs_p50"] for c in results]
     inside = sum(0.1 <= r["pct"] <= 0.9 for r in rows)
-    per = [{"pool": c["pool"], "red": c["red"], "pruebas": c["pruebas"],
+    per = [{"pool": c["pool"], "red": c["red"], "pool_id": c.get("pool_id"), "pruebas": c["pruebas"],
             "comisiones": round(c["comisiones_real_vs_p50"], 3), "cobertura": round(c["dentro_p10_p90"], 3)}
            for c in results]
     return Verdict(dias, float(pd.Series(ratios).median()), inside / len(rows), len(rows), ajuste, per)
