@@ -4,7 +4,7 @@ import pytest
 from etapas import aave_aviso as AV
 from etapas import aave_posicion as AP
 
-ADDR = "0xD5809aA352938DD7c2C0a16FC3d4013e0563eE27"
+ADDR = "0x1234567890AbCdEf1234567890aBcDeF12345678"    # inventada: el repositorio es público
 
 
 def _pos(hf, debt=4_500.0, chain="arbitrum"):
