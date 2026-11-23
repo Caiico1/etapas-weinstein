@@ -126,7 +126,8 @@ def test_rango_por_percentiles_del_precio_final(pool):
 
 def test_factor_plazo_corrige_las_comisiones_segun_el_plazo():
     assert S.factor_plazo(30) == pytest.approx(1.0)
-    assert S.factor_plazo(7) > 1.2 and S.factor_plazo(180) == pytest.approx(6 ** -0.15)
+    assert S.factor_plazo(7) > 1 > S.factor_plazo(90)
+    assert S.factor_plazo(180) == pytest.approx(6 ** -S.EXPONENTE_PLAZO)
     assert S.factor_plazo(1) == S.factor_plazo(7)                # fuera de lo validado, se limita
     assert S.factor_plazo(90, 0) == 1.0
     h = S.features(POOL, _walk(n=24 * 200))
@@ -239,6 +240,28 @@ def test_comparar_misma_estrategia_en_los_pools_del_par():
     assert res["pools"][0]["pool_id"] == "0x1"                           # cobra el doble con el mismo precio
     with pytest.raises(ValueError):
         S.comparar("0x9", "base", cargar=cargar, candidatos=cand)
+
+
+def test_escala_de_volatilidad_reciente_y_por_plazo():
+    df = _walk(n=24 * 200, vol=0.004)
+    recent = df["hour"] > df["hour"].iloc[-1] - pd.Timedelta(days=30)
+    rng = np.random.default_rng(9)
+    lp = np.log(df["sqrt_price"].to_numpy() ** 2)
+    ret = np.diff(lp)
+    ret[recent.to_numpy()[1:]] *= 2                                   # el último mes, el doble de movido
+    df["sqrt_price"] = np.sqrt(np.exp(np.concatenate([[lp[0]], lp[0] + np.cumsum(ret)])))
+    h = S.features(POOL, df)
+    assert 1.5 < h.vol_reciente(30) < 2.0
+    assert 1.0 < h.vol_reciente(90) < h.vol_reciente(30)               # 90 días: un mes movido de tres
+    assert S.escala_vol(h, 7) == pytest.approx(h.vol_reciente(S.VOL_DIAS))
+    assert S.escala_vol(h, 90) == pytest.approx(S.escala_vol(h, 7) * (90 / 7) ** S.EXPONENTE_VOL)
+    assert S.escala_vol(h, 180) == S.escala_vol(h, 90)                 # el ensanche se limita a 90 días
+    assert S.escala_vol(h, 30, vol_dias=None, exponente=0) == 1.0
+    auto = S.bootstrap(h, 24 * 30, 2000, seed=1)
+    base = S.bootstrap(h, 24 * 30, 2000, seed=1, escala=1.0)
+    ra, rb = np.log(auto.sp[:, -1] / auto.sp[:, 0]), np.log(base.sp[:, -1] / base.sp[:, 0])
+    assert ra.std() / rb.std() == pytest.approx(S.escala_vol(h, 30), rel=0.02)
+    assert abs(ra.mean()) < 0.01                                       # sigue sin tendencia
 
 
 def test_side_en_precio_mostrado_para_pool_invertido():

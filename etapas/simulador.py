@@ -59,10 +59,32 @@ HISTORIA_DIAS = 730
 # sale 0,15 con cualquiera de los dos. El factor común óptimo con los dos años juntos es 0,82, pero el
 # resultado apenas cambia entre 0,82 y 0,86; con 0,85 los dos años quedan en 0,87–1,04 de 7 a 180 días
 # y el año más reciente a 30 días no se queda corto (calibración real de aperturas del último año:
-# 7 d 0,93 · 30 d 1,09 · 90 d 0,96 · 180 d 0,88, frente a 1,12 · 1,05 · 0,79 · 0,64 con 0,88 fijo). Volver a la media del histórico empeoraba (las
-# comisiones no rebotan) y prolongar su tendencia no aportaba.
-AJUSTE_COMISIONES = 0.85
-EXPONENTE_PLAZO = 0.15
+# 7 d 0,93 · 30 d 1,09 · 90 d 0,96 · 180 d 0,88, frente a 1,12 · 1,05 · 0,79 · 0,64 con 0,88 fijo).
+# Volver a la media del histórico empeoraba (las comisiones no rebotan) y prolongar su tendencia no
+# aportaba. El 23-nov-2026, con la volatilidad reciente (abajo), se recuadraron juntos: 0,97 y 0,05.
+AJUSTE_COMISIONES = 0.97
+EXPONENTE_PLAZO = 0.05
+# Volatilidad de los escenarios (23-nov-2026). Los movimientos del histórico se escalan por
+#   (volatilidad de los últimos VOL_DIAS / la del histórico) × (plazo / 7) ^ EXPONENTE_VOL.
+# Con el histórico tal cual, «vs mantener» salía optimista en años movidos y pesimista en los
+# tranquilos (a 30 días, ±10 %: real − simulado −107 $ y +26 $ por 5.000 $; precio dentro del
+# P10–P90 63 % y 82 %): la volatilidad va por rachas, y al encadenar semanas al azar se pierden las
+# tendencias de varias semanas. Probadas 18 variantes (escala fija, bloques de 14 y 30 días,
+# volatilidad de 30 o 90 días, ensanche por plazo) en 17 pools y 3.587 aperturas de dos años. La
+# volatilidad reciente se mide con rendimientos de 4 horas (hora a hora, cada pool añade su ruido). Esta
+# deja −5/−1 $ a 7 días, −30/+21 $ a 30 y −24/+155 $ a 90 (prudente en el año tranquilo), con el
+# precio dentro del P10–P90 el 75/79 % a 30 días; la de 30 días tenía un error medio parecido pero
+# peor cobertura. Al ensanchar, el precio pasa menos tiempo en rango: las comisiones se recuadraron
+# con AJUSTE_COMISIONES 0,97 y EXPONENTE_PLAZO 0,05. El ensanche por plazo se limita a 90 días.
+VOL_DIAS = 90
+EXPONENTE_VOL = 0.1
+
+
+def escala_vol(h: "History", dias: float, vol_dias: int | None = VOL_DIAS,
+               exponente: float = EXPONENTE_VOL) -> float:
+    """Factor por el que se amplían (o encogen) los movimientos del histórico en los escenarios."""
+    reciente = h.vol_reciente(vol_dias) if vol_dias else 1.0
+    return float(np.clip(reciente, 0.5, 2.0)) * (min(max(dias, 7), 90) / 7) ** exponente   # validado de 7 a 90 d
 
 
 def factor_plazo(dias: float, exponente: float = EXPONENTE_PLAZO) -> float:
@@ -93,6 +115,16 @@ class History:
     swap_fee: float          # comisión del pool (fracción) para el cambio al abrir
     hour_now: pd.Timestamp
     tvl_now: float = 0.0     # TVL de la última hora con dato ($)
+
+    def vol_reciente(self, dias: int = 90, paso: int = 4) -> float:
+        """Volatilidad de los últimos `dias` frente a la de todo el histórico, con rendimientos de `paso`
+        horas: hora a hora, cada pool añade su propio ruido de precio (en Ethereum, ×1,00 frente a ×0,80
+        en Base con el mismo ETH); a 4 horas todos coinciden."""
+        lp = np.log(self.df["sqrt_price"].to_numpy(float) ** 2)[::-1][::paso][::-1]   # anclado en la última hora
+        r = np.diff(lp)
+        n = int(dias * 24 / paso)
+        tot = float(np.std(r))
+        return float(np.std(r[-n:])) / tot if len(r) > n >= 6 and tot > 0 else 1.0
 
     @property
     def dias_historia(self) -> float:
@@ -146,7 +178,9 @@ class Paths:
 
 def bootstrap(h: History, horas: int, escenarios: int = 1000, bloque: int = 168,
               tendencia: str = "neutral", seed: int | None = 7, ajuste: float = AJUSTE_COMISIONES,
-              nivel_dias: int | None = NIVEL_DIAS, exponente: float = EXPONENTE_PLAZO) -> Paths:
+              nivel_dias: int | None = NIVEL_DIAS, exponente: float = EXPONENTE_PLAZO,
+              escala: float | None = None) -> Paths:
+    """`escala` None = la automática (`escala_vol`); 1 = los movimientos del histórico tal cual."""
     m = len(h.ret_p)
     if m < 48:
         raise B.BacktestError("histórico demasiado corto para construir escenarios")
@@ -156,9 +190,11 @@ def bootstrap(h: History, horas: int, escenarios: int = 1000, bloque: int = 168,
     starts = rng.integers(0, m - bloque + 1, size=(escenarios, nb))
     idx = (starts[:, :, None] + np.arange(bloque)[None, None, :]).reshape(escenarios, -1)[:, :horas]
     rp, ru = h.ret_p[idx], h.ret_u1[idx]
-    if tendencia == "neutral":
-        rp = rp - h.ret_p.mean()
-        ru = ru - h.ret_u1.mean()
+    escala = escala_vol(h, horas / 24) if escala is None else escala
+    mp, mu = h.ret_p.mean(), h.ret_u1.mean()
+    keep = 0.0 if tendencia == "neutral" else 1.0           # neutral: sin la tendencia media del histórico
+    rp = keep * mp + escala * (rp - mp)                     # escala: amplía los movimientos alrededor de ella
+    ru = keep * mu + escala * (ru - mu)
     zero = np.zeros((escenarios, 1))
     sp = h.sp_now * np.exp(np.concatenate([zero, np.cumsum(rp, axis=1)], axis=1) / 2)
     u1 = h.usd1_now * np.exp(np.concatenate([zero, np.cumsum(ru, axis=1)], axis=1))
@@ -545,7 +581,8 @@ def fiabilidad(h: History, dias: int, calib: dict | None = None) -> dict:
     elif h.tvl_now < MIN_TVL:
         malos.append((0, f"TVL de {h.tvl_now / 1e6:.1f} M$ (lo validado es > {MIN_TVL / 1e6:.0f} M$)"))
     if dias > 90:
-        malos.append((0, f"a {dias} días el error por pool es mayor (1 de cada 4 se desvía más de un 20 %)"))
+        malos.append((0, f"a {dias} días el error por pool es mayor (en comisiones, la mitad de los pools se "
+                         "desvía más de un 20 %)"))
     if calib:
         r, c = calib["comisiones"], calib["cobertura"]
         txt = (f"en su calibración a {calib['dias']} días lo real fue ×{r:.2f} de las comisiones simuladas "
@@ -614,10 +651,10 @@ def conclusiones(res: dict) -> list[str]:
 def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, dias: int = 30,
         historia: int = HISTORIA_DIAS, escenarios: int = 1000, bloque: int = 168, tendencia: str = "neutral",
         gas: float | None = None, h: History | None = None, ajuste: float = AJUSTE_COMISIONES,
-        nivel_dias: int | None = NIVEL_DIAS, exponente: float = EXPONENTE_PLAZO) -> dict:
+        nivel_dias: int | None = NIVEL_DIAS, exponente: float = EXPONENTE_PLAZO, escala: float | None = None) -> dict:
     h = h or load(key, chain, historia)
     paths = bootstrap(h, dias * 24, escenarios, bloque, tendencia, ajuste=ajuste, nivel_dias=nivel_dias,
-                      exponente=exponente)
+                      exponente=exponente, escala=escala)
     out = [resumen(simulate(h, paths, parse_rango(r, h, paths), capital, gas)) for r in rangos]
     asset, quote, _ = B.pair_of(h.pool)
     ref = referencia_sin_riesgo(h.pool["chain"])
@@ -630,6 +667,7 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
             "capital": capital, "dias": dias, "escenarios": escenarios, "bloque_h": bloque,
             "tendencia": tendencia, "comision_cambio": h.swap_fee, "ajuste_comisiones": ajuste,
             "nivel_dias": nivel_dias, "nivel_reciente": h.nivel(nivel_dias), "factor_plazo": factor_plazo(dias, exponente),
+            "vol_reciente": h.vol_reciente(VOL_DIAS), "escala_vol": escala_vol(h, dias) if escala is None else escala,
             "gas": GAS.get(h.pool["chain"], 0.05) if gas is None else gas,
             "aviso": h.pool.get("aviso"), "rangos": out, "abanico": abanico(h, paths),
             "sin_riesgo": ref, "fiabilidad": fiab}
@@ -712,6 +750,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--nivel", type=int, default=NIVEL_DIAS, help="días del nivel reciente de comisiones (0 = sin nivel)")
     ap.add_argument("--exponente", type=float, default=EXPONENTE_PLAZO,
                     help="corrección de comisiones por plazo: × (días/30)^-exponente (0 = sin corrección)")
+    ap.add_argument("--escala", type=float, help="escala de la volatilidad de los escenarios (por defecto, automática; 1 = el histórico tal cual)")
     ap.add_argument("--calibrar", action="store_true")
     ap.add_argument("--ancho", type=float, default=10, help="calibración: ±%% del rango")
     ap.add_argument("--paso", type=int, default=7)
@@ -734,7 +773,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         rangos = [r for r in a.rangos.split(",") if r.strip()]
         res = run(a.pool, a.red, rangos, a.capital, a.dias, a.historia, a.escenarios, a.bloque, a.tendencia, a.gas,
-                  ajuste=a.ajuste, nivel_dias=a.nivel or None, exponente=a.exponente)
+                  ajuste=a.ajuste, nivel_dias=a.nivel or None, exponente=a.exponente, escala=a.escala)
     except (B.BacktestError, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

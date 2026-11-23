@@ -436,14 +436,16 @@ el ancho más equilibrado: casi el mejor «vs mantener» en la mediana con un P1
 que el de P25–P75. Opciones: `--historia` (días de histórico, 730),
 `--escenarios` (1000), `--bloque` (horas por bloque, 168), `--tendencia neutral|historica`,
 `--nivel` (días del nivel reciente de comisiones, 90; 0 = sin nivel), `--ajuste` (factor común de
-comisiones, 0,85), `--exponente` (corrección por plazo, 0,15; 0 = sin corrección), `--gas`, `--json`.
+comisiones, 0,97), `--exponente` (corrección por plazo, 0,05; 0 = sin corrección), `--escala`
+(volatilidad de los escenarios; por defecto automática, 1 = el histórico tal cual), `--gas`, `--json`.
 
 **Cómo funciona.** Cada escenario encadena bloques de 7 días consecutivos sacados al azar del
 histórico del pool: precio y comisiones van juntos (semanas movidas traen su volumen) y las
 comisiones se reescalan al precio de hoy (g0·√P y g1/√P son invariantes). El **nivel** de comisiones
 es el de los últimos 90 días: los escenarios conservan la forma del histórico (semanas tranquilas y
-movidas), pero se multiplican por (media de los últimos 90 días / media del histórico) × 0,85 ×
-(días del plazo / 30)^−0,15 (corrección por plazo, ver abajo). Con tendencia «neutral»
+movidas), pero se multiplican por (media de los últimos 90 días / media del histórico) × 0,97 ×
+(días del plazo / 30)^−0,05 (corrección por plazo, ver abajo). Los movimientos del precio se escalan a
+la volatilidad reciente y al plazo (ver «Volatilidad»). Con tendencia «neutral»
 se quita la subida o bajada media: el simulador no apuesta por la dirección. La posición se abre
 hoy con la misma matemática que `backtest.simulate` (test de paridad), cobra L × fee_growth en las
 horas en rango diluido por la liquidez activa del pool, y paga el gas de abrir y la comisión del
@@ -470,8 +472,29 @@ pools, 3.587 aperturas de dos años a 7, 30 y 90 días, eligiendo con los datos 
 sin ancho mínimo el buscador elegía ±0,1 % y perdía más que nadie (el reparto horario sobrestima los
 rangos estrechos); con él, su orden coincide con el real. En ese periodo ninguna posición ganó de media a
 mantener los tokens y cuanto más ancha menos perdió (30 d: −104 $ con ±5 %, −29 $ con ±70 %, por 5.000 $).
-También destapó que «vs mantener» sale optimista a 30 días o más: real − simulado −14 a −64 $ a 30 d y −38
-a −170 $ a 90 d (más cuanto más estrecho), porque el precio real se movió más que en los escenarios.
+También destapó que «vs mantener» fallaba según el año (abajo, «Volatilidad»).
+
+**Volatilidad (23-nov-2026).** «vs mantener» salía optimista en un año movido (nov-24 a nov-25; a 30 días
+con ±10 %, real − simulado −107 $ por 5.000 $, precio dentro del P10–P90 el 63 %) y algo pesimista en uno
+tranquilo (+26 $, 82 %): la volatilidad va por rachas y al encadenar semanas al azar se pierden las
+tendencias de varias semanas. `escala_vol` escala los movimientos por (volatilidad de los últimos 90 días /
+la de los dos años, con rendimientos de 4 horas: hora a hora cada pool añade su propio ruido, y con el
+mismo ETH salía ×1,00 en Ethereum y ×0,79 en Base) × (días/7)^0,1, con el plazo limitado a 90 días. Se probaron 18 variantes en 17
+pools y 3.587 aperturas (escala fija, bloques de 14 y 30 días, volatilidad de 30 o 90 días, ensanche
+por plazo):
+
+| ±10 %, real − simulado por 5.000 $ (año movido / tranquilo) | Antes | Ahora |
+|---|---|---|
+| 7 días | −15 / +15 $ | −5 / −1 $ |
+| 30 días | −107 / +26 $ | −30 / +21 $ |
+| 90 días | −323 / +59 $ | −24 / +155 $ (prudente en el tranquilo) |
+| Precio dentro del P10–P90 a 30 días | 63 / 82 % | 75 / 79 % |
+
+La volatilidad de 30 días tenía un error medio parecido pero peor cobertura. Al ensanchar, el precio pasa menos tiempo en rango: las comisiones se
+recuadraron con `AJUSTE_COMISIONES` 0,97 y `EXPONENTE_PLAZO` 0,05. Calibración real del último año:
+comisiones 7 d 0,91 · 30 d 0,99 · 90 d 0,85 · 180 d 0,80; P10–P90 80 %, 71 %, 91 % y 89 %, todo en banda
+(a 90–180 días las comisiones salen algo altas en este año y bajas en el anterior).
+`--escala 1` vuelve al histórico tal cual.
 
 **Fiabilidad.** `--calibrar` lanza el simulador desde muchas fechas pasadas con solo los datos
 anteriores y lo compara con lo que pasó:
@@ -491,7 +514,7 @@ a 30 días con ±10 %, el factor calibrado con un año y aplicado al otro, fuera
 | Nivel de 90 días × 0,88 (hasta el 22-nov, solo medido a 30 días) | 0,94–1,07 | 83–87 % |
 
 Después se vio que ese factor único fallaba según el plazo (ver «Corrección por plazo»): hoy es
-nivel de 90 días × 0,85 × (días/30)^−0,15.
+nivel de 90 días × 0,97 × (días/30)^−0,05 (recuadrado el 23-nov junto con la volatilidad).
 
 El factor por pool empeora: el de un año va en contra del siguiente (correlación −0,59). Lo que se
 repite es una caída general de las comisiones por unidad de liquidez, que el nivel reciente recoge.
