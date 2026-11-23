@@ -90,6 +90,13 @@ def comparar(q: dict) -> dict:
                       min(c["escenarios"], 500), c["tendencia"], float(g("min_tvl", 100_000)), cargar=_cargar)
 
 
+def posiciones(q: dict) -> dict:
+    from . import posiciones_lp as P
+    g = lambda k, d: q.get(k, [d])[0]
+    return P.informe(int(g("dias", 30)), min(int(g("escenarios", 1000)), 1000),
+                     cargar=lambda p, c, hh: _cargar(p, c, hh))
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code: int, body: bytes, ctype: str):
         self.send_response(code)
@@ -114,9 +121,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, optimizar(parse_qs(u.query)))
             elif u.path == "/api/comparar":
                 self._json(200, comparar(parse_qs(u.query)))
+            elif u.path == "/api/posiciones":
+                self._json(200, posiciones(parse_qs(u.query)))
             else:
                 self._send(404, b"no encontrado", "text/plain")
-        except (B.BacktestError, ValueError) as e:
+        except (B.BacktestError, ValueError, RuntimeError) as e:
             self._json(400, {"error": str(e)})
         except Exception as e:                                   # noqa: BLE001
             traceback.print_exc()

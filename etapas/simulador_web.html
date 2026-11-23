@@ -92,6 +92,16 @@ summary{cursor:pointer;color:var(--text)}
     <div class="err" id="err"></div>
   </section>
 
+  <section class="panel" id="outPos">
+    <h2>Mis posiciones abiertas <span class="mut" style="font-weight:400;font-size:13px">(Revert)</span></h2>
+    <div class="ranges" style="margin-top:0">
+      <button class="primary" id="posRun">Cargar y simular</button>
+      <span class="hint" style="margin:0">Lee tus posiciones de Revert (solo lectura, con las carteras de tu configuración local) y simula lo que queda desde hoy al plazo de arriba, con su rango y su valor reales y sin gas. «vs cerrar» = frente a cerrarla hoy y guardar los tokens que tiene ahora.</span>
+    </div>
+    <div class="tw" style="margin-top:8px"><table id="posTab" style="min-width:1050px"></table></div>
+    <div class="hint" id="posAvisos"></div>
+  </section>
+
   <section class="panel" id="outSum" hidden>
     <h2>En resumen <span id="fiab" class="fiab"></span></h2>
     <ul id="concl" class="concl"></ul>
@@ -269,6 +279,41 @@ function optDraw(o){
   add.onclick=()=>{ if(!ranges.includes(m.texto)){ranges.push(m.texto);drawRanges();schedule();} };
 }
 
+function money(x,valor,signo=true){
+  const d=Math.abs(x)<100?2:0;
+  let s=(signo&&x>0?"+":"")+x.toLocaleString("es-ES",{minimumFractionDigits:d,maximumFractionDigits:d,useGrouping:"always"})+" $";
+  if(valor) s+=` <span class="mut">(${(signo&&x>0?"+":"")+(x/valor*100).toLocaleString("es-ES",{minimumFractionDigits:1,maximumFractionDigits:1})} %)</span>`;
+  return s;
+}
+$("posRun").addEventListener("click",async()=>{
+  const b=$("posRun"); b.disabled=true; b.textContent="Leyendo Revert y simulando…"; $("posTab").innerHTML=""; $("posAvisos").textContent="";
+  try{ posDraw(await getJSON("/api/posiciones?"+new URLSearchParams({dias:$("dias").value,escenarios:$("escenarios").value}))); }
+  catch(e){ $("posTab").innerHTML=`<tr><td class="neg">Error: ${esc(e.message)}</td></tr>`; }
+  finally{ b.disabled=false; b.textContent="Cargar y simular"; }
+});
+function posDraw(d){
+  const head=`<thead><tr><th>Posición</th><th>Valor<br><span class="mut">pendiente</span></th><th>Rango · hoy</th><th>Fiabilidad</th><th>Se sale<br>alguna vez</th><th>En rango</th><th>Acaba ↓ · = · ↑</th><th>Comisiones<br>${d.dias} d</th><th>vs cerrar<br>media</th><th>vs cerrar<br>mediana</th><th></th></tr></thead>`;
+  const rows=d.posiciones.map(p=>{
+    const name=`n.º ${p.id} · ${esc(p.label||p.par)} <span class="mut">${p.red} ${p.version} · ${Math.round(p.edad_dias)} d</span>`;
+    if(p.error) return `<tr><td class="name">${name}</td><td>${money(p.valor,null,false)}</td><td colspan="9" class="mut">${esc(p.error)}</td></tr>`;
+    const v=p.valor, a=p.acaba;
+    return `<tr><td class="name">${name}<div class="mut" style="white-space:normal;max-width:360px;margin-top:4px">${esc(p.lectura)}</div></td>`+
+      `<td>${money(v,null,false)}<br><span class="mut">${money(p.comisiones_pendientes,null,false)}</span></td>`+
+      `<td>${price(p.lo)}–${price(p.hi)}<br><span class="${p.en_rango_hoy?"pos":"neg"}">${price(p.precio)} · ${p.en_rango_hoy?"dentro":"FUERA"}</span></td>`+
+      `<td><span class="fiab ${p.fiabilidad.nivel}" style="margin:0">${p.fiabilidad.nivel}</span></td>`+
+      `<td>${Math.round(p.sale_del_rango*100)} %</td><td>${Math.round(p.en_rango*100)} %</td>`+
+      `<td class="mut">${Math.round(a.debajo*100)} · ${Math.round(a.dentro*100)} · ${Math.round(a.encima*100)} %</td>`+
+      `<td>${money(p.comisiones,v,false)}</td><td class="${cls(p.vs_cerrar_media)}">${money(p.vs_cerrar_media,v)}</td>`+
+      `<td class="${cls(p.vs_cerrar_mediana)}">${money(p.vs_cerrar_mediana,v)}</td>`+
+      `<td><button class="chip" data-abrir="${p.red}|${p.pool_id}" data-rango="${+p.lo.toPrecision(8)}-${+p.hi.toPrecision(8)}" data-capital="${Math.max(100,Math.round(v))}" title="Cargar este pool y este rango arriba (capital mínimo 100 $)">Ver en detalle</button></td></tr>`;}).join("");
+  $("posTab").innerHTML=head+"<tbody>"+(rows||`<tr><td class="mut">No hay posiciones abiertas.</td></tr>`)+"</tbody>";
+  $("posTab").querySelectorAll("[data-abrir]").forEach(b=>b.addEventListener("click",()=>{
+    $("pool").value=b.dataset.abrir; ranges=[b.dataset.rango,"P10-P90"]; $("capital").value=b.dataset.capital; drawRanges(); run();
+    $("outSum").scrollIntoView({behavior:"smooth"});}));
+  $("posAvisos").innerHTML=(d.avisos||[]).map(t=>"⚠ "+esc(t)).join("<br>")+
+    `<br>Total: ${money(d.total_valor,null,false)} en posiciones y ${money(d.total_pendientes,null,false)} de comisiones pendientes de cobrar.`;
+}
+
 $("cmpRun").addEventListener("click",async()=>{
   const b=$("cmpRun"); b.disabled=true; b.textContent="Comparando…"; $("cmpTab").innerHTML="";
   try{ cmpDraw(await getJSON("/api/comparar?"+query({rango:$("cmpRango").value}))); }
@@ -389,6 +434,7 @@ loadPools().then(run).then(()=>{
   const h=location.hash.slice(1).split(",");
   if(h.includes("buscar")) $("optRun").click();
   if(h.includes("comparar")) $("cmpRun").click();
+  if(h.includes("posiciones")) $("posRun").click();
 }).catch(e=>$("err").textContent="No se pudo leer MetaProDB: "+e.message);
 </script>
 </body>

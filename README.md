@@ -463,6 +463,16 @@ resultado medio en precio de los tokens + pérdida impermanente + comisiones + c
 mediana pero pierde 192 $ de media, porque la pérdida impermanente de los escenarios malos (−336 $ de
 media) no tiene techo.
 
+**Mis posiciones abiertas (`etapas/posiciones_lp.py`, pantalla y consola).** Lee las posiciones abiertas
+del MCP público de Revert (`https://mcp.revert.finance/mcp`, JSON-RPC por HTTP, solo `get_positions`)
+con las carteras de `~/.cripto-renta/config.json` (nunca en el repositorio), busca cada pool en
+MetaProDB y simula lo que queda desde hoy con sus ticks y su valor reales y sin gas
+(`simulate(..., abierta=True)`, `rango_de_ticks`). Da probabilidad de salirse del rango, tiempo dentro,
+dónde acaba, comisiones y «vs cerrar» (frente a cerrarla hoy y guardar sus tokens), con una lectura
+(compensa / dudosa / no compensa / fuera de rango) y el semáforo. Cruza con `posiciones.txt`, por número o
+por rango, y avisa de lo que no cuadra. `python -m etapas.posiciones_lp --dias 30`; en la página,
+«Cargar y simular» o `#posiciones`. Pruebas en `tests/test_posiciones_lp.py`, con un Revert falso.
+
 **Buscador de ancho y comparación de pools (pantalla).** `optimizar` / `barrido` prueba rangos
 simétricos desde `ancho_minimo` (3 × la volatilidad diaria) hasta ±70 % y elige el de más «vs mantener»
 en la media (o en la mediana). `comparar` simula la misma estrategia en todos los pools del mismo par

@@ -255,6 +255,12 @@ def percentiles_finales(h: History, paths: Paths, a: float, b: float) -> tuple[f
     return float(np.percentile(shown, a)), float(np.percentile(shown, b))
 
 
+def rango_de_ticks(h: History, tl: int, tu: int, texto: str | None = None) -> Rango:
+    """El rango de una posición que ya existe, tal cual (sus ticks), en precios mostrados."""
+    lo, hi = sorted(_display(h.pool, B.TICK_BASE ** t) for t in (tl, tu))
+    return Rango(texto or f"{_fmt_price(lo)}-{_fmt_price(hi)}", tl, tu, lo, hi)
+
+
 def parse_rango(texto: str, h: History, paths: Paths | None = None) -> Rango:
     """«1500-1900» (precios), «±10%» o «10%» (simétrico), «-5/+15» (% abajo / % arriba) o
     «P10-P90» (entre esos percentiles del precio al final del plazo; necesita los escenarios)."""
@@ -305,10 +311,11 @@ class Sim:
 
 
 def simulate(h: History, paths: Paths, rango: Rango, capital: float = 5000.0, gas: float | None = None,
-             diluir: bool = True) -> Sim:
+             diluir: bool = True, abierta: bool = False) -> Sim:
+    """`abierta`: la posición ya existe (vale `capital` hoy): sin gas ni cambio inicial."""
     pool = h.pool
     d1 = 10 ** pool["dec1"]
-    gas = GAS.get(pool["chain"], 0.05) if gas is None else gas
+    gas = 0.0 if abierta else GAS.get(pool["chain"], 0.05) if gas is None else gas
     sa, sb = B._sqrt(rango.tl), B._sqrt(rango.tu)
     sp, u1 = paths.sp, paths.usd1
     sp0, u10 = float(sp[0, 0]), float(u1[0, 0])
@@ -321,7 +328,7 @@ def simulate(h: History, paths: Paths, rango: Rango, capital: float = 5000.0, ga
     share0 = val(a0u, 0, sp0, u10) / per_l
     stable0, stable1 = pool["symbol0"] in B._STABLE, pool["symbol1"] in B._STABLE
     value = capital - gas
-    swap = value * h.swap_fee * ((1 - share0) if stable0 else share0 if stable1 else 0.5)
+    swap = 0.0 if abierta else value * h.swap_fee * ((1 - share0) if stable0 else share0 if stable1 else 0.5)
     costs = gas + swap
     L = (value - swap) / per_l
     a0, a1 = a0u * L, a1u * L

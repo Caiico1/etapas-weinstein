@@ -12,6 +12,7 @@ cómo leer los resultados para elegir un rango.
 
 1. [Cómo abrirlo](#1-cómo-abrirlo)
 2. [La pantalla de un vistazo](#2-la-pantalla-de-un-vistazo)
+   - [2 b. Mis posiciones abiertas (Revert)](#2-b-mis-posiciones-abiertas-revert)
 3. [Campos de entrada](#3-campos-de-entrada)
 4. [Los rangos](#4-los-rangos)
 5. [La línea de datos](#5-la-línea-de-datos)
@@ -56,7 +57,8 @@ La pantalla tiene nueve bloques, de arriba abajo:
 ```mermaid
 flowchart TB
     A["① Controles<br/>pool, capital, plazo, histórico,<br/>escenarios, tendencia, comisiones"] --> B["② Rangos<br/>uno o varios, cada uno con su color"]
-    B --> R["③ En resumen<br/>conclusión en frases + semáforo de fiabilidad"]
+    B --> M["Mis posiciones abiertas (Revert)<br/>(botón Cargar y simular)"]
+    M --> R["③ En resumen<br/>conclusión en frases + semáforo de fiabilidad"]
     R --> C["④ Gráfico de precio<br/>abanico de escenarios y tus rangos"]
     C --> D["⑤ Gráfico de resultado<br/>ganancia o pérdida de cada rango"]
     D --> G["⑥ De dónde sale el resultado<br/>precio, pérdida impermanente, comisiones, costes"]
@@ -65,14 +67,54 @@ flowchart TB
     O --> P["⑨ Comparar con otros pools del mismo par<br/>(botón Comparar)"]
 ```
 
-Los dos últimos no se calculan solos: pulsa su botón. Para abrir la página con los dos ya lanzados:
-**http://localhost:8768/#buscar,comparar**.
+Los dos últimos y «Mis posiciones» no se calculan solos: pulsa su botón. Para abrir la página con ellos ya
+lanzados: **http://localhost:8768/#posiciones,buscar,comparar** (o solo los que quieras).
 
 Empieza por **③ En resumen**: dice en tres o cuatro frases lo que hay en los gráficos y en la tabla, y
 cuánto fiarte.
 
 Cada vez que cambias un campo o un rango, **vuelve a simular solo** (en menos de medio segundo). El
 botón **Simular** fuerza una nueva simulación. Mientras calcula, la pantalla se atenúa.
+
+---
+
+## 2 b. Mis posiciones abiertas (Revert)
+
+Pulsa **Cargar y simular**. El simulador:
+
+1. **Lee tus posiciones abiertas de Revert**, solo lectura, con su MCP público. Usa las carteras de tu
+   configuración local (`~/.cripto-renta/config.json`, «carteras»), que nunca se suben al repositorio.
+2. **Busca su pool en MetaProDB.** Si no está, la fila lo dice.
+3. **Simula lo que queda desde hoy** al plazo de arriba, con **su rango exacto** (sus ticks) y **su valor
+   real**, sin gas ni cambio inicial, porque ya está abierta.
+
+| Columna | Qué es |
+|---|---|
+| **Posición** | Número, pool, red, versión y días desde que se abrió. Debajo, la **lectura**: si mantenerla compensa frente a cerrarla. |
+| **Valor / pendiente** | Lo que vale hoy según Revert y, debajo, las comisiones pendientes de cobrar. |
+| **Rango · hoy** | Su rango en precios y el precio de hoy, en verde si está dentro y en rojo («FUERA») si no. |
+| **Fiabilidad** | El semáforo del simulador para ese pool y ese plazo. |
+| **Se sale alguna vez** | % de escenarios en que el precio sale del rango en algún momento del plazo. |
+| **En rango** | % medio del tiempo dentro, es decir, cobrando. |
+| **Acaba ↓ · = · ↑** | Dónde acaba el precio: por debajo, dentro o por encima del rango. |
+| **Comisiones** | Lo que cabe esperar cobrar en el plazo (mediana), con su % sobre el valor. |
+| **vs cerrar (media / mediana)** | Lo que gana o pierde **mantenerla** frente a **cerrarla hoy y guardar los tokens que tiene ahora**. La media cuenta los escenarios malos con su peso. |
+| **Ver en detalle** | Carga ese pool y ese rango arriba, con el P10–P90 al lado para comparar. El capital mínimo de la pantalla es 100 $: las cifras escalan. |
+
+**La lectura** sale de esas cifras:
+- «Mantenerla compensa…»: gana a cerrar en la media.
+- «Dudosa…»: gana en el caso típico pero pierde en la media (riesgo de que el precio se escape).
+- «No compensa…»: pierde en la media y en el caso típico.
+- «Fuera de rango: no cobra…»: solo recupera si el precio vuelve a entrar.
+
+**Avisos de vigilancia:** cruza Revert con tu `posiciones.txt`, por número o, si la línea no lo lleva,
+por rango de precios. Avisa si una posición abierta no está vigilada por la rutina, o si una vigilada ya no
+está abierta.
+
+Desde la consola: `python -m etapas.posiciones_lp --dias 30`.
+
+> El simulador no prepara ni envía ninguna transacción: solo lee y simula. Cerrar, reajustar o abrir es
+> cosa tuya, en Revert o en Uniswap.
 
 ---
 
