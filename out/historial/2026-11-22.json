@@ -72,20 +72,20 @@
       "1w": {
         "etapa": 1,
         "transicion": "",
-        "vela": "2026-11-09",
+        "vela": "2026-11-16",
         "power4": 3,
-        "cierre": 0.02809,
-        "confirma": 0.036489999999999995,
-        "invalida": 0.02728
+        "cierre": 0.02815,
+        "confirma": 0.035995,
+        "invalida": 0.02722
       },
       "1d": {
         "etapa": 4,
         "transicion": "",
-        "vela": "2026-11-21",
+        "vela": "2026-11-22",
         "power4": 4,
-        "cierre": 0.02799,
+        "cierre": 0.02815,
         "confirma": 0.02728,
-        "invalida": 0.029287800000000003
+        "invalida": 0.0292168
       }
     },
     "accion:GLD": {
@@ -101,11 +101,11 @@
       "1w": {
         "etapa": 4,
         "transicion": "",
-        "vela": "2026-11-09",
+        "vela": "2026-11-16",
         "power4": 4,
-        "cierre": 355.45001220703125,
-        "confirma": 352.9100036621094,
-        "invalida": 392.61200052897135
+        "cierre": 322.8699951171875,
+        "confirma": 320.95001220703125,
+        "invalida": 352.9100036621094
       },
       "1d": {
         "etapa": 4,
