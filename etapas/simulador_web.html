@@ -149,6 +149,13 @@ summary{cursor:pointer;color:var(--text)}
       <p>Las comisiones se reescalan al nivel de los últimos 90 días (frente a la media del histórico), por un factor común de 0,97 y por el plazo: × (días / 30)^−0,05 (×1,08 a 7 días, ×0,95 a 90, ×0,91 a 180), porque el nivel reciente no se mantiene igual todo un plazo largo. Los movimientos del precio se escalan a la volatilidad de los últimos 90 días y se ensanchan con el plazo, × (días / 7)^0,1, porque la volatilidad va por rachas y las tendencias de varias semanas se pierden al encadenar semanas al azar. Validado en 17 pools y 3.587 aperturas de dos años. Cada mes una tarea de Windows recalibra a 7, 30, 90 y 180 días y avisa si se desvía. No modela MEV/JIT ni cambios bruscos de liquidez. Con rangos muy estrechos, el reparto por horas sobrestima.</p>
     </details>
   </section>
+  <section class="panel" id="outRea" hidden>
+    <h2>¿Y si lo reajustas cuando se sale?</h2>
+    <div class="hint">Cada rango, dejado fijo frente a recentrarlo en el precio del momento (mismo ancho) cuando lleva fuera las horas de la regla: se retira todo, se cambia lo necesario pagando la comisión del pool y se vuelve a abrir, con un gas por reajuste. «Frente a fijo» es la media de lo que gana o pierde en los mismos escenarios. Validado con 1.113 aperturas reales del último año a 7 y 30 días: el número de reajustes sale casi exacto y la diferencia frente a fijo, algo prudente (unos 20–35 $ por 5.000 $ peor que lo real).</div>
+    <div class="tw" style="margin-top:8px"><table id="reaTab" style="min-width:860px"></table></div>
+    <div class="hint" id="reaTxt"></div>
+  </section>
+
   <section class="panel" id="outOpt" hidden>
     <h2>Buscar el mejor ancho</h2>
     <div class="ranges">
@@ -253,8 +260,8 @@ function render(d){
       :`etapa: <span class="mut">${esc(d.etapa.nivel)}</span>`):"",
     `gas <b>${d.gas} $</b>`, `cambio inicial <b>${pct(d.comision_cambio,2,false)}</b>`,
     d.aviso?`<span class="neg">${d.aviso}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
-  ["outSum","outFan","outBars","outDes","outTable","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);
-  summary(d); fan(d); bars(d); desglose(d); table(d); reco(d.recomendacion||{});
+  ["outSum","outFan","outBars","outDes","outTable","outRea","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);
+  summary(d); fan(d); bars(d); desglose(d); table(d); reaDraw(d); reco(d.recomendacion||{});
   const sel=$("cmpRango"), prev=sel.value;
   sel.innerHTML=["P10-P90",...ranges.filter(Boolean)].filter((v,i,a)=>a.indexOf(v)===i).map(r=>`<option>${esc(r)}</option>`).join("");
   if(prev&&[...sel.options].some(o=>o.value===prev)) sel.value=prev;
@@ -433,6 +440,26 @@ function bars(d){
   });
   $("bars").innerHTML=s;
 }
+function reaDraw(d){
+  const rj=d.reajuste; $("outRea").hidden=!rj;
+  if(!rj) return;
+  $("reaTab").innerHTML=`<thead><tr><th>Rango</th><th>Regla</th><th>Frente a fijo<br><span style="font-weight:400">(media)</span></th><th>Mejor que fijo</th><th>Reajustes<br><span style="font-weight:400">(media)</span></th><th>Gas y cambios</th><th>Comisiones</th><th>En rango</th><th>Valor final<br><span style="font-weight:400">(media)</span></th></tr></thead><tbody>`+
+    rj.rangos.map(it=>it.reglas.map((x,j)=>`<tr${x.regla===it.mejor&&x.espera_h!==null?' style="background:rgba(79,209,139,.08)"':''}>
+      ${j===0?`<td class="name" rowspan="${it.reglas.length}">${esc(it.texto)}</td>`:""}
+      <td>${x.regla==="nunca"?"Dejarlo fijo":"Reajustar "+esc(x.regla)}${x.regla===it.mejor?' <b class="pos">· mejor</b>':''}</td>
+      <td class="${x.espera_h===null?"mut":cls(x.dif_media)}">${x.espera_h===null?"—":usd(x.dif_media,true)}</td>
+      <td class="mut">${x.prob_mejor===null?"—":Math.round(x.prob_mejor*100)+" %"}</td>
+      <td>${x.reajustes.toLocaleString("es-ES",{maximumFractionDigits:1})}</td>
+      <td class="${x.coste_reajustes>0?"neg":"mut"}">${x.coste_reajustes>=0.5?"−"+usd(x.coste_reajustes):x.coste_reajustes>0?"< 1 $":"—"}</td>
+      <td>${usd(x.comisiones)}</td><td>${Math.round(x.en_rango*100)} %</td>
+      <td class="${cls(x.valor_media-d.capital)}">${usd(x.valor_media)}</td></tr>`).join("")).join("")+"</tbody>";
+  const ganan=rj.rangos.filter(it=>it.mejor!=="nunca");
+  $("reaTxt").innerHTML=(ganan.length?`Reajustar compensa en ${ganan.map(it=>`<b>${esc(it.texto)}</b> («${esc(it.mejor)}»)`).join(", ")}: gana más del 0,5 % del capital de media frente a dejarlo fijo.`
+    :"Ninguna regla gana a dejarlo fijo por más del 0,5 % del capital: reajustar no compensa aquí (cada reajuste fija la pérdida frente a mantener y paga gas y cambio).")
+    +(rj.validado?"":` <span class="neg">A ${d.dias} días esta comparación no está validada (solo hasta 30): tómala como orientación.</span>`)
+    +` Escenarios propios: ${rj.escenarios}, bloques de 14 días y la volatilidad reciente sin el ensanche por plazo (con él, el precio sale más veces de lo real).`;
+}
+
 function niceStep(m){const raw=m/3,p=10**Math.floor(Math.log10(raw)),f=raw/p;return (f<1.5?1:f<3.5?2:f<7.5?5:10)*p;}
 
 function table(d){

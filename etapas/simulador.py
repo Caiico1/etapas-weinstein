@@ -308,6 +308,9 @@ class Sim:
     side: np.ndarray         # -1 acaba por debajo, 0 dentro, +1 por encima (en precio mostrado)
     dilution: float
     precio0: float = 0.0     # precio mostrado al abrir
+    reajustes: np.ndarray | None = None        # veces que se recentra el rango (con reajuste)
+    costes_reajuste: np.ndarray | None = None  # $ de gas + cambio de esos reajustes
+    regla: str = "nunca"
 
 
 def simulate(h: History, paths: Paths, rango: Rango, capital: float = 5000.0, gas: float | None = None,
@@ -352,6 +355,134 @@ def simulate(h: History, paths: Paths, rango: Rango, capital: float = 5000.0, ga
     horas = sp.shape[1] - 1
     return Sim(rango, capital, horas / 24, costs, final, fees, hodl, part.mean(axis=1), side, dil,
                _display(pool, sp0 ** 2))
+
+
+# Reglas de reajuste: horas seguidas fuera del rango antes de recentrarlo (None = nunca).
+REGLAS = {"nunca": None, "al salirse": 0, "fuera 24 h": 24, "fuera 72 h": 72}
+
+
+def simulate_reajuste(h: History, paths: Paths, rango: Rango, espera: int | None, capital: float = 5000.0,
+                      gas: float | None = None, diluir: bool = True, abierta: bool = False) -> Sim:
+    """Como `simulate`, pero cuando el precio lleva más de `espera` horas fuera del rango se recentra en el
+    precio de ese momento con el mismo ancho en ticks (y la misma asimetría): se retira todo (posición +
+    comisiones), se cambia lo que haga falta pagando la comisión del pool y se vuelve a abrir, con un gas
+    por reajuste. Igual que `backtest.simulate` con `--reajuste fuera`. `espera` None = nunca (= simulate)."""
+    if espera is None:
+        s = simulate(h, paths, rango, capital, gas, diluir, abierta)
+        s.reajustes, s.costes_reajuste = np.zeros(len(s.final)), np.zeros(len(s.final))
+        return s
+    pool = h.pool
+    d1 = 10 ** pool["dec1"]
+    gas_tx = GAS.get(pool["chain"], 0.05) if gas is None else gas
+    base = simulate(h, paths, rango, capital, gas, diluir, abierta)      # apertura, mantener, dilución
+    sp, u1 = paths.sp, paths.usd1
+    S_, H = sp.shape[0], sp.shape[1] - 1
+    sp0 = float(sp[0, 0])
+    spacing = pool["tick_spacing"]
+    t0 = 2 * math.log(sp0) / math.log(B.TICK_BASE)
+    dl, du = t0 - rango.tl, rango.tu - t0                               # distancia en ticks a cada borde
+
+    def val(a0, a1, s, u):
+        return (a0 * s ** 2 + a1) * u / d1
+
+    def amounts(s, sa, sb):                                             # por unidad de liquidez (vector)
+        a0 = np.where(s <= sa, 1 / sa - 1 / sb, np.where(s >= sb, 0.0, 1 / s - 1 / sb))
+        a1 = np.where(s <= sa, 0.0, np.where(s >= sb, sb - sa, s - sa))
+        return a0, a1
+
+    sa = np.full(S_, B._sqrt(rango.tl))
+    sb = np.full(S_, B._sqrt(rango.tu))
+    a0u, a1u = B._amounts(sp0, sa[0], sb[0])
+    L = np.full(S_, (capital - base.costs) / val(a0u, a1u, sp0, float(u1[0, 0])))
+    dil = base.dilution
+    f0 = np.zeros(S_)
+    f1 = np.zeros(S_)
+    fees = np.zeros(S_)
+    in_h = np.zeros(S_)
+    out_h = np.zeros(S_, int)
+    n_reb = np.zeros(S_)
+    c_reb = np.zeros(S_)
+    lo_t = math.ceil(B.MIN_TICK / spacing) * spacing
+    hi_t = math.floor(B.MAX_TICK / spacing) * spacing
+    for i in range(H):
+        s_now, s_nxt = sp[:, i], sp[:, i + 1]
+        ins_now = (s_now >= sa) & (s_now < sb)
+        ins_nxt = (s_nxt >= sa) & (s_nxt < sb)
+        part = (ins_now.astype(float) + ins_nxt) / 2
+        in_h += part
+        g0 = L * dil * paths.q0[:, i] / s_nxt * part
+        g1 = L * dil * paths.q1[:, i] * s_nxt * part
+        f0 += g0
+        f1 += g1
+        fees += val(g0, g1, s_nxt, u1[:, i + 1])
+        out_h = np.where(ins_nxt, 0, out_h + 1)
+        go = (out_h > espera) & (i + 1 < H)
+        if go.any():
+            s, u = s_nxt[go], u1[go, i + 1]
+            p0, p1 = amounts(s, sa[go], sb[go])
+            a0, a1 = p0 * L[go] + f0[go], p1 * L[go] + f1[go]
+            v = val(a0, a1, s, u)
+            cur0 = val(a0, 0, s, u) / np.where(v > 0, v, 1)
+            t = 2 * np.log(s) / math.log(B.TICK_BASE)
+            ntl = np.clip(np.floor((t - dl) / spacing) * spacing, lo_t, hi_t)
+            ntu = np.clip(np.ceil((t + du) / spacing) * spacing, lo_t, hi_t)
+            ntu = np.maximum(ntu, ntl + spacing)
+            nsa, nsb = B.TICK_BASE ** (ntl / 2), B.TICK_BASE ** (ntu / 2)
+            n0, n1 = amounts(s, nsa, nsb)
+            per_l = val(n0, n1, s, u)
+            nshare0 = val(n0, 0, s, u) / per_l
+            c = gas_tx + v * np.abs(cur0 - nshare0) * h.swap_fee
+            sa[go], sb[go] = nsa, nsb
+            L[go] = np.maximum(v - c, 0) / per_l
+            f0[go] = f1[go] = 0.0
+            out_h[go] = 0
+            n_reb[go] += 1
+            c_reb[go] += c
+    se, ue = sp[:, -1], u1[:, -1]
+    p0, p1 = amounts(se, sa, sb)
+    final = val(p0 * L + f0, p1 * L + f1, se, ue)
+    _, _, asset0 = B.pair_of(pool)
+    side = np.where(se < sa, -1, np.where(se >= sb, 1, 0)) * (1 if asset0 else -1)
+    nombre = next((k for k, x in REGLAS.items() if x == espera), f"fuera {espera} h")
+    return Sim(rango, capital, H / 24, base.costs, final, fees, base.hodl, in_h / max(H, 1), side, dil,
+               base.precio0, n_reb, c_reb, nombre)
+
+
+# Escenarios para comparar reglas de reajuste. Validado el 24-nov-2026 (16 pools de referencia, 1.113
+# aperturas del último año, ±5 % y ±10 %): con los escenarios de la tabla principal, a 30 días el
+# simulador contaba un 30–50 % más de reajustes de los reales (8,4 frente a 6,0 a ±5 %) y castigaba
+# reajustar unos 100 $ por 5.000 $ de más, porque el ensanche por plazo hace los caminos más
+# rugosos y el precio sale más veces. Con bloques de 14 días y la volatilidad reciente sin el ensanche
+# por plazo, los reajustes salen 6,5 frente a 6,0 y 2,0 frente a 1,7, y la diferencia frente a dejarlo
+# fijo queda a unos 20–35 $ de la real (algo prudente con el reajuste). A 7 días los dos coinciden.
+BLOQUE_REAJUSTE = 336
+PLAZO_REAJUSTE_VALIDADO = 30
+
+
+def escenarios_reajuste(h: History, dias: int, escenarios: int = 500, seed: int | None = 11,
+                        ajuste: float = AJUSTE_COMISIONES) -> Paths:
+    esc = float(np.clip(h.vol_reciente(VOL_DIAS), 0.5, 2.0))
+    return bootstrap(h, dias * 24, escenarios, BLOQUE_REAJUSTE, seed=seed, ajuste=ajuste, escala=esc)
+
+
+def reajustes(h: History, paths: Paths, rango: Rango, capital: float = 5000.0, gas: float | None = None,
+              abierta: bool = False, reglas: dict | None = None) -> list[dict]:
+    """Cada regla de reajuste frente a dejar el rango fijo, en los mismos escenarios (medias en $).
+    `dif_media`: lo que gana (o pierde) de media frente a no tocarlo."""
+    out = []
+    fijo = None
+    for nombre, espera in (reglas or REGLAS).items():
+        s = simulate_reajuste(h, paths, rango, espera, capital, gas, abierta=abierta)
+        vs = s.final - s.hodl
+        fijo = s.final if fijo is None else fijo
+        out.append({"regla": nombre, "espera_h": espera, "dif_media": float(np.mean(s.final - fijo)),
+                    "prob_mejor": float(np.mean(s.final > fijo + 1e-9)) if espera is not None else None,
+                    "valor_media": float(np.mean(s.final)),
+                    "valor_mediana": float(np.median(s.final)), "valor_p10": float(np.percentile(s.final, 10)),
+                    "vs_media": float(np.mean(vs)), "vs_mediana": float(np.median(vs)),
+                    "comisiones": float(np.mean(s.fees)), "en_rango": float(np.mean(s.in_range)),
+                    "reajustes": float(np.mean(s.reajustes)), "coste_reajustes": float(np.mean(s.costes_reajuste))})
+    return out
 
 
 def resumen(s: Sim) -> dict:
@@ -702,6 +833,10 @@ def conclusiones(res: dict) -> list[str]:
     return out
 
 
+def _num1(x: float) -> str:
+    return f"{x:.1f}".replace(".", ",")
+
+
 def recomendacion(res: dict) -> dict:
     """La lectura para quien no quiere interpretar la tabla: veredicto, qué hacer, qué no hacer y cómo
     intentar mejorarlo. Se basa en la MEDIA de los escenarios (cuenta los malos con su peso), comparada con
@@ -786,6 +921,25 @@ def recomendacion(res: dict) -> dict:
     elif et.get("nivel") == "sin datos":
         mejorar.append("No he podido leer la etapa del par: compruébala con /pool antes de abrir.")
 
+    rj = res.get("reajuste") or {}
+    foco = (max(buenos, key=gana) if buenos else best)["texto"]
+    item = next((x for x in rj.get("rangos", []) if x["texto"] == foco), None)
+    if item:
+        reglas = {x["regla"]: x for x in item["reglas"]}
+        aviso = "" if rj.get("validado") else " (a más de 30 días esta comparación no está validada: tómala como orientación)"
+        if item["mejor"] != "nunca":
+            m = reglas[item["mejor"]]
+            mejorar.append(f"Si el precio se sale de {foco}, recentrarlo con la regla «{item['mejor']}» gana de media "
+                           f"{_usd(m['dif_media'])} frente a dejarlo fijo ({_num1(m['reajustes'])} reajustes, "
+                           f"{_usd(m['coste_reajustes'], False)} de gas y cambios){aviso}.")
+        else:
+            al = reglas.get("al salirse")
+            txt = (f"recentrarlo nada más salirse {'pierde' if al['dif_media'] < 0 else 'gana'} de media "
+                   f"{_usd(abs(al['dif_media']), False)} frente a dejarlo fijo ({_num1(al['reajustes'])} reajustes de media)"
+                   if al else "ninguna regla de reajuste mejora a dejarlo fijo")
+            no_hacer.append(f"No persigas el precio: con {foco}, {txt}. Cada reajuste fija la pérdida frente a "
+                            f"mantener y paga gas y cambio; si se sale, decide entre esperar o cerrar{aviso}.")
+
     mb = res.get("mejor_ancho")
     if mb:
         if mb["vs_media"] > max(vm(r) for r in rs) and not (mb["es_el_mas_ancho"] and mb["vs_media"] <= 0):
@@ -810,6 +964,21 @@ def recomendacion(res: dict) -> dict:
                     "personalizada: el simulador no conoce tu situación ni sabe hacia dónde irá el precio."}
 
 
+def comparar_reajustes(h: History, dias: int, rangos: list[Rango], capital: float = 5000, gas: float | None = None,
+                       escenarios: int = 500, ajuste: float = AJUSTE_COMISIONES, abierta: bool = False) -> dict:
+    """Para cada rango: dejarlo fijo frente a recentrarlo al salirse (REGLAS), en escenarios propios
+    (`escenarios_reajuste`). La mejor regla solo se destaca si gana de media más del 0,5 % del capital."""
+    paths = escenarios_reajuste(h, dias, escenarios, ajuste=ajuste)
+    items = []
+    for rg in rangos:
+        tabla = reajustes(h, paths, rg, capital, gas, abierta)
+        mejor = max(tabla[1:], key=lambda r: r["dif_media"])
+        items.append({"texto": rg.texto, "reglas": tabla,
+                      "mejor": mejor["regla"] if mejor["dif_media"] > 0.005 * capital else "nunca"})
+    return {"rangos": items, "validado": dias <= PLAZO_REAJUSTE_VALIDADO, "escenarios": escenarios,
+            "gas": GAS.get(h.pool["chain"], 0.05) if gas is None else gas}
+
+
 def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, dias: int = 30,
         historia: int = HISTORIA_DIAS, escenarios: int = 1000, bloque: int = 168, tendencia: str = "neutral",
         gas: float | None = None, h: History | None = None, ajuste: float = AJUSTE_COMISIONES,
@@ -817,7 +986,8 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
     h = h or load(key, chain, historia)
     paths = bootstrap(h, dias * 24, escenarios, bloque, tendencia, ajuste=ajuste, nivel_dias=nivel_dias,
                       exponente=exponente, escala=escala)
-    out = [resumen(simulate(h, paths, parse_rango(r, h, paths), capital, gas)) for r in rangos]
+    rgs = [parse_rango(r, h, paths) for r in rangos]
+    out = [resumen(simulate(h, paths, rg, capital, gas)) for rg in rgs]
     asset, quote, _ = B.pair_of(h.pool)
     ref = referencia_sin_riesgo(h.pool["chain"])
     if ref:
@@ -837,6 +1007,7 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
     curva = barrido(h, paths, capital, gas)
     res["mejor_ancho"] = mejor_rango(curva, "media") | {"es_el_mas_ancho": mejor_rango(curva, "media") is curva[-1]}
     res["etapa"] = etapa_del_par(h.pool, dias)
+    res["reajuste"] = comparar_reajustes(h, dias, rgs, capital, gas, ajuste=ajuste)
     res["recomendacion"] = recomendacion(res)
     return res
 

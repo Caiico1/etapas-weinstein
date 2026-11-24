@@ -463,6 +463,16 @@ resultado medio en precio de los tokens + pérdida impermanente + comisiones + c
 mediana pero pierde 192 $ de media, porque la pérdida impermanente de los escenarios malos (−336 $ de
 media) no tiene techo.
 
+**Reajuste (`simulate_reajuste`, `comparar_reajustes`).** Cada rango, dejado fijo frente a recentrarlo
+(mismo ancho y asimetría) cuando lleva fuera 0, 24 o 72 horas (`REGLAS`): retira todo, cambia pagando la
+comisión del pool y reabre, con un gas por reajuste; igual que `backtest.simulate --reajuste fuera` (1–2 %
+sobre el histórico real). Usa escenarios propios (`escenarios_reajuste`: bloques de 14 días y volatilidad
+reciente sin el ensanche por plazo), porque con los de la tabla salían un 30–50 % más reajustes de los
+reales a 30 días. Validado en 16 pools y 1.113 aperturas del último año: reajustes 6,5 simulados frente a
+6,0 reales (±5 %, 30 d), diferencia frente a fijo algo prudente (unos 20–35 $ por 5.000 $). Sin validar a
+más de 30 días (la pantalla lo avisa). La Recomendación dice «No persigas el precio» si ninguna regla gana
+a fijo por más del 0,5 % del capital, o propone la que gana.
+
 **Valor final medio y Recomendación.** La tabla muestra el valor final en la mediana y en la **media**
 (`valor_media`), porque una posición de liquidez gana poco y a menudo y pierde mucho de vez en cuando: la
 mediana puede salir en verde con la media en rojo. `recomendacion` cierra la página con un veredicto en

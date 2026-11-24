@@ -362,3 +362,64 @@ def test_nivel_reciente_reescala_las_comisiones_de_los_escenarios():
     sin = S.bootstrap(h, 24 * 30, 500, ajuste=1.0, nivel_dias=None, seed=1)
     assert con.q1 == pytest.approx(sin.q1 * k)
     assert np.array_equal(con.sp, sin.sp)                        # el precio no cambia
+
+
+# --- reajuste ---------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("pool", [POOL, POOL_INV])
+@pytest.mark.parametrize("espera", [0, 24])
+def test_reajuste_cerca_del_backtest_al_reproducir_el_historico(pool, espera):
+    df = _walk(pool=pool, vol=0.006, g0=1e-20, g1=1e-12)      # comisiones pequeñas: se mide la mecánica
+    h = S.features(pool, df)
+    h.liquidity_now = 0
+    tl, tu = B._range(int(df["tick"].iloc[0]), 0.03, pool["tick_spacing"])
+    rg = S.Rango("x", tl, tu, 0, 0)
+    b = B.simulate(pool, df, B.Strategy(0.03, "fuera", espera, gas_usd=0.05), capital=5000)
+    s = S.simulate_reajuste(h, S.replay(h), rg, espera, 5000, gas=0.05, diluir=False)
+    assert b.rebalances > 0
+    assert abs(float(s.reajustes[0]) - b.rebalances) <= max(1, 0.1 * b.rebalances)
+    assert float(s.final[0]) == pytest.approx(b.final, rel=0.02)   # el backtest mira el tick; esto, √precio
+    assert float(s.costes_reajuste[0]) > 0.05 * s.reajustes[0] - 1e-9     # al menos el gas de cada uno
+
+
+def test_reajuste_nunca_es_el_rango_fijo():
+    df = _walk()
+    h = S.features(POOL, df)
+    paths = S.bootstrap(h, 24 * 10, 50)
+    rg = S.parse_rango("5", h)
+    a, b = S.simulate(h, paths, rg), S.simulate_reajuste(h, paths, rg, None)
+    assert np.allclose(a.final, b.final) and not b.reajustes.any()
+
+
+def test_reajustar_pasa_mas_tiempo_en_rango_y_tabla_de_reglas():
+    df = _walk(vol=0.006)
+    h = S.features(POOL, df)
+    paths = S.bootstrap(h, 24 * 20, 100)
+    rg = S.parse_rango("3", h)
+    t = {r["regla"]: r for r in S.reajustes(h, paths, rg)}
+    assert list(t) == list(S.REGLAS)
+    assert t["nunca"]["reajustes"] == 0
+    assert t["al salirse"]["reajustes"] >= t["fuera 24 h"]["reajustes"] >= t["fuera 72 h"]["reajustes"] > 0
+    assert t["al salirse"]["en_rango"] > t["nunca"]["en_rango"]
+    assert t["al salirse"]["coste_reajustes"] > 0
+
+
+def _rj(mejor, dif_al, dif_72):
+    reglas = [{"regla": "nunca", "espera_h": None, "dif_media": 0.0, "reajustes": 0.0, "coste_reajustes": 0.0},
+              {"regla": "al salirse", "espera_h": 0, "dif_media": dif_al, "reajustes": 6.7, "coste_reajustes": 8.0},
+              {"regla": "fuera 72 h", "espera_h": 72, "dif_media": dif_72, "reajustes": 1.3, "coste_reajustes": 2.0}]
+    return {"rangos": [{"texto": "±10%", "reglas": reglas, "mejor": mejor}], "validado": True}
+
+
+def test_recomendacion_habla_del_reajuste():
+    base = {"capital": 5000, "dias": 30, "par": "ETH/USDC", "nivel_reciente": 1.0, "escala_vol": 1.0,
+            "sin_riesgo": {"nombre": "USDC en Aave base", "valor_final": 5020},
+            "fiabilidad": {"nivel": "alta", "motivos": []},
+            "mejor_ancho": {"texto": "±30%", "vs_media": 50, "es_el_mas_ancho": False},
+            "rangos": [_rg_reco("±10%", 5120, 5060, 40, p10=4300)]}
+    r = S.recomendacion(base | {"reajuste": _rj("nunca", -64, -8)})
+    assert any("No persigas el precio" in t and "pierde de media 64 $" in t and "6,7" in t for t in r["no_hacer"])
+    r = S.recomendacion(base | {"reajuste": _rj("fuera 72 h", -64, 40)})
+    assert any("«fuera 72 h»" in t and "+40 $" in t for t in r["mejorar"])
+    r = S.recomendacion(base | {"reajuste": _rj("fuera 72 h", -64, 40) | {"validado": False}})
+    assert any("no está validada" in t for t in r["mejorar"])

@@ -53,7 +53,7 @@ python -m etapas.simulador_web
 
 ## 2. La pantalla de un vistazo
 
-La pantalla tiene nueve bloques, de arriba abajo:
+La pantalla tiene estos bloques, de arriba abajo:
 
 ```mermaid
 flowchart TB
@@ -64,7 +64,8 @@ flowchart TB
     C --> D["⑤ Gráfico de resultado<br/>ganancia o pérdida de cada rango"]
     D --> G["⑥ De dónde sale el resultado<br/>precio, pérdida impermanente, comisiones, costes"]
     G --> E["⑦ Tabla de detalle<br/>todas las cifras + referencia sin riesgo"]
-    E --> O["⑧ Buscar el mejor ancho<br/>(botón Buscar)"]
+    E --> RJ["¿Y si lo reajustas?<br/>dejarlo fijo frente a recentrarlo al salirse"]
+    RJ --> O["⑧ Buscar el mejor ancho<br/>(botón Buscar)"]
     O --> P["⑨ Comparar con otros pools del mismo par<br/>(botón Comparar)"]
     P --> Q["⑩ Recomendación<br/>qué haría, qué no y cómo mejorarlo, en lenguaje llano"]
 ```
@@ -365,6 +366,54 @@ referencia de Aave (+21 $ sin riesgo) es competitiva.
 
 ---
 
+## 8 a. ¿Y si lo reajustas cuando se sale?
+
+Debajo de la tabla, cada rango aparece cuatro veces: **dejarlo fijo** (lo de la tabla) y **reajustarlo**
+con tres reglas. Reajustar es recentrar el rango en el precio del momento, con el mismo ancho (y la misma
+asimetría), cuando el precio lleva fuera:
+
+| Regla | Cuándo recentra |
+|---|---|
+| **al salirse** | En cuanto pasa una hora fuera. |
+| **fuera 24 h** | Si sigue fuera un día entero (no persigue los picos). |
+| **fuera 72 h** | Si sigue fuera tres días. |
+
+En cada reajuste se retira todo (posición y comisiones cobradas), se cambia lo necesario pagando la
+comisión del pool y se vuelve a abrir, con un gas por reajuste. Es la misma mecánica que
+`python -m etapas.backtest … --reajuste fuera`, y sobre el histórico real da lo mismo que el backtest (1–2 %).
+
+| Columna | Qué es |
+|---|---|
+| **Frente a fijo (media)** | Lo que gana (+) o pierde (−) de media esa regla frente a no tocar el rango, en los mismos escenarios. Es la cifra que decide. |
+| **Mejor que fijo** | En qué parte de los escenarios acaba mejor que fijo. Suele estar por debajo del 50 %: reajustar gana poco muchas veces y pierde mucho alguna. |
+| **Reajustes (media)** | Cuántas veces recentra de media en el plazo. |
+| **Gas y cambios** | Lo que cuestan esos reajustes en total. |
+| **Comisiones, En rango** | Reajustar pasa más tiempo en rango y cobra más comisiones… |
+| **Valor final (media)** | …pero cada reajuste **fija la pérdida impermanente**: vendes lo que ha subido o compras lo que ha bajado justo después del movimiento. Por eso, aunque cobre más, suele acabar valiendo menos. |
+
+La regla con **«· mejor»** es la que más gana frente a fijo, solo si gana más del 0,5 % del capital. Si
+ninguna llega, sale «Dejarlo fijo · mejor» y la Recomendación dice **«No persigas el precio»**.
+
+**Por qué usa sus propios escenarios.** Los de la tabla principal ensanchan la volatilidad con el plazo
+(×1,16 a 30 días) para acertar en el valor final. Eso hace los caminos más «rugosos», y el precio sale del
+rango más veces de lo real. Se validó (24-nov-2026) con 16 pools de referencia, 1.113 aperturas reales del
+último año, a ±5 % y ±10 %, comparando con lo que habría pasado de verdad con cada regla:
+
+| 30 días, por 5.000 $ | Reajustes simulados / reales (±5 %) | Reajustar al salirse frente a fijo: simulado / real (±10 %) |
+|---|---:|---:|
+| Escenarios de la tabla | 8,4 / 6,0 | −79 $ / +20 $ |
+| **Bloques de 14 días, sin ensanche (los que usa)** | **6,5 / 6,0** | **−14 $ / +20 $** |
+
+A 7 días los dos coinciden: 1,4 reajustes simulados frente a 1,3 reales, a ±5 %. Aun así, la comparación
+sale **algo prudente con el reajuste** (unos 20–35 $ por 5.000 $ peor que lo real a 30 días). Y a más de
+30 días no está validada: la pantalla lo avisa.
+
+**Qué dijo la historia del último año:** a 7 días, reajustar siempre fue peor que dejarlo fijo. A 30 días,
+las diferencias fueron pequeñas: entre −23 $ y +28 $ por 5.000 $, según el ancho y la regla. Reajustar
+no convierte en ganador un rango que pierde frente a mantener.
+
+---
+
 ## 8 b. Buscar el mejor ancho
 
 ![Buscar el mejor ancho](docs/img/simulador-5-buscador.png)
@@ -539,7 +588,8 @@ flowchart TD
   tendencia en **neutral**: el simulador no debe confirmar tu opinión, solo medir el riesgo.
 - **Pares de dos estables** (USDC/USDT…): el precio apenas se mueve, así que manda la columna Comisiones; usa
   rangos muy estrechos.
-- El ciclo **diario** no está cubierto: el plazo mínimo es 7 días y el simulador no reajusta.
+- El ciclo **diario** no está cubierto: el plazo mínimo es 7 días. Para ver si te compensa recentrar el rango
+  cuando se sale, mira la sección «¿Y si lo reajustas?» (8 a).
 
 ---
 
