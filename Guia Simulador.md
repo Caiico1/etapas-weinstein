@@ -459,6 +459,17 @@ una tendencia no está en sus cifras. Por eso la Recomendación añade la etapa 
   rango cobra más sin salirse.
 - **Sin datos de precio:** pide comprobar la etapa con `/pool` antes de abrir.
 
+**¿Y si los escenarios se construyeran solo con semanas de la misma etapa?** Se probó (nov-2026) con 15
+pools de referencia y 1.060 aperturas reales del último año a 7 y a 30 días. Se compararon cinco variantes:
+semanas de la misma etapa semanal o mensual, con o sin su tendencia, y una mezcla al 50 %. **Ninguna mejora
+al modelo actual.** A 30 días, lo real cae dentro del P10–P90 el 64–68 % de las veces, frente al 71 % del
+modelo actual, y el error por cuantiles es un 6–15 % mayor. A 7 días pasa lo mismo, aunque con
+menos diferencia (un 2–5 % más de error). Y se repite en las dos mitades del año: el modelo actual gana en
+10–15 de los 15 pools según la variante. El motivo es que cada etapa deja pocas semanas en dos años de histórico:
+los escenarios se repiten y la horquilla se estrecha justo cuando la etapa cambia. Solo en etapa 2 semanal a
+30 días la mezcla al 50 % acertó algo más (un 3–5 %). Es demasiado poco, y está elegido después de ver los
+datos, así que no se aplica. La etapa se queda como aviso en la Recomendación, no dentro de las cifras.
+
 > Es un análisis de escenarios con el histórico real del pool, no una recomendación de inversión
 > personalizada: el simulador no conoce tu situación ni sabe hacia dónde irá el precio.
 
