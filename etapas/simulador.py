@@ -940,6 +940,20 @@ def recomendacion(res: dict) -> dict:
             no_hacer.append(f"No persigas el precio: con {foco}, {txt}. Cada reajuste fija la pérdida frente a "
                             f"mantener y paga gas y cambio; si se sale, decide entre esperar o cerrar{aviso}.")
 
+    es = next((x for x in (res.get("estres") or {}).get("rangos", []) if x["texto"] == foco), None)
+    if es:
+        bd, casos = es["bordes"], {c["caso"]: c for c in es["casos"]}
+        cae, peor = casos.get("Cae 30 %"), next((c for c in es["casos"] if c.get("real")), None)
+        txt = (f"Ten clara tu salida con {foco}: deja de cobrar si {asset} baja a {_fmt_price(bd['abajo']['precio'])} "
+               f"(la posición valdría {_usd(bd['abajo']['valor'], False)}, {_usd(bd['abajo']['resultado'])}) o sube a "
+               f"{_fmt_price(bd['arriba']['precio'])}. Ese precio de abajo es un buen sitio para el stop.")
+        if cae:
+            txt += (f" Si {asset} cae un 30 % en el plazo, el resultado sería de {_usd(cae['resultado'])} "
+                    f"({_usd(cae['vs_mantener'])} frente a guardar los tokens)")
+            txt += (f"; en el peor tramo real del pool ({asset} {_mov(peor['movimiento'])} en {dias} días desde el "
+                    f"{pd.Timestamp(peor['desde']):%d-%m-%Y}), de {_usd(peor['resultado'])}." if peor else ".")
+        (hacer if buenos else mejorar).append(txt if buenos else "Si aun así abres: " + txt[0].lower() + txt[1:])
+
     mb = res.get("mejor_ancho")
     if mb:
         if mb["vs_media"] > max(vm(r) for r in rs) and not (mb["es_el_mas_ancho"] and mb["vs_media"] <= 0):
@@ -979,6 +993,95 @@ def comparar_reajustes(h: History, dias: int, rangos: list[Rango], capital: floa
             "gas": GAS.get(h.pool["chain"], 0.05) if gas is None else gas}
 
 
+# --- estrés: ¿y si sale mal? --------------------------------------------------------------------
+
+# (nombre, descripción, función del instante t∈[0,1] → precio del activo / precio de hoy)
+CASOS_ESTRES = (
+    ("Cae 30 %", "el precio baja un 30 % de forma continua hasta el final del plazo", lambda t: 0.7 ** t),
+    ("Sube 30 %", "el precio sube un 30 % de forma continua hasta el final del plazo", lambda t: 1.3 ** t),
+    ("Latigazo −20 %", "cae un 20 % hasta la mitad del plazo y vuelve al precio de hoy",
+     lambda t: 0.8 ** (1 - abs(2 * t - 1))),
+)
+
+
+def _mov(x: float) -> str:
+    return f"{x * 100:+.0f} %".replace("-", "−")
+
+
+def _paths_estres(h: History, horas: int, k: float) -> tuple[Paths, list[dict]]:
+    """Un camino por caso: los fijos de CASOS_ESTRES (comisiones por hora = la media del histórico × k) y
+    el peor tramo real de `horas` del histórico del pool (sus movimientos y comisiones tal cual, × k)."""
+    _, _, asset0 = B.pair_of(h.pool)
+    sgn = 1 if asset0 else -1                      # precio del activo = P del pool o su inversa
+    t = np.arange(horas + 1) / horas
+    sps, u1s, q0s, q1s, info = [], [], [], [], []
+    q0m, q1m = np.full(horas, h.q0.mean() * k), np.full(horas, h.q1.mean() * k)
+    for nombre, desc, f in CASOS_ESTRES:
+        fa = np.array([f(x) for x in t])           # precio del activo / hoy
+        sps.append(h.sp_now * fa ** (sgn / 2))
+        u1s.append(h.usd1_now * (np.ones_like(fa) if asset0 else fa))   # la moneda de cotización no se mueve
+        q0s.append(q0m)
+        q1s.append(q1m)
+        info.append({"caso": nombre, "descripcion": desc, "real": False})
+    m = len(h.ret_p)
+    if m > horas:
+        ra = sgn * h.ret_p                         # log-rendimientos del precio del activo
+        c = np.concatenate([[0.0], np.cumsum(ra)])
+        mov = c[horas:] - c[:-horas]               # movimiento de cada tramo de `horas`
+        i = int(np.argmin(mov))
+        lp = np.concatenate([[0.0], np.cumsum(h.ret_p[i:i + horas])])
+        lu = np.concatenate([[0.0], np.cumsum(h.ret_u1[i:i + horas])])
+        sps.append(h.sp_now * np.exp(lp / 2))
+        u1s.append(h.usd1_now * np.exp(lu))
+        q0s.append(h.q0[i:i + horas] * k)
+        q1s.append(h.q1[i:i + horas] * k)
+        desde = h.df["hour"].iloc[i]
+        info.append({"caso": f"Peor tramo real ({horas // 24} d)",
+                     "descripcion": f"el peor tramo de {horas // 24} días del histórico del pool, desde el "
+                                    f"{desde:%d-%m-%Y}: el activo " + _mov(math.expm1(float(mov[i]))),
+                     "real": True, "desde": str(desde.date()), "movimiento": math.expm1(float(mov[i]))})
+    return Paths(np.vstack(sps), np.vstack(u1s), np.vstack(q0s), np.vstack(q1s)), info
+
+
+def estres(h: History, dias: int, rangos: list[Rango], capital: float = 5000, gas: float | None = None,
+           ajuste: float = AJUSTE_COMISIONES, abierta: bool = False) -> dict:
+    """¿Y si sale mal? Cada rango en unos pocos caminos fijos (CASOS_ESTRES) y en el peor tramo real del
+    histórico, con dónde deja de cobrar y cuánto vale la posición en cada borde. No es una previsión:
+    son casos para ver la cola con nombre y cifra."""
+    horas = dias * 24
+    k = ajuste * h.nivel(NIVEL_DIAS) * factor_plazo(dias)
+    paths, info = _paths_estres(h, horas, k)
+    _, _, asset0 = B.pair_of(h.pool)
+    out = []
+    for rg in rangos:
+        s = simulate(h, paths, rg, capital, gas, abierta=abierta)
+        sa, sb = B._sqrt(rg.tl), B._sqrt(rg.tu)
+        dentro = (paths.sp >= sa) & (paths.sp < sb)
+        casos = []
+        for j, inf in enumerate(info):
+            fuera = np.flatnonzero(~dentro[j])
+            sale = int(fuera[0]) if len(fuera) and dentro[j, 0] else None
+            casos.append(inf | {"valor_final": float(s.final[j]), "resultado": float(s.final[j] - capital),
+                                "vs_mantener": float(s.final[j] - s.hodl[j]), "comisiones": float(s.fees[j]),
+                                "en_rango": float(s.in_range[j]),
+                                "precio_final": _display(h.pool, float(paths.sp[j, -1]) ** 2),
+                                "sale_dia": None if sale is None else sale / 24,
+                                "sale_precio": None if sale is None else _display(h.pool, float(paths.sp[j, sale]) ** 2)})
+        # valor de la posición (sin comisiones) justo en cada borde, frente a guardar los tokens
+        bordes = Paths(np.array([[h.sp_now, sa], [h.sp_now, sb]]), np.full((2, 2), h.usd1_now), np.zeros((2, 1)),
+                       np.zeros((2, 1)))
+        if not asset0:                             # el token1 es el activo: su precio en $ va con el borde
+            bordes.usd1[:, 1] = h.usd1_now * (h.sp_now / np.array([sa, sb])) ** 2
+        sbd = simulate(h, bordes, rg, capital, gas, diluir=False, abierta=abierta)
+        b = {}
+        for j, raw in enumerate((sa, sb)):
+            lado = ("abajo" if j == 0 else "arriba") if asset0 else ("arriba" if j == 0 else "abajo")
+            b[lado] = {"precio": _display(h.pool, raw ** 2), "valor": float(sbd.final[j]),
+                       "resultado": float(sbd.final[j] - capital), "vs_mantener": float(sbd.final[j] - sbd.hodl[j])}
+        out.append({"texto": rg.texto, "lo": rg.lo, "hi": rg.hi, "casos": casos, "bordes": b})
+    return {"rangos": out, "precio": price_now(h)}
+
+
 def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, dias: int = 30,
         historia: int = HISTORIA_DIAS, escenarios: int = 1000, bloque: int = 168, tendencia: str = "neutral",
         gas: float | None = None, h: History | None = None, ajuste: float = AJUSTE_COMISIONES,
@@ -1008,6 +1111,7 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
     res["mejor_ancho"] = mejor_rango(curva, "media") | {"es_el_mas_ancho": mejor_rango(curva, "media") is curva[-1]}
     res["etapa"] = etapa_del_par(h.pool, dias)
     res["reajuste"] = comparar_reajustes(h, dias, rgs, capital, gas, ajuste=ajuste)
+    res["estres"] = estres(h, dias, rgs, capital, gas, ajuste=ajuste)
     res["recomendacion"] = recomendacion(res)
     return res
 

@@ -65,7 +65,8 @@ flowchart TB
     D --> G["⑥ De dónde sale el resultado<br/>precio, pérdida impermanente, comisiones, costes"]
     G --> E["⑦ Tabla de detalle<br/>todas las cifras + referencia sin riesgo"]
     E --> RJ["¿Y si lo reajustas?<br/>dejarlo fijo frente a recentrarlo al salirse"]
-    RJ --> O["⑧ Buscar el mejor ancho<br/>(botón Buscar)"]
+    RJ --> ES["¿Y si sale mal?<br/>casos de estrés y dónde deja de cobrar"]
+    ES --> O["⑧ Buscar el mejor ancho<br/>(botón Buscar)"]
     O --> P["⑨ Comparar con otros pools del mismo par<br/>(botón Comparar)"]
     P --> Q["⑩ Recomendación<br/>qué haría, qué no y cómo mejorarlo, en lenguaje llano"]
 ```
@@ -411,6 +412,46 @@ sale **algo prudente con el reajuste** (unos 20–35 $ por 5.000 $ peor que lo r
 **Qué dijo la historia del último año:** a 7 días, reajustar siempre fue peor que dejarlo fijo. A 30 días,
 las diferencias fueron pequeñas: entre −23 $ y +28 $ por 5.000 $, según el ancho y la regla. Reajustar
 no convierte en ganador un rango que pierde frente a mantener.
+
+---
+
+## 8 a b. ¿Y si sale mal? (casos de estrés)
+
+Los escenarios no apuestan por una dirección y salen al azar de dos años de histórico. Por eso una caída
+fuerte y sostenida aparece poco y repartida entre muchos escenarios normales. Esta sección la pone con
+nombre y cifra. **No son previsiones**: son caminos fijos para ver la cola.
+
+**Primero, dónde deja de cobrar cada rango.** Una línea por rango con el precio del borde de abajo y el de
+arriba, y cuánto valdría la posición justo ahí: resultado y diferencia frente a guardar los tokens, sin
+contar comisiones. **El precio de abajo es un buen sitio para el stop**: ahí la posición ya es todo
+activo y deja de cobrar.
+
+**Después, cuatro casos para cada rango:**
+
+| Caso | Qué pasa |
+|---|---|
+| **Cae 30 %** | El precio del activo baja un 30 % de forma continua hasta el final del plazo. |
+| **Sube 30 %** | Sube un 30 % de forma continua. Ganas, pero menos que guardando los tokens: la posición se queda en dólares al salir por arriba. |
+| **Latigazo −20 %** | Cae un 20 % hasta la mitad del plazo y vuelve al precio de hoy. La pérdida impermanente se deshace; cuenta lo que dejó de cobrar mientras estaba fuera. |
+| **Peor tramo real** | El peor tramo de ese plazo del **histórico del propio pool**, con sus movimientos y sus comisiones de verdad. Entre paréntesis, la fecha en que empezó. |
+
+En los tres primeros cobra las comisiones medias del pool, con el mismo ajuste que la tabla. En pares de
+dos activos volátiles (ETH/BTC…), el movimiento es en la moneda de cotización.
+
+| Columna | Qué es |
+|---|---|
+| **Precio al final** | Donde acaba el precio en ese caso. |
+| **Resultado** | Ganancia o pérdida frente a lo invertido (entre paréntesis, el valor final). |
+| **vs mantener** | Frente a guardar los mismos tokens. |
+| **Comisiones, En rango** | Lo que cobra y el tiempo que pasa dentro. |
+| **Se sale** | El día y el precio en que sale del rango por primera vez (o «no se sale»). |
+
+**Ejemplo (WETH/USDC de Base, 5.000 $, 30 días, nov-2026):** con ±20 %, deja de cobrar si ETH baja a
+1.353 $, y la posición valdría 4.256 $ (−744 $). Si ETH cae un 30 %, el resultado es −1.213 $. En el peor
+tramo real del pool (ETH −45 % desde el 7-ene-2026) sería −2.007 $.
+
+La Recomendación lo resume en **«Ten clara tu salida»**: el precio del stop y lo que perderías en la caída
+del 30 % y en el peor tramo real.
 
 ---
 

@@ -44,6 +44,8 @@ td{text-align:right;padding:14px 10px;border-bottom:1px solid #1f2349;white-spac
 tr:hover td{background:#191d3c}
 .pos{color:var(--green)} .neg{color:var(--red)} .mut{color:var(--muted);font-size:12px}
 .name{font-family:system-ui,sans-serif}
+.lab{text-align:left!important;font-family:system-ui,sans-serif}
+tr.grp td{border-top:2px solid #2c3168}
 .err{color:var(--red);margin-top:10px}
 .busy{opacity:.55;transition:opacity .2s}
 details{color:var(--muted);font-size:13px}
@@ -156,6 +158,13 @@ summary{cursor:pointer;color:var(--text)}
     <div class="hint" id="reaTxt"></div>
   </section>
 
+  <section class="panel" id="outEst" hidden>
+    <h2>¿Y si sale mal? <span class="mut" style="font-weight:400;font-size:13px">(casos de estrés)</span></h2>
+    <div class="hint">No son previsiones: son caminos fijos para ver la cola con nombre y cifra. En los tres primeros el precio sigue ese camino y cobra las comisiones medias del pool; el último repite el peor tramo de ese plazo del histórico del pool, con sus movimientos y sus comisiones reales. En pares de dos activos volátiles, el movimiento es en la moneda de cotización.</div>
+    <div id="estBordes" class="hint" style="font-size:13px"></div>
+    <div class="tw" style="margin-top:8px"><table id="estTab" style="min-width:900px"></table></div>
+  </section>
+
   <section class="panel" id="outOpt" hidden>
     <h2>Buscar el mejor ancho</h2>
     <div class="ranges">
@@ -260,8 +269,8 @@ function render(d){
       :`etapa: <span class="mut">${esc(d.etapa.nivel)}</span>`):"",
     `gas <b>${d.gas} $</b>`, `cambio inicial <b>${pct(d.comision_cambio,2,false)}</b>`,
     d.aviso?`<span class="neg">${d.aviso}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
-  ["outSum","outFan","outBars","outDes","outTable","outRea","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);
-  summary(d); fan(d); bars(d); desglose(d); table(d); reaDraw(d); reco(d.recomendacion||{});
+  ["outSum","outFan","outBars","outDes","outTable","outRea","outEst","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);
+  summary(d); fan(d); bars(d); desglose(d); table(d); reaDraw(d); estDraw(d); reco(d.recomendacion||{});
   const sel=$("cmpRango"), prev=sel.value;
   sel.innerHTML=["P10-P90",...ranges.filter(Boolean)].filter((v,i,a)=>a.indexOf(v)===i).map(r=>`<option>${esc(r)}</option>`).join("");
   if(prev&&[...sel.options].some(o=>o.value===prev)) sel.value=prev;
@@ -443,10 +452,10 @@ function bars(d){
 function reaDraw(d){
   const rj=d.reajuste; $("outRea").hidden=!rj;
   if(!rj) return;
-  $("reaTab").innerHTML=`<thead><tr><th>Rango</th><th>Regla</th><th>Frente a fijo<br><span style="font-weight:400">(media)</span></th><th>Mejor que fijo</th><th>Reajustes<br><span style="font-weight:400">(media)</span></th><th>Gas y cambios</th><th>Comisiones</th><th>En rango</th><th>Valor final<br><span style="font-weight:400">(media)</span></th></tr></thead><tbody>`+
-    rj.rangos.map(it=>it.reglas.map((x,j)=>`<tr${x.regla===it.mejor&&x.espera_h!==null?' style="background:rgba(79,209,139,.08)"':''}>
-      ${j===0?`<td class="name" rowspan="${it.reglas.length}">${esc(it.texto)}</td>`:""}
-      <td>${x.regla==="nunca"?"Dejarlo fijo":"Reajustar "+esc(x.regla)}${x.regla===it.mejor?' <b class="pos">· mejor</b>':''}</td>
+  $("reaTab").innerHTML=`<thead><tr><th>Rango</th><th class="lab">Regla</th><th>Frente a fijo<br><span style="font-weight:400">(media)</span></th><th>Mejor que fijo</th><th>Reajustes<br><span style="font-weight:400">(media)</span></th><th>Gas y cambios</th><th>Comisiones</th><th>En rango</th><th>Valor final<br><span style="font-weight:400">(media)</span></th></tr></thead><tbody>`+
+    rj.rangos.map(it=>it.reglas.map((x,j)=>`<tr class="${j===0?"grp":""}"${x.regla===it.mejor&&x.espera_h!==null?' style="background:rgba(79,209,139,.08)"':''}>
+      <td class="name">${j===0?esc(it.texto):""}</td>
+      <td class="lab">${x.regla==="nunca"?"Dejarlo fijo":"Reajustar "+esc(x.regla)}${x.regla===it.mejor?' <b class="pos">· mejor</b>':''}</td>
       <td class="${x.espera_h===null?"mut":cls(x.dif_media)}">${x.espera_h===null?"—":usd(x.dif_media,true)}</td>
       <td class="mut">${x.prob_mejor===null?"—":Math.round(x.prob_mejor*100)+" %"}</td>
       <td>${x.reajustes.toLocaleString("es-ES",{maximumFractionDigits:1})}</td>
@@ -458,6 +467,23 @@ function reaDraw(d){
     :"Ninguna regla gana a dejarlo fijo por más del 0,5 % del capital: reajustar no compensa aquí (cada reajuste fija la pérdida frente a mantener y paga gas y cambio).")
     +(rj.validado?"":` <span class="neg">A ${d.dias} días esta comparación no está validada (solo hasta 30): tómala como orientación.</span>`)
     +` Escenarios propios: ${rj.escenarios}, bloques de 14 días y la volatilidad reciente sin el ensanche por plazo (con él, el precio sale más veces de lo real).`;
+}
+
+function estDraw(d){
+  const e=d.estres; $("outEst").hidden=!e;
+  if(!e) return;
+  const asset=d.par.split("/")[0];
+  $("estBordes").innerHTML=e.rangos.map(it=>{const a=it.bordes.abajo,b=it.bordes.arriba;
+    return `<b>${esc(it.texto)}</b>: deja de cobrar si ${esc(asset)} baja a <b>${price(a.precio)}</b> (la posición valdría ${usd(a.valor)}, <span class="${cls(a.resultado)}">${usd(a.resultado,true)}</span>; ${usd(a.vs_mantener,true)} frente a guardar los tokens) o sube a <b>${price(b.precio)}</b> (${usd(b.valor)}, <span class="${cls(b.resultado)}">${usd(b.resultado,true)}</span>). El de abajo es un buen sitio para el stop.`;}).join("<br>");
+  $("estTab").innerHTML=`<thead><tr><th>Rango</th><th class="lab">Caso</th><th>Precio al final</th><th>Resultado</th><th>vs mantener</th><th>Comisiones</th><th>En rango</th><th>Se sale</th></tr></thead><tbody>`+
+    e.rangos.map(it=>it.casos.map((c,j)=>`<tr class="${j===0?"grp":""}">
+      <td class="name">${j===0?esc(it.texto):""}</td>
+      <td class="lab" title="${esc(c.descripcion)}">${esc(c.caso)}${c.real?` <span class="mut">(${esc(c.desde.split("-").reverse().join("-"))})</span>`:""}</td>
+      <td>${price(c.precio_final)}</td>
+      <td class="${cls(c.resultado)}">${usd(c.resultado,true)} <span class="mut">(${usd(c.valor_final)})</span></td>
+      <td class="${cls(c.vs_mantener)}">${usd(c.vs_mantener,true)}</td>
+      <td>${usd(c.comisiones)}</td><td>${Math.round(c.en_rango*100)} %</td>
+      <td class="mut">${c.sale_dia===null?"no se sale":"día "+c.sale_dia.toLocaleString("es-ES",{maximumFractionDigits:1})+" a "+price(c.sale_precio)}</td></tr>`).join("")).join("")+"</tbody>";
 }
 
 function niceStep(m){const raw=m/3,p=10**Math.floor(Math.log10(raw)),f=raw/p;return (f<1.5?1:f<3.5?2:f<7.5?5:10)*p;}

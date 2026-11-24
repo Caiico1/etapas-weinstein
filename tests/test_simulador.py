@@ -423,3 +423,52 @@ def test_recomendacion_habla_del_reajuste():
     assert any("«fuera 72 h»" in t and "+40 $" in t for t in r["mejorar"])
     r = S.recomendacion(base | {"reajuste": _rj("fuera 72 h", -64, 40) | {"validado": False}})
     assert any("no está validada" in t for t in r["mejorar"])
+
+
+# --- estrés -----------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("pool", [POOL, POOL_INV])
+def test_estres_casos_fijos_y_peor_tramo(pool):
+    df = _walk(pool=pool, n=24 * 60, g0=1e-20, g1=1e-12)
+    h = S.features(pool, df)
+    p = S.price_now(h)
+    r = S.estres(h, 10, [S.parse_rango("10", h), S.parse_rango("25", h)])
+    a, b = r["rangos"]
+    c = {x["caso"]: x for x in a["casos"]}
+    assert c["Cae 30 %"]["precio_final"] == pytest.approx(0.7 * p, rel=1e-6)
+    assert c["Sube 30 %"]["precio_final"] == pytest.approx(1.3 * p, rel=1e-6)
+    assert c["Latigazo −20 %"]["precio_final"] == pytest.approx(p, rel=1e-6)
+    assert c["Cae 30 %"]["sale_precio"] == pytest.approx(a["lo"], rel=0.01)       # sale por abajo, por el borde
+    assert c["Sube 30 %"]["sale_precio"] == pytest.approx(a["hi"], rel=0.01)
+    assert c["Cae 30 %"]["vs_mantener"] < 0 and c["Cae 30 %"]["resultado"] < c["Cae 30 %"]["vs_mantener"]
+    peor = next(x for x in a["casos"] if x["real"])
+    assert peor["movimiento"] < 0 and "peor tramo" in peor["descripcion"]
+    assert {x["caso"]: x for x in b["casos"]}["Latigazo −20 %"]["sale_dia"] is None   # ±25 % aguanta el −20 %
+    assert a["bordes"]["abajo"]["precio"] == pytest.approx(a["lo"]) and a["bordes"]["arriba"]["precio"] == pytest.approx(a["hi"])
+    assert a["bordes"]["abajo"]["resultado"] < 0 < a["bordes"]["arriba"]["resultado"]
+
+
+def test_estres_igual_en_los_dos_sentidos_del_par():
+    rs = []
+    for pool in (POOL, POOL_INV):
+        h = S.features(pool, _walk(pool=pool, n=24 * 60, g0=1e-20, g1=1e-12))
+        rs.append(S.estres(h, 10, [S.parse_rango("10", h)])["rangos"][0])
+    for x, y in zip(rs[0]["casos"][:3], rs[1]["casos"][:3]):
+        assert x["resultado"] == pytest.approx(y["resultado"], rel=0.03, abs=15)
+    assert rs[0]["bordes"]["abajo"]["valor"] == pytest.approx(rs[1]["bordes"]["abajo"]["valor"], rel=0.01)
+
+
+def test_recomendacion_da_la_salida_con_el_estres():
+    est = {"rangos": [{"texto": "±10%", "bordes": {"abajo": {"precio": 1522, "valor": 4626, "resultado": -374},
+                                                    "arriba": {"precio": 1861, "valor": 5115, "resultado": 115}},
+                       "casos": [{"caso": "Cae 30 %", "resultado": -1344, "vs_mantener": -632, "real": False},
+                                 {"caso": "Peor tramo real (30 d)", "resultado": -2105, "real": True,
+                                  "movimiento": -0.45, "desde": "2026-01-07"}]}]}
+    base = {"capital": 5000, "dias": 30, "par": "ETH/USDC", "nivel_reciente": 1.0, "escala_vol": 1.0,
+            "sin_riesgo": {"nombre": "USDC en Aave base", "valor_final": 5020},
+            "fiabilidad": {"nivel": "alta", "motivos": []},
+            "mejor_ancho": {"texto": "±30%", "vs_media": 50, "es_el_mas_ancho": False},
+            "rangos": [_rg_reco("±10%", 5120, 5060, 40, p10=4300)], "estres": est}
+    r = S.recomendacion(base)
+    t = next(x for x in r["hacer"] if "Ten clara tu salida" in x)
+    assert "1.522" in t and "−374 $" in t.replace("-", "−") and "cae un 30 %" in t and "−45 %" in t and "07-01-2026" in t
