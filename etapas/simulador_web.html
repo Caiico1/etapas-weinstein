@@ -249,6 +249,8 @@ function render(d){
     `histórico desde <b>${d.historia_desde.slice(0,10)}</b>`, `<b>${d.escenarios}</b> escenarios a <b>${d.dias}</b> días`,
     `comisiones ×<b>${(d.nivel_reciente*d.ajuste_comisiones*d.factor_plazo).toLocaleString("es-ES",{maximumFractionDigits:2})}</b> (nivel ${d.nivel_dias?d.nivel_dias+" d":"histórico"} ×${d.nivel_reciente.toLocaleString("es-ES",{maximumFractionDigits:2})}, ajuste ${d.ajuste_comisiones.toLocaleString("es-ES")}, plazo ×${d.factor_plazo.toLocaleString("es-ES",{maximumFractionDigits:2})})`,
     `volatilidad ×<b>${d.escala_vol.toLocaleString("es-ES",{maximumFractionDigits:2})}</b> (últimos 90 d ×${d.vol_reciente.toLocaleString("es-ES",{maximumFractionDigits:2})}, plazo ×${(d.escala_vol/Math.min(2,Math.max(0.5,d.vol_reciente))).toLocaleString("es-ES",{maximumFractionDigits:2})})`,
+    d.etapa?(d.etapa.etapa?`<span title="${esc((d.etapa.motivos||[]).join(' '))}">etapa <b>${d.etapa.etapa}</b> (${esc(d.etapa.nombre)}${d.etapa.transicion?", transición "+esc(d.etapa.transicion):""}) de ${esc(d.etapa.par)} en ${d.etapa.marco_label} · <b class="${d.etapa.nivel==="precaución"?"neg":"pos"}">${d.etapa.nivel}</b></span>`
+      :`etapa: <span class="mut">${esc(d.etapa.nivel)}</span>`):"",
     `gas <b>${d.gas} $</b>`, `cambio inicial <b>${pct(d.comision_cambio,2,false)}</b>`,
     d.aviso?`<span class="neg">${d.aviso}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
   ["outSum","outFan","outBars","outDes","outTable","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);

@@ -540,6 +540,52 @@ def comparar(pool_id: str, chain: str, rango: str = "P10-P90", capital: float = 
     return {"par": f"{par[0]}/{par[1]}", "rango": rango, "dias": dias, "capital": capital, "pools": filas}
 
 
+# --- etapa de Weinstein del par (la misma lectura que /pool, el cribado y la rutina) -------------
+
+_ETAPA_CACHE: dict = {}
+MARCO_LABEL = {"1d": "diario", "1w": "semanal", "1M": "mensual"}
+
+
+def marco_para(dias: int) -> str:
+    """Marco de la etapa que corresponde al plazo: semanal hasta 14 días, mensual a partir de ahí."""
+    return "1w" if dias <= 14 else "1M"
+
+
+def etapa_del_par(pool: dict, dias: int) -> dict | None:
+    """Etapa del par en el marco del plazo y el paso 1 de la decisión del sistema (`liquidez.verdict`):
+    apta / precaución. En el histórico (fase 0, oct-2026, ~8.400 aperturas), en etapa 2 los rangos
+    semanales y mensuales pasaron dentro el 70 % y el 63 % de los ciclos (85–97 % en las demás) y
+    perdieron más frente a mantener. None si el par es de dos estables; «sin datos» si no hay velas.
+    Se guarda una hora (las velas son diarias como mínimo)."""
+    from . import liquidez as LQ
+    from .analysis import analyze_symbol
+    from .data import canonical_pair, fetch_pair_candles
+    asset, quote = par_de(pool)
+    estables = {s.upper() for s in B._STABLE}
+    if asset.upper() in estables:
+        return None
+    quote = "USDC" if quote == "USD" else quote
+    base, quote = canonical_pair(asset, quote)
+    serie = {"XAUT": "PAXG"}.get(base, base)
+    marco = marco_para(dias)
+    key = (base, quote, pd.Timestamp.now().floor("h"))
+    if key not in _ETAPA_CACHE:
+        try:
+            _ETAPA_CACHE[key] = analyze_symbol(base, fetch=lambda t, cfg: fetch_pair_candles(serie, quote, cfg))
+        except Exception as e:                                   # noqa: BLE001 (la etapa es un complemento)
+            return {"par": f"{base}/{quote}", "marco": marco, "marco_label": MARCO_LABEL[marco], "nivel": "sin datos",
+                    "motivos": [f"no se pudo leer el precio para la etapa ({type(e).__name__})"]}
+    a = _ETAPA_CACHE[key]
+    r = a.timeframes.get(marco)
+    if r is None:
+        return None
+    nivel, motivos = LQ.verdict(r, None, base, quote)
+    otros = {MARCO_LABEL[k]: (t.stage if t.status == "ok" else None) for k, t in a.timeframes.items() if k in MARCO_LABEL}
+    return {"par": f"{base}/{quote}", "marco": marco, "marco_label": MARCO_LABEL[marco], "etapa": r.stage,
+            "nombre": r.stage_name, "transicion": r.transition, "confianza": r.confidence_label, "nivel": nivel,
+            "motivos": motivos, "otros_marcos": otros}
+
+
 # --- fiabilidad y conclusión ------------------------------------------------------------------
 
 CALIBRACION_LOG = Path(__file__).resolve().parent.parent / "out" / "simulador_calibracion.jsonl"
@@ -721,6 +767,25 @@ def recomendacion(res: dict) -> dict:
     if any(r.get("fuera_hoy") for r in rs):
         no_hacer.append("No abras un rango que ya está fuera hoy pensando que cobrará: no cobra nada hasta que el precio entre.")
 
+    et = res.get("etapa") or {}
+    if et.get("nivel") == "precaución":
+        ttxt = f" (en transición {et['transicion']})" if et.get("transicion") else ""
+        no_hacer.append(f"No abras un rango estrecho y centrado: {et['par']} está en etapa {et['etapa']} ({et['nombre']}) "
+                        f"en el marco {et['marco_label']}{ttxt}. En el histórico, los rangos semanales y mensuales abiertos "
+                        "en etapa 2 pasaron dentro solo el 70 % y el 63 % de los ciclos (85–97 % en las demás etapas) y "
+                        "perdieron más frente a mantener. El simulador no apuesta por la dirección, así que este riesgo "
+                        "no está en sus cifras.")
+        mejorar.append("Si abres igualmente con la tendencia alcista, ensancha el rango o desplázalo hacia arriba "
+                       "(asimétrico, por ejemplo −5/+15) y vigílalo de cerca: la tendencia empuja el precio fuera por arriba.")
+        if buenos:
+            hacer.append("Ojo: aunque los números salen favorables, la etapa pide precaución (arriba, «Qué no "
+                         "recomiendo»): usa menos capital del que usarías en una etapa lateral.")
+    elif et.get("nivel") == "apta" and et.get("etapa") in (1, 3) and buenos:
+        hacer.append(f"La etapa acompaña: {et['par']} está en etapa {et['etapa']} (lateral) en el marco "
+                     f"{et['marco_label']}, la más favorable para un rango.")
+    elif et.get("nivel") == "sin datos":
+        mejorar.append("No he podido leer la etapa del par: compruébala con /pool antes de abrir.")
+
     mb = res.get("mejor_ancho")
     if mb:
         if mb["vs_media"] > max(vm(r) for r in rs) and not (mb["es_el_mas_ancho"] and mb["vs_media"] <= 0):
@@ -771,6 +836,7 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
     res["conclusiones"] = conclusiones(res)
     curva = barrido(h, paths, capital, gas)
     res["mejor_ancho"] = mejor_rango(curva, "media") | {"es_el_mas_ancho": mejor_rango(curva, "media") is curva[-1]}
+    res["etapa"] = etapa_del_par(h.pool, dias)
     res["recomendacion"] = recomendacion(res)
     return res
 

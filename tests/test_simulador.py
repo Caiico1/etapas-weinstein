@@ -302,10 +302,39 @@ def test_recomendacion_favorable_cuando_gana_de_media_y_al_sin_riesgo():
     assert any("Prueba ±30%" in t for t in r["mejorar"])
 
 
+def _etapa(nivel, etapa, transicion=""):
+    return {"par": "ETH/USDC", "marco": "1M", "marco_label": "mensual", "etapa": etapa, "nombre": "Avance",
+            "transicion": transicion, "nivel": nivel, "motivos": []}
+
+
+def test_recomendacion_tiene_en_cuenta_la_etapa():
+    base = {"capital": 5000, "dias": 30, "par": "ETH/USDC", "nivel_reciente": 1.0, "escala_vol": 1.0,
+            "sin_riesgo": {"nombre": "USDC en Aave base", "valor_final": 5020},
+            "fiabilidad": {"nivel": "alta", "motivos": []},
+            "mejor_ancho": {"texto": "±30%", "vs_media": 50, "es_el_mas_ancho": False},
+            "rangos": [_rg_reco("±10%", 5120, 5060, 40, p10=4300)]}
+    r = S.recomendacion(base | {"etapa": _etapa("precaución", 2)})
+    assert r["veredicto"] == "favorable"
+    assert any("etapa 2" in t and "70 %" in t for t in r["no_hacer"])
+    assert any("asimétrico" in t for t in r["mejorar"]) and any(t.startswith("Ojo") for t in r["hacer"])
+    r = S.recomendacion(base | {"etapa": _etapa("apta", 1)})
+    assert any("La etapa acompaña" in t for t in r["hacer"]) and not any("etapa 2" in t for t in r["no_hacer"])
+    r = S.recomendacion(base | {"etapa": {"nivel": "sin datos", "motivos": []}})
+    assert any("/pool" in t for t in r["mejorar"])
+    r = S.recomendacion(base | {"etapa": None})
+    assert not any("etapa" in t.lower() for t in r["no_hacer"] + r["mejorar"])
+
+
+def test_marco_y_par_de_estables_sin_etapa():
+    assert S.marco_para(7) == S.marco_para(14) == "1w" and S.marco_para(30) == S.marco_para(180) == "1M"
+    assert S.etapa_del_par({**POOL, "symbol0": "USDC", "symbol1": "USDT"}, 30) is None   # sin red
+
+
 def test_run_devuelve_media_y_recomendacion(monkeypatch):
     h = S.features(POOL, _walk(n=24 * 200))
     monkeypatch.setattr(S, "referencia_sin_riesgo", lambda chain: None)
     monkeypatch.setattr(S, "calibracion_pool", lambda *a, **k: None)
+    monkeypatch.setattr(S, "etapa_del_par", lambda pool, dias: None)       # sin red
     d = S.run("x", "base", ["±5%", "±20%"], dias=14, escenarios=200, h=h)
     for r in d["rangos"]:
         assert r["valor_media"] == pytest.approx(5000 + r["desglose"]["total"])

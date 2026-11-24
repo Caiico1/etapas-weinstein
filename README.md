@@ -471,6 +471,14 @@ Un rango compensa si, **de media**, gana a guardar los tokens y a la referencia 
 buscador de anchos (`mejor_ancho`, calculado en cada simulación), el nivel de comisiones, el plazo, la
 volatilidad reciente y el semáforo.
 
+**Etapa del par.** `etapa_del_par` calcula la etapa de Weinstein del par con la misma lectura que `/pool`
+(`analyze_symbol` + `liquidez.verdict`), en el marco del plazo (semanal hasta 14 días, mensual desde 30).
+La muestra en la línea de datos y la usa en la Recomendación. En «precaución» (etapa 2 o transición hacia
+ella, semanal o mensual) desaconseja un rango estrecho y centrado y propone ensancharlo o desplazarlo hacia
+arriba, porque los escenarios no apuestan por la dirección y ese riesgo no está en sus cifras. Se guarda
+una hora; tarda unos 5 segundos la primera vez por par. No cambia los escenarios: condicionarlos a la etapa
+queda como experimento, que solo se activaría si la validación fuera de muestra lo justifica.
+
 **Mis posiciones abiertas (`etapas/posiciones_lp.py`, pantalla y consola).** Lee las posiciones abiertas
 del MCP público de Revert (`https://mcp.revert.finance/mcp`, JSON-RPC por HTTP, solo `get_positions`)
 con las carteras de `~/.cripto-renta/config.json` (nunca en el repositorio), busca cada pool en

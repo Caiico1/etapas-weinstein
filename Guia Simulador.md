@@ -200,6 +200,7 @@ Debajo de los rangos aparece una línea con el contexto de la simulación:
 | Escenarios y plazo | **1000** escenarios a **30** días | Lo elegido arriba. |
 | Comisiones | ×**0,54** (nivel 90 d ×0,55, ajuste 0,97, plazo ×1) | Cuánto cobran los escenarios frente a la media histórica del pool: nivel reciente × ajuste × corrección por plazo. Por debajo de 1: el pool cobra ahora menos que de media. |
 | Volatilidad | ×**0,89** (últimos 90 d ×0,77, plazo ×1,16) | Cuánto se amplían los movimientos del precio de los escenarios frente al histórico: volatilidad de los últimos 90 días frente a la de los dos años × ensanche por plazo. Por encima de 1: escenarios más movidos. |
+| Etapa | etapa **1** (Inicio (base)) de ETH/USDC en mensual · **apta** | La etapa de Weinstein del par, la misma lectura que usan `/pool`, el cribado y la rutina, en el marco que corresponde al plazo: **semanal** hasta 14 días y **mensual** desde 30. «Apta» o **«precaución»**: la etapa 2 (alcista), o la transición hacia ella, pide precaución en semanal y mensual. Pasa el ratón por encima para ver el motivo. |
 | Gas | **0.05 $** | Coste de abrir la posición: 5 $ en Ethereum y 0,05 $ en Base y Arbitrum. Se resta al abrir. |
 | Cambio inicial | **0,05 %** | Comisión del intercambio para repartir el capital entre los dos tokens (la del propio pool, aplicada a la parte que hay que cambiar). |
 | Aviso (en rojo) | «hay huecos en el histórico…» | Solo si el pool tiene horas sin datos: se usa el tramo continuo más reciente. |
@@ -446,6 +447,17 @@ media se acaba perdiendo 105 $. Recomienda guardar ETH si lo que quieres es tene
 riesgo) si lo que buscas es renta. Desaconseja ±5 %, que está fuera de rango el 57 % del tiempo y tiene el APR
 más alto con el peor resultado. Como mejora, propone comparar otros pools y esperar, porque las comisiones
 están al 56 % de su media.
+
+**La etapa también cuenta.** Los escenarios no apuestan por una dirección, así que el riesgo propio de
+una tendencia no está en sus cifras. Por eso la Recomendación añade la etapa del par:
+- **Etapa 2 (alcista) o transición hacia ella, en marco semanal o mensual («precaución»):** desaconseja
+  un rango estrecho y centrado. En el histórico (unas 8.400 aperturas reales, oct-2026), los rangos abiertos
+  en etapa 2 pasaron dentro solo el 70 % (semanal) y el 63 % (mensual) de los ciclos, frente al 85–97 % en
+  las demás etapas, y perdieron más frente a mantener. Propone ensancharlo o desplazarlo hacia arriba
+  (asimétrico, por ejemplo `-5/+15`). Si los números salen favorables, pide usar menos capital.
+- **Etapa 1 o 3 (lateral), con números favorables:** lo dice como punto a favor; es la etapa en la que un
+  rango cobra más sin salirse.
+- **Sin datos de precio:** pide comprobar la etapa con `/pool` antes de abrir.
 
 > Es un análisis de escenarios con el histórico real del pool, no una recomendación de inversión
 > personalizada: el simulador no conoce tu situación ni sabe hacia dónde irá el precio.
