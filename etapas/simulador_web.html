@@ -37,7 +37,7 @@ button.primary{background:var(--band);border-color:var(--band);color:#fff;font-w
 svg{display:block;width:100%;height:auto}
 .axis{fill:var(--muted);font:12px var(--mono)}
 .tw{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:14px;min-width:1050px}
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:14px;min-width:1150px}
 th{font:600 11px system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:right;padding:10px 10px;border-bottom:1px solid var(--line)}
 th:first-child,td:first-child{text-align:left}
 td{text-align:right;padding:14px 10px;border-bottom:1px solid #1f2349;white-space:nowrap}
@@ -56,6 +56,13 @@ summary{cursor:pointer;color:var(--text)}
 .concl{margin:0;padding-left:20px;font-size:15px;line-height:1.55}.concl li{margin:4px 0}
 .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 10px;vertical-align:middle}
 .sw:first-child{margin-left:0}
+#opt:empty{display:none}
+.reco-txt{font-size:16px;line-height:1.55;margin:0 0 14px}
+.reco-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.reco-grid h3{font-size:14px;margin:0 0 6px}
+.reco-grid ul{margin:0;padding-left:18px;font-size:14px;line-height:1.5}.reco-grid li{margin:5px 0}
+.fiab.favorable{background:rgba(79,209,139,.15);color:var(--green)}
+.fiab.desfavorable{background:rgba(240,106,106,.15);color:var(--red)}
 </style>
 </head>
 <body>
@@ -132,7 +139,7 @@ summary{cursor:pointer;color:var(--text)}
   <section class="panel" id="outTable" hidden>
     <h2>Detalle</h2>
     <div class="tw"><table>
-      <thead><tr><th>Estrategia</th><th>Invertido</th><th>Valor final</th><th>P10 – P90</th><th>vs mantener</th><th>Comisiones</th><th>APR</th><th>Rent</th><th>En rango</th><th>P(pérdida)</th><th>Acaba ↓ · = · ↑</th></tr></thead>
+      <thead><tr><th>Estrategia</th><th>Invertido</th><th>Valor final<br><span style="font-weight:400">(mediana)</span></th><th>Valor final<br><span style="font-weight:400">(media)</span></th><th>P10 – P90</th><th>vs mantener</th><th>Comisiones</th><th>APR</th><th>Rent</th><th>En rango</th><th>P(pérdida)</th><th>Acaba ↓ · = · ↑</th></tr></thead>
       <tbody id="tbody"></tbody>
     </table></div>
     <div class="hint" id="ref" style="font-size:13px;margin-top:12px"></div>
@@ -163,6 +170,17 @@ summary{cursor:pointer;color:var(--text)}
     </div>
     <div class="hint">El mismo rango y plazo en todos los pools del par con TVL ≥ 0,1 M$ (ETH = WETH, BTC = WBTC = cbBTC, cualquier estable = USD), ordenados por lo que ganan frente a mantener en la media. Haz clic en una fila para abrir ese pool. Tarda unos segundos por pool.</div>
     <div class="tw" style="margin-top:8px"><table id="cmpTab" style="min-width:980px"></table></div>
+  </section>
+
+  <section class="panel reco" id="outReco" hidden>
+    <h2>Recomendación <span id="recoTag" class="fiab"></span></h2>
+    <p id="recoTxt" class="reco-txt"></p>
+    <div class="reco-grid">
+      <div><h3>✅ Qué haría</h3><ul id="recoHacer"></ul></div>
+      <div><h3>⛔ Qué no recomiendo</h3><ul id="recoNo"></ul></div>
+      <div><h3>🔧 Para intentar mejorarlo</h3><ul id="recoMejorar"></ul></div>
+    </div>
+    <div class="hint" id="recoNota"></div>
   </section>
 </main>
 <script>
@@ -233,8 +251,8 @@ function render(d){
     `volatilidad ×<b>${d.escala_vol.toLocaleString("es-ES",{maximumFractionDigits:2})}</b> (últimos 90 d ×${d.vol_reciente.toLocaleString("es-ES",{maximumFractionDigits:2})}, plazo ×${(d.escala_vol/Math.min(2,Math.max(0.5,d.vol_reciente))).toLocaleString("es-ES",{maximumFractionDigits:2})})`,
     `gas <b>${d.gas} $</b>`, `cambio inicial <b>${pct(d.comision_cambio,2,false)}</b>`,
     d.aviso?`<span class="neg">${d.aviso}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
-  ["outSum","outFan","outBars","outDes","outTable","outOpt","outCmp"].forEach(id=>$(id).hidden=false);
-  summary(d); fan(d); bars(d); desglose(d); table(d);
+  ["outSum","outFan","outBars","outDes","outTable","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);
+  summary(d); fan(d); bars(d); desglose(d); table(d); reco(d.recomendacion||{});
   const sel=$("cmpRango"), prev=sel.value;
   sel.innerHTML=["P10-P90",...ranges.filter(Boolean)].filter((v,i,a)=>a.indexOf(v)===i).map(r=>`<option>${esc(r)}</option>`).join("");
   if(prev&&[...sel.options].some(o=>o.value===prev)) sel.value=prev;
@@ -336,6 +354,13 @@ function cmpDraw(c){
   $("cmpTab").querySelectorAll("tr[data-pool]").forEach(tr=>tr.addEventListener("click",()=>{$("pool").value=tr.dataset.pool;run();window.scrollTo({top:0,behavior:"smooth"});}));
 }
 
+function reco(r){
+  const t=$("recoTag"); t.className="fiab "+(r.veredicto||""); t.textContent=r.veredicto==="favorable"?"compensa":"no compensa";
+  $("recoTxt").textContent=r.texto||"";
+  const li=a=>(a||[]).map(x=>`<li>${esc(x)}</li>`).join("");
+  $("recoHacer").innerHTML=li(r.hacer); $("recoNo").innerHTML=li(r.no_hacer); $("recoMejorar").innerHTML=li(r.mejorar);
+  $("recoNota").textContent=r.nota||"";
+}
 function esc(t){return String(t).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
 function summary(d){
   const f=d.fiabilidad||{nivel:"media",motivos:[],a_favor:[]};
@@ -416,6 +441,7 @@ function table(d){
       <td class="name"><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${COLORS[i%COLORS.length]};margin-right:8px"></i>Fijo ${price(r.lo)}–${price(r.hi)} <span class="mut">${r.texto}</span>${r.fuera_hoy?' <span class="neg" title="El precio de hoy no está dentro: la posición se abre con un solo token y no cobra hasta que el precio entre">· fuera de rango hoy</span>':''}</td>
       <td>${usd(r.invertido)}</td>
       <td class="${cls(vf.p50-r.invertido)}">${usd(vf.p50)}</td>
+      <td class="${cls(r.valor_media-r.invertido)}" title="Media de todos los escenarios: cuenta los malos con su peso">${usd(r.valor_media)}</td>
       <td class="mut">${usd(vf.p10)} – ${usd(vf.p90)}</td>
       <td class="${cls(vm)}">${usd(vm,true)}</td>
       <td>${usd(r.comisiones.p50)}</td>

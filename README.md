@@ -463,6 +463,14 @@ resultado medio en precio de los tokens + pérdida impermanente + comisiones + c
 mediana pero pierde 192 $ de media, porque la pérdida impermanente de los escenarios malos (−336 $ de
 media) no tiene techo.
 
+**Valor final medio y Recomendación.** La tabla muestra el valor final en la mediana y en la **media**
+(`valor_media`), porque una posición de liquidez gana poco y a menudo y pierde mucho de vez en cuando: la
+mediana puede salir en verde con la media en rojo. `recomendacion` cierra la página con un veredicto en
+lenguaje llano (compensa / no compensa), «qué haría», «qué no recomiendo» y «para intentar mejorarlo».
+Un rango compensa si, **de media**, gana a guardar los tokens y a la referencia sin riesgo. Usa el
+buscador de anchos (`mejor_ancho`, calculado en cada simulación), el nivel de comisiones, el plazo, la
+volatilidad reciente y el semáforo.
+
 **Mis posiciones abiertas (`etapas/posiciones_lp.py`, pantalla y consola).** Lee las posiciones abiertas
 del MCP público de Revert (`https://mcp.revert.finance/mcp`, JSON-RPC por HTTP, solo `get_positions`)
 con las carteras de `~/.cripto-renta/config.json` (nunca en el repositorio), busca cada pool en

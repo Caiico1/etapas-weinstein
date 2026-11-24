@@ -23,6 +23,7 @@ cómo leer los resultados para elegir un rango.
 8. [La tabla de detalle, columna a columna](#8-la-tabla-de-detalle-columna-a-columna)
    - [8 b. Buscar el mejor ancho](#8-b-buscar-el-mejor-ancho)
    - [8 c. Comparar con otros pools del mismo par](#8-c-comparar-con-otros-pools-del-mismo-par)
+   - [8 d. Recomendación](#8-d-recomendación)
 9. [Cómo funciona por dentro](#9-cómo-funciona-por-dentro)
 10. [Cómo elegir un rango (receta)](#10-cómo-elegir-un-rango-receta)
 11. [Fiabilidad y límites](#11-fiabilidad-y-límites)
@@ -65,6 +66,7 @@ flowchart TB
     G --> E["⑦ Tabla de detalle<br/>todas las cifras + referencia sin riesgo"]
     E --> O["⑧ Buscar el mejor ancho<br/>(botón Buscar)"]
     O --> P["⑨ Comparar con otros pools del mismo par<br/>(botón Comparar)"]
+    P --> Q["⑩ Recomendación<br/>qué haría, qué no y cómo mejorarlo, en lenguaje llano"]
 ```
 
 Los dos últimos y «Mis posiciones» no se calculan solos: pulsa su botón. Para abrir la página con ellos ya
@@ -310,7 +312,8 @@ escenario de en medio.
 |---|---|---|---|
 | **Estrategia** | El rango | «Fijo» + precios reales tras ajustar a ticks + lo que escribiste. Si aparece **«· fuera de rango hoy»** en rojo, el precio actual no está dentro: abrirías con un solo token y no cobrarías nada hasta que el precio entre. | Comprueba que los precios son los que querías. |
 | **Invertido** | Tu capital | El campo Capital. | — |
-| **Valor final** | Cuánto tienes al final del plazo | Mediana de (valor de la posición + comisiones cobradas), con los precios del último día del escenario. Verde si supera lo invertido, rojo si no. | Lo «típico» que te quedaría. |
+| **Valor final (mediana)** | Cuánto tienes al final del plazo en el escenario de en medio | Mediana de (valor de la posición + comisiones cobradas), con los precios del último día del escenario. Verde si supera lo invertido, rojo si no. | Lo «típico» que te quedaría. Puede salir verde aunque pierdas de media: las ganancias son pequeñas y frecuentes; las pérdidas, grandes y menos frecuentes. |
+| **Valor final (media)** | Lo mismo, en la media de todos los escenarios | Media de los 1.000 valores finales: cuenta los escenarios malos con su peso. Es lo invertido + el «resultado» del gráfico «De dónde sale el resultado». | Lo que te quedaría «a la larga», si abrieras esta posición muchas veces. **Si está en rojo, la posición pierde dinero de media**, aunque la mediana salga verde. |
 | **P10 – P90** | La horquilla de resultados | Valor final en el escenario malo (solo 1 de cada 10 sale peor) y en el bueno (solo 1 de cada 10 sale mejor). | Cuanto más ancha, más incertidumbre. Mira sobre todo el P10: ¿podrías asumir esa pérdida? |
 | **vs mantener** | Si el pool compensa frente a no hacer nada | Mediana de (valor final − valor de **los mismos tokens que depositas**, guardados en la cartera sin abrir posición). Incluye el gas y el cambio inicial como coste. | **Es la columna clave.** Positivo: el pool te deja mejor que tener los tokens quietos. Negativo: las comisiones no compensan la pérdida por el movimiento del precio (la llamada pérdida impermanente). |
 | **Comisiones** | Lo que cobras | Mediana de las comisiones cobradas en el plazo, en dólares, ya con nivel reciente, ajuste y la dilución por tu propia liquidez. | Lo que gana el pool en sí. Los rangos estrechos cobran más mientras están dentro. |
@@ -414,6 +417,38 @@ liquidez, que dependen de su volumen, su comisión y cuánta liquidez compite. E
 siempre es el mejor. En el ejemplo, con P10–P90 a 30 días, WETH/USDT 0,05 % de Ethereum queda primero
 (140 $ de comisiones, −21 $ frente a mantener en la media) y WETH/USDC 0,05 % de Ethereum, con 70 M$ de
 TVL, cobra 97 $ (−68 $).
+
+---
+
+## 8 d. Recomendación
+
+![Recomendación](docs/img/simulador-7-recomendacion.png)
+
+Es la última sección de la pantalla y está escrita **para quien no quiere interpretar la tabla**. Traduce las
+cifras a una decisión, con un sello: **compensa** (verde) o **no compensa** (rojo).
+
+**Cómo decide:** mira la **media** de los escenarios, no la mediana, porque la media cuenta los escenarios
+malos con su peso. Un rango «compensa» solo si cumple las dos cosas a la vez:
+
+1. de media gana a **guardar los tokens** (no estar en el pool);
+2. de media gana más que la **referencia sin riesgo** (USDC en Aave en la misma red).
+
+| Bloque | Qué dice |
+|---|---|
+| **Frase principal** | El veredicto con sus números. Si compensa: qué rango abrir y cuánto ganaría de media. Si no: lo que pasa en el caso típico, lo que se pierde en un escenario malo y lo que se pierde de media. |
+| **✅ Qué haría** | Si compensa: abrir ese rango con dinero que puedas ver caer (dice cuánto se pierde en un escenario malo) y vigilarlo con `posiciones.txt` y «Mis posiciones». Si no compensa: las alternativas, que son guardar el token si lo que quieres es tenerlo, la renta sin riesgo en dólares si lo que buscas es renta, y, si aun así quieres probar, el rango menos malo con poco dinero. |
+| **⛔ Qué no recomiendo** | Los rangos que pasan mucho tiempo fuera, elegir por el APR más alto, fiarse solo del «Valor final (mediana)», abrir un rango que ya está fuera de rango hoy, y tomar las cifras al pie de la letra si la fiabilidad no es alta. |
+| **🔧 Para intentar mejorarlo** | Probar el ancho que propone el buscador (o avisar de que ni el más ancho compensa), comparar el mismo par en otros pools, esperar a que suban las comisiones si están por debajo de su media, acortar el plazo si es largo, y volver a simular antes de abrir si los últimos meses han sido tranquilos. |
+
+**Ejemplo** (WETH/USDC 0,05 % de Base, 5.000 $, 30 días, 24-nov-2026): «no compensa». Lo normal es ganar un
+poco (+130 $ con ±10 % en el escenario de en medio), pero en un escenario malo se pierden unos 831 $ y de
+media se acaba perdiendo 105 $. Recomienda guardar ETH si lo que quieres es tenerlo, o USDC en Aave (+17 $ sin
+riesgo) si lo que buscas es renta. Desaconseja ±5 %, que está fuera de rango el 57 % del tiempo y tiene el APR
+más alto con el peor resultado. Como mejora, propone comparar otros pools y esperar, porque las comisiones
+están al 56 % de su media.
+
+> Es un análisis de escenarios con el histórico real del pool, no una recomendación de inversión
+> personalizada: el simulador no conoce tu situación ni sabe hacia dónde irá el precio.
 
 ---
 

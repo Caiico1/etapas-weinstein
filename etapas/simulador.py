@@ -363,7 +363,8 @@ def resumen(s: Sim) -> dict:
         "estrategia": s.rango.nombre, "texto": s.rango.texto, "lo": s.rango.lo, "hi": s.rango.hi,
         "invertido": s.capital, "costes_apertura": s.costs, "dilucion": s.dilution,
         "fuera_hoy": not (s.rango.lo <= s.precio0 <= s.rango.hi),
-        "valor_final": q(s.final), "vs_mantener": q(s.final - s.hodl), "comisiones": q(s.fees),
+        "valor_final": q(s.final), "valor_media": float(np.mean(s.final)),
+        "vs_mantener": q(s.final - s.hodl), "comisiones": q(s.fees),
         "apr": med_fees / s.capital * ann, "rent": q(rent), "rent_anual": float(np.median(rent)) * ann,
         "en_rango": float(np.mean(s.in_range)), "en_rango_p": q(s.in_range),
         "prob_perdida": float(np.mean(s.final < s.capital)),
@@ -655,6 +656,95 @@ def conclusiones(res: dict) -> list[str]:
     return out
 
 
+def recomendacion(res: dict) -> dict:
+    """La lectura para quien no quiere interpretar la tabla: veredicto, qué hacer, qué no hacer y cómo
+    intentar mejorarlo. Se basa en la MEDIA de los escenarios (cuenta los malos con su peso), comparada con
+    guardar los tokens y con la referencia sin riesgo. Es análisis de escenarios, no una orden."""
+    rs, cap, dias = res["rangos"], res["capital"], res["dias"]
+    if not rs:
+        return {}
+    vm = lambda r: r["desglose"]["total"] - r["desglose"]["precio"]      # vs mantener, media
+    gana = lambda r: r["valor_media"] - cap                              # resultado medio en $
+    ref = res.get("sin_riesgo")
+    sr = ref["valor_final"] - cap if ref else 0.0
+    best = max(rs, key=vm)
+    f = res.get("fiabilidad") or {"nivel": "alta", "motivos": []}
+    asset = (res.get("par") or "/").split("/")[0]
+    hacer, no_hacer, mejorar = [], [], []
+    buenos = [r for r in rs if vm(r) > 0 and gana(r) > sr]
+
+    if buenos:
+        b = max(buenos, key=gana)
+        perdida_mala = cap - b["valor_final"]["p10"]
+        veredicto = ("favorable",
+                     f"Con estos números, abrir el rango {b['texto']} tiene sentido: de media gana {_usd(vm(b))} frente a "
+                     f"guardar los tokens y {_usd(gana(b))} en total en {dias} días"
+                     + (f", más que los {_usd(sr)} sin riesgo de {ref['nombre']}." if ref else "."))
+        hacer.append(f"Abre {b['texto']} ({_fmt_price(b['lo'])}–{_fmt_price(b['hi'])}) solo con dinero que puedas "
+                     f"permitirte ver caer: en un escenario malo (1 de cada 10) pierdes unos {_usd(perdida_mala, False)}.")
+        hacer.append("Vigílala: apúntala en posiciones.txt para que la rutina te avise si se acerca a un borde, y "
+                     "revísala a mitad de plazo con «Mis posiciones».")
+    elif any(r["valor_final"]["p50"] > cap for r in rs):
+        t = max(rs, key=lambda r: r["valor_final"]["p50"])
+        veredicto = ("desfavorable",
+                     f"Con estos números no abriría ninguno de estos rangos. Lo normal es ganar un poco (con {t['texto']}, "
+                     f"{_usd(t['valor_final']['p50'] - cap)} en el escenario de en medio), pero cuando el precio se mueve "
+                     f"mucho se pierde bastante más (unos {_usd(cap - t['valor_final']['p10'], False)} en un escenario malo, "
+                     "1 de cada 10) "
+                     f"y, de media, acabas perdiendo {_usd(-gana(t), False)}.")
+    else:
+        veredicto = ("desfavorable", "Con estos números no abriría ninguno de estos rangos: pierden tanto en el caso típico "
+                                     "como de media.")
+
+    if not buenos:
+        hacer.append(f"Si lo que quieres es tener {asset}, guárdalo sin más: el pool no te paga lo suficiente por el "
+                     f"riesgo (frente a guardar los tokens, el mejor rango da {_usd(vm(best))} de media).")
+        if ref:
+            hacer.append(f"Si lo que buscas es renta en dólares sin riesgo de precio: {ref['nombre']} da {_usd(sr)} en "
+                         f"{dias} días con {_usd(cap, False)}.")
+        if vm(best) > -0.01 * cap:
+            hacer.append(f"Si aun así quieres probar, usa el rango menos malo, {best['texto']} ({_usd(gana(best))} de media), "
+                         "con poco dinero y vigilándolo.")
+
+    for r in rs:
+        if r["en_rango"] < 0.6:
+            no_hacer.append(f"No uses {r['texto']}: está fuera de rango el {_pct(1 - r['en_rango'])} del tiempo (sin cobrar) "
+                            f"y es de los que más pierden cuando el precio se escapa ({_usd(gana(r))} de media).")
+    peor = min(rs, key=gana)
+    if peor["comisiones"]["p50"] == max(r["comisiones"]["p50"] for r in rs) and len(rs) > 1 and gana(peor) < 0:
+        no_hacer.append(f"No elijas por el APR: {peor['texto']} tiene el APR más alto ({_pct(peor['apr'])}) y, aun así, "
+                        f"el peor resultado medio ({_usd(gana(peor))}).")
+    no_hacer.append("No te fíes solo de la columna «Valor final»: es el caso típico. Mira también «Valor final (media)» "
+                    "y el P10: ahí se ve lo que pasa cuando sale mal.")
+    if f["nivel"] != "alta":
+        no_hacer.append(f"No tomes las cifras al pie de la letra: fiabilidad {f['nivel']} ({'; '.join(f['motivos'])}).")
+    if any(r.get("fuera_hoy") for r in rs):
+        no_hacer.append("No abras un rango que ya está fuera hoy pensando que cobrará: no cobra nada hasta que el precio entre.")
+
+    mb = res.get("mejor_ancho")
+    if mb:
+        if mb["vs_media"] > max(vm(r) for r in rs) and not (mb["es_el_mas_ancho"] and mb["vs_media"] <= 0):
+            mejorar.append(f"Prueba {mb['texto']}: el buscador de anchos le da {_usd(mb['vs_media'])} de media frente a "
+                           "guardar los tokens, mejor que tus rangos.")
+        elif mb["es_el_mas_ancho"] and mb["vs_media"] <= 0:
+            mejorar.append(f"Ni el rango más ancho que prueba el buscador ({mb['texto']}) gana de media "
+                           f"({_usd(mb['vs_media'])}): en este pool, ahora, ningún rango compensa.")
+    mejorar.append("Compara el mismo par en otros pools (botón «Comparar», justo encima): con el mismo precio, el que cobra "
+                   "más comisiones por la misma liquidez puede darle la vuelta.")
+    nivel = res.get("nivel_reciente") or 1.0
+    if nivel < 0.8:
+        mejorar.append(f"Las comisiones de este pool están ahora al {_pct(nivel)} de su media de dos años: vuelve a "
+                       "mirarlo cuando suban (el resultado mejora casi en proporción).")
+    if dias >= 60:
+        mejorar.append("Prueba un plazo de 30 días: el simulador es más fiable y te deja revisar y decidir antes.")
+    if (res.get("escala_vol") or 1.0) < 0.95:
+        mejorar.append("Los últimos meses han sido tranquilos y los escenarios lo reflejan: si vuelve la volatilidad, el "
+                       "pool saldrá peor que esto. Vuelve a simular antes de abrir.")
+    return {"veredicto": veredicto[0], "texto": veredicto[1], "hacer": hacer, "no_hacer": no_hacer, "mejorar": mejorar,
+            "nota": "Análisis de escenarios con el histórico real del pool, no una recomendación de inversión "
+                    "personalizada: el simulador no conoce tu situación ni sabe hacia dónde irá el precio."}
+
+
 def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, dias: int = 30,
         historia: int = HISTORIA_DIAS, escenarios: int = 1000, bloque: int = 168, tendencia: str = "neutral",
         gas: float | None = None, h: History | None = None, ajuste: float = AJUSTE_COMISIONES,
@@ -679,6 +769,9 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
             "aviso": h.pool.get("aviso"), "rangos": out, "abanico": abanico(h, paths),
             "sin_riesgo": ref, "fiabilidad": fiab}
     res["conclusiones"] = conclusiones(res)
+    curva = barrido(h, paths, capital, gas)
+    res["mejor_ancho"] = mejor_rango(curva, "media") | {"es_el_mas_ancho": mejor_rango(curva, "media") is curva[-1]}
+    res["recomendacion"] = recomendacion(res)
     return res
 
 

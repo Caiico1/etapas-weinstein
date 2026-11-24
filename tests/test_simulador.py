@@ -264,6 +264,54 @@ def test_escala_de_volatilidad_reciente_y_por_plazo():
     assert abs(ra.mean()) < 0.01                                       # sigue sin tendencia
 
 
+def _rg_reco(texto, vf50, vmedia, vm, en=0.9, comis=100, apr=0.2, p10=4400):
+    return {"texto": texto, "lo": 1.0, "hi": 2.0, "valor_final": {"p50": vf50, "p10": p10}, "valor_media": vmedia,
+            "desglose": {"total": vmedia - 5000, "precio": vmedia - 5000 - vm}, "en_rango": en,
+            "comisiones": {"p50": comis}, "apr": apr, "fuera_hoy": False}
+
+
+def test_recomendacion_desfavorable_cuando_la_media_pierde():
+    res = {"capital": 5000, "dias": 30, "par": "BTC/USDC", "nivel_reciente": 0.7, "escala_vol": 1.0,
+           "sin_riesgo": {"nombre": "USDC en Aave base", "valor_final": 5017},
+           "fiabilidad": {"nivel": "alta", "motivos": []},
+           "mejor_ancho": {"texto": "±70%", "vs_media": -13, "es_el_mas_ancho": True},
+           "rangos": [_rg_reco("±5%", 5082, 4910, -100, en=0.51, comis=101, apr=0.25),
+                      _rg_reco("±20%", 5045, 4964, -42, comis=57, apr=0.14)]}
+    r = S.recomendacion(res)
+    assert r["veredicto"] == "desfavorable" and "no abriría" in r["texto"] and "64 $" not in r["texto"]
+    assert "90 $" in r["texto"]                                           # 5.000 − 4.910 de media
+    assert any("guárdalo" in t and "BTC" in t for t in r["hacer"])
+    assert any("USDC en Aave base" in t for t in r["hacer"])
+    assert any(t.startswith("Si aun así") and "±20%" in t for t in r["hacer"])
+    assert any(t.startswith("No uses ±5%") for t in r["no_hacer"])
+    assert any("No elijas por el APR" in t for t in r["no_hacer"])
+    assert any("Ni el rango más ancho" in t for t in r["mejorar"]) and any("70 %" in t for t in r["mejorar"])
+    assert r["nota"]
+
+
+def test_recomendacion_favorable_cuando_gana_de_media_y_al_sin_riesgo():
+    res = {"capital": 5000, "dias": 30, "par": "ETH/USDC", "nivel_reciente": 1.1, "escala_vol": 1.0,
+           "sin_riesgo": {"nombre": "USDC en Aave base", "valor_final": 5020},
+           "fiabilidad": {"nivel": "media", "motivos": ["TVL bajo"]},
+           "mejor_ancho": {"texto": "±30%", "vs_media": 70, "es_el_mas_ancho": False},
+           "rangos": [_rg_reco("±10%", 5120, 5060, 40, p10=4300), _rg_reco("±20%", 5080, 5030, 20)]}
+    r = S.recomendacion(res)
+    assert r["veredicto"] == "favorable" and "±10%" in r["texto"]
+    assert any("700 $" in t for t in r["hacer"])                          # pérdida del escenario malo
+    assert any("Fiabilidad" in t or "fiabilidad media" in t for t in r["no_hacer"])
+    assert any("Prueba ±30%" in t for t in r["mejorar"])
+
+
+def test_run_devuelve_media_y_recomendacion(monkeypatch):
+    h = S.features(POOL, _walk(n=24 * 200))
+    monkeypatch.setattr(S, "referencia_sin_riesgo", lambda chain: None)
+    monkeypatch.setattr(S, "calibracion_pool", lambda *a, **k: None)
+    d = S.run("x", "base", ["±5%", "±20%"], dias=14, escenarios=200, h=h)
+    for r in d["rangos"]:
+        assert r["valor_media"] == pytest.approx(5000 + r["desglose"]["total"])
+    assert d["recomendacion"]["veredicto"] in ("favorable", "desfavorable") and d["mejor_ancho"]["texto"]
+
+
 def test_side_en_precio_mostrado_para_pool_invertido():
     df = _walk(pool=POOL_INV, n=200, vol=0.0)
     h = S.features(POOL_INV, df)
