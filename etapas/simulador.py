@@ -507,6 +507,31 @@ def simulate_salida(h: History, paths: Paths, rango: Rango, x: float | None, cap
                hay.astype(float), np.where(hay, coste, 0.0), nombre)
 
 
+CERCA_STOP = 0.03                  # «cerca del stop»: a menos de un 3 % del precio del stop
+
+
+def nivel_stop(pool: dict, tl: int, tu: int, x: float) -> dict:
+    """El stop en ticks del pool, para vigilarlo con el tick que da Revert. Si el activo es el token0,
+    salta cuando el tick baja de `tick` (precio ≤ borde de abajo × (1 − x)); si es el token1, cuando sube
+    de `tick` (el activo cae cuando el precio del pool sube). `cerca`: el tick a un CERCA_STOP de él."""
+    _, _, asset0 = B.pair_of(pool)
+    d = math.log(1 - x) / math.log(B.TICK_BASE)          # ≤ 0
+    c = math.log(1 + CERCA_STOP) / math.log(B.TICK_BASE)
+    if asset0:
+        t = tl + d
+        return {"tick": t, "cerca": t + c, "asset0": True, "precio": _display(pool, B.TICK_BASE ** t)}
+    t = tu - d
+    return {"tick": t, "cerca": t - c, "asset0": False, "precio": _display(pool, B.TICK_BASE ** t)}
+
+
+def estado_stop(tick: float, nivel: dict) -> str:
+    """«cruzado» si el tick del pool está más allá del stop, «cerca» a menos de un CERCA_STOP, si no «lejos»."""
+    s = 1 if nivel["asset0"] else -1                    # con asset0, más abajo = peor
+    if s * tick <= s * nivel["tick"]:
+        return "cruzado"
+    return "cerca" if s * tick <= s * nivel["cerca"] else "lejos"
+
+
 def salidas(h: History, paths: Paths, rango: Rango, capital: float = 5000.0, gas: float | None = None,
             abierta: bool = False, reglas: dict | None = None) -> list[dict]:
     """Cada stop frente a no poner ninguno, en los mismos escenarios (en $)."""

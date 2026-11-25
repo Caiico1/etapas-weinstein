@@ -105,7 +105,7 @@ summary{cursor:pointer;color:var(--text)}
     <h2>Mis posiciones abiertas <span class="mut" style="font-weight:400;font-size:13px">(Revert)</span></h2>
     <div class="ranges" style="margin-top:0">
       <button class="primary" id="posRun">Cargar y simular</button>
-      <span class="hint" style="margin:0">Lee tus posiciones de Revert (solo lectura, con las carteras de tu configuración local) y simula lo que queda desde hoy al plazo de arriba, con su rango y su valor reales y sin gas. «vs cerrar» = frente a cerrarla hoy y guardar los tokens que tiene ahora.</span>
+      <span class="hint" style="margin:0">Lee tus posiciones de Revert (solo lectura, con las carteras de tu configuración local) y simula lo que queda desde hoy al plazo de arriba, con su rango y su valor reales y sin gas. «vs cerrar» = frente a cerrarla hoy y guardar los tokens que tiene ahora. «Stop vigilado» = el que sugiere el simulador (o el que elijas en ~/.cripto-renta/stops.json); la tarea «Vigilante stop» mira cada hora si está cerca o lo cruza y te avisa.</span>
     </div>
     <div class="tw" style="margin-top:8px"><table id="posTab" style="min-width:1050px"></table></div>
     <div class="hint" id="posAvisos"></div>
@@ -349,15 +349,23 @@ $("posRun").addEventListener("click",async()=>{
   catch(e){ $("posTab").innerHTML=`<tr><td class="neg">Error: ${esc(e.message)}</td></tr>`; }
   finally{ b.disabled=false; b.textContent="Cargar y simular"; }
 });
+function stopCell(st){
+  if(!st) return '<span class="mut">—</span>';
+  const est={lejos:'<span class="pos">lejos</span>',cerca:'<b class="neg">CERCA</b>',cruzado:'<b class="neg">CRUZADO</b>'}[st.estado]||"";
+  const que=st.elegido?`Stop ${esc(st.regla)} <span class="mut">(elegido)</span>`:st.sugerido?`Stop ${esc(st.regla)}`:'<span class="mut">Sin stop sugerido: borde</span>';
+  const tip=st.sugerido||st.elegido?`Salta en el ${Math.round(st.prob_salta*100)} % de los escenarios; P10 ${usd(st.p10_sin)} → ${usd(st.p10_con)}; frente a sin stop ${usd(st.dif_media,true)} de media`:"El simulador no sugiere stop: el vigilante avisa al salirse por abajo";
+  return `<span title="${esc(tip)}">${que}<br>${price(st.precio)} · ${est}</span>`;
+}
 function posDraw(d){
-  const head=`<thead><tr><th>Posición</th><th>Valor<br><span class="mut">pendiente</span></th><th>Rango · hoy</th><th>Fiabilidad</th><th>Se sale<br>alguna vez</th><th>En rango</th><th>Acaba ↓ · = · ↑</th><th>Comisiones<br>${d.dias} d</th><th>vs cerrar<br>media</th><th>vs cerrar<br>mediana</th><th></th></tr></thead>`;
+  const head=`<thead><tr><th>Posición</th><th>Valor<br><span class="mut">pendiente</span></th><th>Rango · hoy</th><th>Stop vigilado</th><th>Fiabilidad</th><th>Se sale<br>alguna vez</th><th>En rango</th><th>Acaba ↓ · = · ↑</th><th>Comisiones<br>${d.dias} d</th><th>vs cerrar<br>media</th><th>vs cerrar<br>mediana</th><th></th></tr></thead>`;
   const rows=d.posiciones.map(p=>{
     const name=`n.º ${p.id} · ${esc(p.label||p.par)} <span class="mut">${p.red} ${p.version} · ${Math.round(p.edad_dias)} d</span>`;
-    if(p.error) return `<tr><td class="name">${name}</td><td>${money(p.valor,null,false)}</td><td colspan="9" class="mut">${esc(p.error)}</td></tr>`;
+    if(p.error) return `<tr><td class="name">${name}</td><td>${money(p.valor,null,false)}</td><td colspan="10" class="mut">${esc(p.error)}</td></tr>`;
     const v=p.valor, a=p.acaba;
     return `<tr><td class="name">${name}<div class="mut" style="white-space:normal;max-width:360px;margin-top:4px">${esc(p.lectura)}</div></td>`+
       `<td>${money(v,null,false)}<br><span class="mut">${money(p.comisiones_pendientes,null,false)}</span></td>`+
       `<td>${price(p.lo)}–${price(p.hi)}<br><span class="${p.en_rango_hoy?"pos":"neg"}">${price(p.precio)} · ${p.en_rango_hoy?"dentro":"FUERA"}</span></td>`+
+      `<td>${stopCell(p.stop)}</td>`+
       `<td><span class="fiab ${p.fiabilidad.nivel}" style="margin:0">${p.fiabilidad.nivel}</span></td>`+
       `<td>${Math.round(p.sale_del_rango*100)} %</td><td>${Math.round(p.en_rango*100)} %</td>`+
       `<td class="mut">${Math.round(a.debajo*100)} · ${Math.round(a.dentro*100)} · ${Math.round(a.encima*100)} %</td>`+

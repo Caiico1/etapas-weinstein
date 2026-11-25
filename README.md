@@ -528,6 +528,16 @@ dónde acaba, comisiones y «vs cerrar» (frente a cerrarla hoy y guardar sus to
 por rango, y avisa de lo que no cuadra. `python -m etapas.posiciones_lp --dias 30`; en la página,
 «Cargar y simular» o `#posiciones`. Pruebas en `tests/test_posiciones_lp.py`, con un Revert falso.
 
+**Vigilante del stop (`etapas/vigilante_stop.py`, tarea de Windows «Vigilante stop», cada hora).** Cada
+posición abierta lleva el stop que sugiere `comparar_salidas` (`posiciones_lp.stop_de`, o el elegido en
+`~/.cripto-renta/stops.json`; sin sugerido, el borde de abajo) pasado a ticks (`simulador.nivel_stop`).
+Cada hora compara el `pool_tick` de Revert con ese nivel (`estado_stop`: lejos / cerca a < 3 % / cruzado)
+y, solo cuando empeora, manda una notificación de Windows con el detalle y abre o comenta la issue
+`stop-posicion` con únicamente el número de posiciones afectadas (repositorio público); la cierra cuando
+todas están lejos. Estado y niveles en `out/` (fuera de git). Comprobado contra el replay de dos años (16
+pools, 19.845 casos): misma hora que el stop simulado el 99,1 %, nunca después; «cerca» avisa una mediana
+de 16 h antes. Lanzador `vigilante_stop.vbs` → `.bat`. Pruebas en `tests/test_vigilante_stop.py`.
+
 **Buscador de ancho y comparación de pools (pantalla).** `optimizar` / `barrido` prueba rangos
 simétricos desde `ancho_minimo` (3 × la volatilidad diaria) hasta ±70 % y elige el de más «vs mantener»
 en la media (o en la mediana). `comparar` simula la misma estrategia en todos los pools del mismo par

@@ -31,6 +31,17 @@ REVERT_MCP = "https://mcp.revert.finance/mcp"
 REDES = {"mainnet": "ethereum", "arbitrum": "arbitrum", "base": "base"}
 PROTOCOLOS = {"uniswapv3": "v3", "uniswapv4": "v4"}
 POSICIONES_TXT = Path(__file__).resolve().parent.parent / "posiciones.txt"
+# Stop elegido a mano para una posición (local, fuera del repo): {"n.º de posición": "regla de S.SALIDAS"}.
+# Sin entrada, se vigila el stop que sugiere el simulador.
+STOPS = Path.home() / ".cripto-renta" / "stops.json"
+
+
+def stops_elegidos(path: Path = STOPS) -> dict[str, str]:
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {str(k): v for k, v in d.items() if v in S.SALIDAS and S.SALIDAS[v] is not None}
 
 
 class RevertMCP:
@@ -101,7 +112,8 @@ def normalizar(p: dict) -> dict | None:
     return {"id": int(p["nft_id"]), "red": red, "version": ver, "pool_id": str(p["pool"]).lower(),
             "par": f"{s0}/{s1}", "fee": int(p.get("fee_tier") or 0), "tl": int(p["tick_lower"]), "tu": int(p["tick_upper"]),
             "valor": float(p.get("underlying_value") or 0), "comisiones_pendientes": float(p.get("fees_value") or 0),
-            "en_rango_revert": bool(p.get("in_range")), "edad_dias": float(p.get("age_days") or 0),
+            "en_rango_revert": bool(p.get("in_range")),
+            "tick": int(p["pool_tick"]) if p.get("pool_tick") is not None else None, "edad_dias": float(p.get("age_days") or 0),
             "vs_mantener_desde_apertura": float(hodl["pnl"]) if "pnl" in hodl else None}
 
 
@@ -182,6 +194,8 @@ def simular(pos: dict, dias: int = 30, escenarios: int = 1000, cargar=None) -> d
     g = r["desglose"]
     p_hoy = S.price_now(h)
     best = S.mejor_rango(S.barrido(h, paths, max(pos["valor"], 1e-6)), "media")
+    sal = S.comparar_salidas(h, dias, [rg], paths, max(pos["valor"], 1e-6), abierta=True)["rangos"][0]
+    st = stop_de(h.pool, pos, sal, stops_elegidos().get(str(pos["id"])))
     return base | {
         "label": h.pool["label"], "dias": dias, "precio": p_hoy, "lo": rg.lo, "hi": rg.hi,
         "en_rango_hoy": rg.lo <= p_hoy <= rg.hi,
@@ -191,7 +205,24 @@ def simular(pos: dict, dias: int = 30, escenarios: int = 1000, cargar=None) -> d
         "vs_cerrar_p10": r["vs_mantener"]["p10"], "valor_final": r["valor_final"],
         "fiabilidad": S.fiabilidad(h, dias, S.calibracion_pool(h.pool["pool_id"], h.pool["chain"], dias)),
         "mejor_ancho": {"texto": best["texto"], "vs_media_por_valor": best["vs_media"]},
+        "salida": sal, "stop": st,
         "lectura": lectura(g["total"] - g["precio"], r["vs_mantener"]["p50"], rg.lo <= p_hoy <= rg.hi, dias, pos["valor"])}
+
+
+def stop_de(pool: dict, pos: dict, sal: dict, regla: str | None = None) -> dict:
+    """El stop que se vigila: `regla` (de S.SALIDAS) si se da, si no el sugerido por el simulador y, si no
+    sugiere ninguno, el borde de abajo («sugerido» False: solo avisa de que se sale). Con su nivel en ticks
+    y, si Revert da el tick de hoy, su estado (lejos / cerca / cruzado)."""
+    sugerido = sal.get("sugerido")
+    nombre = regla or sugerido or "al salirse por abajo"
+    fila = next(x for x in sal["reglas"] if x["regla"] == nombre)
+    nv = S.nivel_stop(pool, pos["tl"], pos["tu"], fila["x"])
+    out = {"regla": nombre, "x": fila["x"], "sugerido": bool(sugerido) and nombre == sugerido, "elegido": regla is not None,
+           "precio": nv["precio"], "nivel": nv, "prob_salta": fila["prob_salta"], "dif_media": fila["dif_media"],
+           "p10_sin": sal["reglas"][0]["valor_p10"], "p10_con": fila["valor_p10"]}
+    if pos.get("tick") is not None:
+        out["estado"] = S.estado_stop(pos["tick"], nv)
+    return out
 
 
 def dinero(x: float, valor: float | None = None, signo: bool = True) -> str:

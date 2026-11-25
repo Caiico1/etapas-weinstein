@@ -100,6 +100,7 @@ Pulsa **Cargar y simular**. El simulador:
 | **Posición** | Número, pool, red, versión y días desde que se abrió. Debajo, la **lectura**: si mantenerla compensa frente a cerrarla. |
 | **Valor / pendiente** | Lo que vale hoy según Revert y, debajo, las comisiones pendientes de cobrar. |
 | **Rango · hoy** | Su rango en precios y el precio de hoy, en verde si está dentro y en rojo («FUERA») si no. |
+| **Stop vigilado** | El stop de esa posición: el que sugiere el simulador (sección 8 a b b, con su valor y sin gas de apertura), el que elijas tú o, si no sugiere ninguno, el borde de abajo. Debajo, su precio y si el precio de hoy está **lejos**, **CERCA** (a menos de un 3 %) o lo ha **CRUZADO**. Pasa el ratón para ver cuánto mejora el escenario malo. |
 | **Fiabilidad** | El semáforo del simulador para ese pool y ese plazo. |
 | **Se sale alguna vez** | % de escenarios en que el precio sale del rango en algún momento del plazo. |
 | **En rango** | % medio del tiempo dentro, es decir, cobrando. |
@@ -118,9 +119,36 @@ Pulsa **Cargar y simular**. El simulador:
 por rango de precios. Avisa si una posición abierta no está vigilada por la rutina, o si una vigilada ya no
 está abierta.
 
+**El vigilante del stop.** Uniswap no tiene órdenes stop: si el precio cruza el nivel de madrugada, nadie
+lo ejecuta. La tarea de Windows **«Vigilante stop»** (cada hora, también con el portátil a batería; si el
+PC estaba apagado, en cuanto se enciende) lee en Revert el tick del pool de cada posición abierta y avisa
+**solo cuando empeora**: de lejos a cerca y de cerca a cruzado.
+
+- **Notificación de Windows** con el detalle: qué posición, a qué precio está, su stop y qué hacer
+  (cerrar y pasar a dólares en Revert o Uniswap, o decidir si no había stop sugerido).
+- **Issue de GitHub «Vigilante del stop: revisa tus posiciones»** (etiqueta `stop-posicion`), que llega
+  por correo y al móvil. Solo dice **cuántas** posiciones están cerca o han cruzado: sin pares, precios,
+  importes ni números, porque el repositorio es público. Cada nuevo empeoramiento añade un comentario y se
+  cierra sola cuando ninguna está cerca.
+- **No cierra nada.** Revert es solo lectura; el vigilante solo avisa.
+
+El nivel se recalcula una vez al día o si cambia el rango. Para fijar tú el stop de una posición, crea
+`~/.cripto-renta/stops.json` (local, nunca en el repositorio) con su número y la regla:
+`{"123456": "5 % bajo el borde"}` (reglas: «al salirse por abajo», «5 % bajo el borde», «10 % bajo el
+borde»).
+
+**Comprobado con dos años de histórico real** (16 pools, 19.845 casos de 30 días con ±5, ±10 y ±20 % y los
+tres stops): el vigilante avisa en la misma hora en que salta el stop simulado el 99,1 % de las veces; el
+resto, una hora antes (redondeo de un tick), nunca después. El aviso «cerca» llega una mediana de **16
+horas** antes del cruce (23 h con el stop en el borde, 7 h con el del 10 %); solo en el 8,5 % de los casos
+el precio pasa de lejos a cruzado en una misma hora.
+
+Desde la consola: `python -m etapas.vigilante_stop --simular` (qué haría, sin avisar) o `--probar` (una
+notificación de prueba). El registro queda en `out/vigilante_stop.log`.
+
 Desde la consola: `python -m etapas.posiciones_lp --dias 30`.
 
-> El simulador no prepara ni envía ninguna transacción: solo lee y simula. Cerrar, reajustar o abrir es
+> El simulador y el vigilante no preparan ni envían ninguna transacción: solo leen, simulan y avisan. Cerrar, reajustar o abrir es
 > cosa tuya, en Revert o en Uniswap.
 
 ---
