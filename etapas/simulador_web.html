@@ -206,6 +206,13 @@ summary{cursor:pointer;color:var(--text)}
     </div>
     <div class="hint" id="recoNota"></div>
   </section>
+
+  <section class="panel" id="outHist">
+    <h2>¿Cómo ha acertado con tus simulaciones?</h2>
+    <div class="hint">Cada rango que simulas aquí se guarda en este PC (out/, nunca se sube). Cuando vence su plazo, se rehace con las horas reales del pool desde aquel día y se compara con lo que dijo el simulador. Una por pool, plazo, capital, rango y día: si repites la misma el mismo día, se sustituye.</div>
+    <p id="histTxt" class="reco-txt" style="margin-top:10px">Cargando…</p>
+    <div class="tw"><table id="histTab" style="min-width:980px"></table></div>
+  </section>
 </main>
 <script>
 const COLORS=["#f2c230","#6f7cff","#4fd18b","#f06a6a","#36c5e0","#c47dff","#ff9f43","#9aa3c7"];
@@ -517,6 +524,19 @@ function cobDraw(d){
   $("cobTxt").innerHTML=`«vs ${esc(a.estable)} en Aave» = frente a dejar todo el capital depositado sin riesgo de precio (${usd(c.sin_riesgo)} al final del plazo). La cobertura reduce el riesgo de precio cerca del precio de hoy; si el precio se sale mucho del rango, la posición se descubre (ver «Sube 30 %»).`;
 }
 
+async function histLoad(){
+  try{
+    const r=await getJSON("/api/historial");
+    $("histTxt").textContent=r.texto;
+    const u=r.ultimas||[];
+    $("histTab").innerHTML=u.length?`<thead><tr><th>Simulada</th><th class="lab">Pool</th><th>Plazo</th><th>Rango</th><th>Media simulada</th><th>P10 – P90</th><th>Real</th><th>¿Dentro?</th><th>Veredicto</th></tr></thead><tbody>`+
+      u.map(x=>`<tr><td class="name">${esc(x.fecha.slice(0,10))}</td><td class="lab">${esc(x.pool)} <span class="mut">${esc(x.chain)}</span></td><td>${x.dias} d</td><td>${esc(x.texto)}</td>
+        <td>${usd(x.valor_media)}</td><td class="mut">${usd(x.p10)} – ${usd(x.p90)}</td>
+        <td class="${cls(x.real-x.capital)}">${usd(x.real)}</td><td class="${x.dentro?"pos":"neg"}">${x.dentro?"sí":"no"}</td>
+        <td class="${x.compensa===x.real_compensa?"pos":"neg"}">${x.compensa?"compensa":"no compensa"} · ${x.compensa===x.real_compensa?"acertó":"falló"}</td></tr>`).join("")+"</tbody>":"";
+  }catch(e){$("histTxt").textContent="No se pudo leer el historial: "+e.message;}
+}
+
 function niceStep(m){const raw=m/3,p=10**Math.floor(Math.log10(raw)),f=raw/p;return (f<1.5?1:f<3.5?2:f<7.5?5:10)*p;}
 
 function table(d){
@@ -542,6 +562,7 @@ function table(d){
 
 drawRanges();
 loadPools().then(run).then(()=>{
+  histLoad();
   // http://localhost:8768/#buscar,comparar abre con el buscador y la comparación ya lanzados
   const h=location.hash.slice(1).split(",");
   if(h.includes("buscar")) $("optRun").click();

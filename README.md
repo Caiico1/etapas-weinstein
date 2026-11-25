@@ -487,6 +487,14 @@ Coincide con `aave_backtest cubierta` a pocos dólares; validado en 10 pools y ~
 todo: sesgo ±4 $, P10–P90 78–84 %). **Desde el 29-oct-2026 USDC y USDT tienen LTV 0 en Aave** (Ethereum, Base,
 Arbitrum): la pantalla lo avisa y las cifras son hipotéticas.
 
+**Historial de tus simulaciones (`simulador_historial`).** Cada rango simulado en la pantalla se guarda en
+`out/simulador_historial.jsonl` (local, fuera de git; uno por pool, plazo, capital, rango y día). Al vencer,
+`evaluar` lo rehace con las horas reales del pool desde aquel día y anota lo real en
+`out/simulador_historial_res.jsonl`; `resumen` da lo real dentro del P10–P90, el error medio y el acierto del
+veredicto. Lo usan la sección «¿Cómo ha acertado con tus simulaciones?» (`/api/historial`) y el aviso mensual
+(con ≥ 20 vencidas, avisa si el P10–P90 sale de 65–92 %; en la issue solo número y porcentaje).
+`python -m etapas.simulador_historial`.
+
 **Valor final medio y Recomendación.** La tabla muestra el valor final en la mediana y en la **media**
 (`valor_media`), porque una posición de liquidez gana poco y a menudo y pierde mucho de vez en cuando: la
 mediana puede salir en verde con la media en rojo. `recomendacion` cierra la página con un veredicto en

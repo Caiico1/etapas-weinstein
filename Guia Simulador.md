@@ -70,6 +70,7 @@ flowchart TB
     CB --> O["⑧ Buscar el mejor ancho<br/>(botón Buscar)"]
     O --> P["⑨ Comparar con otros pools del mismo par<br/>(botón Comparar)"]
     P --> Q["⑩ Recomendación<br/>qué haría, qué no y cómo mejorarlo, en lenguaje llano"]
+    Q --> HI["¿Cómo ha acertado con tus simulaciones?<br/>lo que dijo frente a lo que pasó"]
 ```
 
 Los dos últimos y «Mis posiciones» no se calculan solos: pulsa su botón. Para abrir la página con ellos ya
@@ -618,6 +619,42 @@ datos, así que no se aplica. La etapa se queda como aviso en la Recomendación,
 
 > Es un análisis de escenarios con el histórico real del pool, no una recomendación de inversión
 > personalizada: el simulador no conoce tu situación ni sabe hacia dónde irá el precio.
+
+---
+
+## 8 e. ¿Cómo ha acertado con tus simulaciones?
+
+La validación del simulador se hizo con aperturas «de laboratorio»: ±10 %, cada 7 días, en los pools de
+referencia. Esta sección lo mide con **tus** consultas: tus pools, tus rangos, tus plazos y los días en que
+de verdad te planteas abrir.
+
+**Qué se guarda y dónde.** Cada rango que simulas en la pantalla se guarda **solo en este PC**, en la
+carpeta `out` del proyecto, que no se sube a GitHub:
+
+| Archivo | Qué contiene |
+|---|---|
+| `out\simulador_historial.jsonl` | Una línea por pool, plazo, capital, rango y día: el rango exacto (ticks), lo que dijo el simulador (media, P10, mediana, P90, frente a mantener) y el veredicto «compensa» / «no compensa». Si repites la misma simulación el mismo día, se sustituye. |
+| `out\simulador_historial_res.jsonl` | Lo que pasó de verdad con cada una, cuando vence su plazo. |
+
+**Cómo se evalúa.** Cuando vence el plazo, se rehace la posición con las horas reales del pool desde el día
+en que simulaste (la misma matemática y la liquidez del pool de aquel día) y se compara. Se evalúa al abrir
+la página y cada mes con la tarea de calibración.
+
+**Qué muestra:**
+- En cuántas simulaciones vencidas lo real cayó **dentro del P10–P90** (lo ideal, ~80 %).
+- El **error medio**: lo real menos la media simulada, en % del capital.
+- Si el **veredicto acertó**, por separado para «compensa» y para «no compensa». «Compensa» es el criterio de
+  la Recomendación: gana de media a guardar los tokens y a la referencia sin riesgo.
+- Las últimas, una a una, con «acertó» o «falló».
+
+Al principio no hay nada que evaluar: la primera vence a los 7–30 días. Con pocas, el porcentaje bailará
+mucho; empieza a significar algo a partir de unas 20.
+
+**Aviso mensual.** Con 20 o más vencidas, si lo real cae dentro del P10–P90 menos del 65 % o más del 92 % de
+las veces, la tarea «Simulador calibración» abre la issue de aviso. En la issue (el repositorio es público)
+solo van el número de simulaciones y el porcentaje, nunca pools, rangos ni capital.
+
+Desde la consola: `python -m etapas.simulador_historial` (evalúa las vencidas y da el resumen).
 
 ---
 

@@ -493,6 +493,7 @@ def resumen(s: Sim) -> dict:
     med_fees = float(np.median(s.fees))
     return {
         "estrategia": s.rango.nombre, "texto": s.rango.texto, "lo": s.rango.lo, "hi": s.rango.hi,
+        "tl": s.rango.tl, "tu": s.rango.tu,
         "invertido": s.capital, "costes_apertura": s.costs, "dilucion": s.dilution,
         "fuera_hoy": not (s.rango.lo <= s.precio0 <= s.rango.hi),
         "valor_final": q(s.final), "valor_media": float(np.mean(s.final)),
@@ -1276,6 +1277,7 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
     fiab = fiabilidad(h, dias, calibracion_pool(h.pool["pool_id"], h.pool["chain"], dias))
     res = {"pool": {k: h.pool[k] for k in ("chain", "version", "label", "pool_id", "fee", "tick_spacing")},
             "par": f"{asset}/{quote}", "precio": price_now(h), "hora": str(h.hour_now), "tvl": h.tvl_now,
+            "liquidez_activa": h.liquidity_now,
             "historia_desde": str(h.df["hour"].iloc[0]), "horas_historia": len(h.df),
             "capital": capital, "dias": dias, "escenarios": escenarios, "bloque_h": bloque,
             "tendencia": tendencia, "comision_cambio": h.swap_fee, "ajuste_comisiones": ajuste,

@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import backtest as B
 from . import simulador as S
+from . import simulador_historial as HIST
 
 PAGE = Path(__file__).with_name("simulador_web.html")
 _lock = threading.Lock()
@@ -56,10 +57,21 @@ def simular(q: dict) -> dict:
     rangos = json.loads(g("rangos", "[]")) or ["±10%"]
     with _lock:
         h = _history(pool_id, chain, historia, _hora_actual())
-    return S.run(pool_id, chain, rangos, float(g("capital", 5000)), int(g("dias", 30)), historia,
-                 int(g("escenarios", 1000)), int(g("bloque", 168)), g("tendencia", "neutral"),
-                 float(g("gas")) if g("gas", "") else None, h=h, ajuste=float(g("ajuste", S.AJUSTE_COMISIONES)),
-                 nivel_dias=int(g("nivel", S.NIVEL_DIAS)) or None)
+    res = S.run(pool_id, chain, rangos, float(g("capital", 5000)), int(g("dias", 30)), historia,
+                int(g("escenarios", 1000)), int(g("bloque", 168)), g("tendencia", "neutral"),
+                float(g("gas")) if g("gas", "") else None, h=h, ajuste=float(g("ajuste", S.AJUSTE_COMISIONES)),
+                nivel_dias=int(g("nivel", S.NIVEL_DIAS)) or None)
+    try:                                   # guardarla para compararla con lo real cuando venza (local)
+        HIST.registrar(res)
+    except Exception:                      # noqa: BLE001 (el historial no debe tumbar la simulación)
+        traceback.print_exc()
+    return res
+
+
+def historial(q: dict) -> dict:
+    HIST.evaluar()
+    r = HIST.resumen()
+    return r | {"texto": HIST.texto(r)}
 
 
 def _comunes(q: dict) -> dict:
@@ -121,6 +133,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, optimizar(parse_qs(u.query)))
             elif u.path == "/api/comparar":
                 self._json(200, comparar(parse_qs(u.query)))
+            elif u.path == "/api/historial":
+                self._json(200, historial(parse_qs(u.query)))
             elif u.path == "/api/posiciones":
                 self._json(200, posiciones(parse_qs(u.query)))
             else:

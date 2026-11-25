@@ -82,6 +82,7 @@ class FakeGH:
 
 def test_run_registra_y_actua(tmp_path, monkeypatch):
     monkeypatch.setattr(A, "LOG", tmp_path / "cal.jsonl")
+    monkeypatch.setattr(A, "historial", lambda: None)          # sin el historial local
     gh = FakeGH()
     out = A.run(gh, vs=_todos(mal=30))
     assert "DESVIADO" in out and "ajuste propuesto" in out and gh.calls[0][0] == "create"
@@ -94,3 +95,24 @@ def test_run_registra_y_actua(tmp_path, monkeypatch):
     lines = (tmp_path / "cal.jsonl").read_text(encoding="utf-8").splitlines()
     first = json.loads(lines[0])
     assert len(lines) == 3 and first["ok"] is False and [p["dias"] for p in first["plazos"]] == list(A.PLAZOS)
+
+
+def test_tus_simulaciones_desviadas_abren_aviso_sin_datos_personales(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LOG", tmp_path / "cal.jsonl")
+    bodies = []
+
+    class GH(FakeGH):
+        def create(self, title, body):
+            bodies.append((title, body))
+
+    poco = {"evaluadas": 5, "dentro_p10_p90": 0.2}
+    assert A.historial_ok(poco) and A.historial_ok(None)      # pocas: no avisa todavía
+    mal = {"evaluadas": 30, "dentro_p10_p90": 0.5, "pools": 3}
+    assert not A.historial_ok(mal)
+    out = A.run(GH(), vs=_todos(), hist=mal)
+    assert "tus simulaciones: 30 vencidas, P10–P90 50% ⚠" in out
+    title, body = bodies[0]
+    assert "tus simulaciones" in title and "30 simulaciones" in body and "50%" in body
+    gh = FakeGH(open_n=4)
+    A.run(gh, vs=_todos(), hist={"evaluadas": 30, "dentro_p10_p90": 0.8})
+    assert gh.calls == [("close", 4)]

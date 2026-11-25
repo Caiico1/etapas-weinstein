@@ -222,9 +222,38 @@ class GitHub:
         self._gh("issue", "close", str(n), "--comment", comment)
 
 
-def decide(vs: list[Verdict], open_n: int | None) -> str | None:
+# Tus propias simulaciones (simulador_historial): con al menos HIST_MIN vencidas, lo real debe caer dentro
+# del P10–P90 entre HIST_BANDA. En la issue (repositorio público) solo van el número y el porcentaje.
+HIST_MIN, HIST_BANDA = 20, (0.65, 0.92)
+
+
+def historial() -> dict | None:
+    """Evalúa las simulaciones guardadas que han vencido y devuelve su resumen (None si falla)."""
+    from . import simulador_historial as H
+    try:
+        H.evaluar(maximo=500)
+        return H.resumen()
+    except Exception as e:                                       # noqa: BLE001 (complemento)
+        print(f"historial: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+
+
+def historial_ok(h: dict | None) -> bool:
+    if not h or h.get("evaluadas", 0) < HIST_MIN:
+        return True
+    return HIST_BANDA[0] <= h["dentro_p10_p90"] <= HIST_BANDA[1]
+
+
+def _hist_txt(h: dict | None) -> str:
+    if not h or not h.get("evaluadas"):
+        return ""
+    return (f"tus simulaciones: {h['evaluadas']} vencidas, P10–P90 {h['dentro_p10_p90']:.0%}"
+            + ("" if historial_ok(h) else " ⚠"))
+
+
+def decide(vs: list[Verdict], open_n: int | None, hist_ok: bool = True) -> str | None:
     """abrir | cerrar | None."""
-    ok = all(v.ok for v in vs)
+    ok = all(v.ok for v in vs) and hist_ok
     if not ok and open_n is None:
         return "abrir"
     if ok and open_n is not None:
@@ -237,8 +266,11 @@ def _corto(vs: list[Verdict]) -> str:
                       for v in vs)
 
 
-def run(gh: GitHub | None, simulate: bool = False, vs: list[Verdict] | None = None) -> str:
+def run(gh: GitHub | None, simulate: bool = False, vs: list[Verdict] | None = None,
+        hist: dict | None = None) -> str:
     vs = vs or measure()
+    hist = hist if hist is not None else historial()
+    hok = historial_ok(hist)
     hoy = pd.Timestamp.now().strftime("%Y-%m-%d")
     LOG.parent.mkdir(exist_ok=True)
     with LOG.open("a", encoding="utf-8") as f:
@@ -247,14 +279,21 @@ def run(gh: GitHub | None, simulate: bool = False, vs: list[Verdict] | None = No
                                         "pruebas": v.pruebas, "ok": v.ok, "pools": v.por_pool} for v in vs]},
                            ensure_ascii=False) + "\n")
     principal = next((v for v in vs if v.dias == PRINCIPAL), None)
-    ok = all(v.ok for v in vs)
-    summary = f"{hoy}: {_corto(vs)} → " + ("en banda" if ok else "DESVIADO" + (
+    ok = all(v.ok for v in vs) and hok
+    ht = _hist_txt(hist)
+    summary = f"{hoy}: {_corto(vs)}{' · ' + ht if ht else ''} → " + ("en banda" if ok else "DESVIADO" + (
         f" (ajuste propuesto {principal.ajuste_propuesto:.2f})" if principal and not principal.ok_comisiones else ""))
     open_n = gh.open_issue() if gh else None
-    act = decide(vs, open_n)
+    act = decide(vs, open_n, hok)
     if act and not simulate and gh:
         if act == "abrir":
-            gh.create(title(vs), body(vs, hoy))
+            b = body(vs, hoy)
+            if not hok:
+                b = b.replace(MARKER, f"### Tus simulaciones\n\nDe {hist['evaluadas']} simulaciones guardadas en la "
+                              f"pantalla que ya han vencido, lo real cayó dentro del P10–P90 el {hist['dentro_p10_p90']:.0%} "
+                              f"(banda {HIST_BANDA[0]:.0%}–{HIST_BANDA[1]:.0%}). Detalle local: "
+                              "`python -m etapas.simulador_historial`.\n\n" + MARKER)
+            gh.create(title(vs) if not all(v.ok for v in vs) else "Simulador de pools: tus simulaciones se desvían", b)
         else:
             gh.close(open_n, f"Calibración del {hoy} en banda: {_corto(vs)}. Se cierra el aviso.")
     return summary + (f" · {act} issue" if act else "")
