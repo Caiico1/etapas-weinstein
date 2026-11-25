@@ -798,6 +798,25 @@ xychart-beta
   plazos, revisar el exponente de la corrección por plazo.
 - **La horquilla P10–P90 se queda algo corta en años de tendencia fuerte** (72 % frente al 80 % ideal): con
   tendencia neutral, una caída sostenida como la de este año cae más a menudo por debajo del P10.
+- **Calibrar la horquilla por plazo, probado y descartado (25-nov-2026).** Con dos años de aperturas
+  (16 pools, 6.451 aperturas, ±10 % y ±20 %) la horquilla está bien en conjunto, pero se desvía en
+  sentido contrario según el año:
+
+  | Plazo | Dos años juntos | Año hasta ago-2025 | Año desde ago-2025 |
+  |---|---|---|---|
+  | 7 días | 77–78 % | 71 % | 81 % |
+  | 30 días | 76–80 % | 82–84 % | 72–78 % |
+  | 90 días | 87 % | 79–81 % | 93 % |
+  | 180 días | 91 % | 90–91 % | 90–92 % |
+
+  Abrir o cerrar la horquilla con lo aprendido en un año y medirlo en el otro (reasignando los
+  percentiles o estirando los escenarios alrededor de la mediana) **empeoró en 6 de 8 casos** el error de
+  los percentiles (pérdida *pinball*): lo que en un año habría que ensanchar, en el siguiente sobra. A
+  180 días sale algo ancha los dos años, pero el factor que daba cada año era distinto (×0,7 y ×0,9) y
+  uno de ellos rompía el otro. Así que no se aplica: la horquilla se queda como está y el 71 % a 30 días
+  de la tabla de arriba es cosa de este año. La **probabilidad de perder** sí acierta: 45 % simulada
+  frente a 45 % real a 7 días y 42 % frente a 41 % a 30; a 90–180 días se queda algo corta (43 % frente
+  a 46–48 %).
 - **Lo que queda de error en «vs mantener»** depende del año: en uno movido sale unos 30 $ optimista a
   30 días (por 5.000 $); en uno tranquilo, algo pesimista. Si sale positivo pero pequeño, tómalo como un
   empate.

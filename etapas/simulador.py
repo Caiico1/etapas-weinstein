@@ -78,6 +78,9 @@ EXPONENTE_PLAZO = 0.05
 # con AJUSTE_COMISIONES 0,97 y EXPONENTE_PLAZO 0,05. El ensanche por plazo se limita a 90 días.
 VOL_DIAS = 90
 EXPONENTE_VOL = 0.1
+# Sin recalibrar la horquilla (25-nov-2026, 16 pools, 6.451 aperturas de dos años): el P10–P90 del valor
+# final recoge el 77–80 % a 7–30 días y el 87–91 % a 90–180, pero el desvío cambia de signo según el año;
+# reasignar percentiles o estirar alrededor de la mediana con un año empeoró el otro en 6 de 8 casos.
 
 
 def escala_vol(h: "History", dias: float, vol_dias: int | None = VOL_DIAS,

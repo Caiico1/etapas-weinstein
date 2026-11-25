@@ -574,6 +574,11 @@ a 30 días con ±10 %, el factor calibrado con un año y aplicado al otro, fuera
 Después se vio que ese factor único fallaba según el plazo (ver «Corrección por plazo»): hoy es
 nivel de 90 días × 0,97 × (días/30)^−0,05 (recuadrado el 23-nov junto con la volatilidad).
 
+Calibrar la horquilla P10–P90 por plazo se probó y se descartó (25-nov-2026, 16 pools, 6.451 aperturas
+de dos años): en conjunto recoge el 77–80 % a 7 y 30 días y el 87–91 % a 90 y 180, pero el desvío cambia
+de signo de un año a otro (a 30 días, 82–84 % el primer año y 72–78 % el segundo) y el ajuste aprendido
+con un año empeoró el otro en 6 de 8 casos. Detalle en la guía, «Calibración real».
+
 El factor por pool empeora: el de un año va en contra del siguiente (correlación −0,59). Lo que se
 repite es una caída general de las comisiones por unidad de liquidez, que el nivel reciente recoge.
 Con 730 días de histórico la horquilla recoge mejor los años movidos (aperturas del último año:
