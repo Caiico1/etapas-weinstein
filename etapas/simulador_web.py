@@ -109,6 +109,13 @@ def posiciones(q: dict) -> dict:
                      cargar=lambda p, c, hh: _cargar(p, c, hh))
 
 
+def ranking(q: dict) -> dict:
+    from . import ranking as R
+    g = lambda k, d: q.get(k, [d])[0]
+    lanzado = R.lanzar(int(g("dias", 30)), float(g("capital", 5000))) if g("calcular", "0") == "1" else False
+    return {"lanzado": lanzado, "estado": R.estado(), "ranking": R.guardado()}
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code: int, body: bytes, ctype: str):
         self.send_response(code)
@@ -135,6 +142,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, comparar(parse_qs(u.query)))
             elif u.path == "/api/historial":
                 self._json(200, historial(parse_qs(u.query)))
+            elif u.path == "/api/ranking":
+                self._json(200, ranking(parse_qs(u.query)))
             elif u.path == "/api/posiciones":
                 self._json(200, posiciones(parse_qs(u.query)))
             else:

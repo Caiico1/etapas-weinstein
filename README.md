@@ -531,6 +531,14 @@ arriba, porque los escenarios no apuestan por la dirección y ese riesgo no est�
 una hora; tarda unos 5 segundos la primera vez por par. No cambia los escenarios: condicionarlos a la etapa
 queda como experimento, que solo se activaría si la validación fuera de muestra lo justifica.
 
+**Ranking de pools (`etapas/ranking.py`, pantalla y consola).** Todos los pools de MetaProDB con datos
+recientes, TVL ≥ 0,5 M$ y ≥ 1 año de histórico (sin pares de dos estables ni `ANOMALOS`) con su mejor ancho
+a `dias`, ordenados por «vs mantener» medio; excluye los de comisiones imposibles (> 15 % al mes o |vs| >
+capital). Validado (25-nov-2026, 63 pools, 53 fechas de dos años, 30 d): los 10 primeros +14 $ reales por
+5.000 $ frente a −13 $ de media, ganan a la media el 68 % de las fechas; ordenar por comisiones de 7 días
+no (−12 $); por resultado total ninguno ordena (correlación ≈ 0). `python -m etapas.ranking`; en la página,
+«Calcular ranking» (en segundo plano, `/api/ranking`) o `#ranking`. Pruebas en `tests/test_ranking.py`.
+
 **Mis posiciones abiertas (`etapas/posiciones_lp.py`, pantalla y consola).** Lee las posiciones abiertas
 del MCP público de Revert (`https://mcp.revert.finance/mcp`, JSON-RPC por HTTP, solo `get_positions`)
 con las carteras de `~/.cripto-renta/config.json` (nunca en el repositorio), busca cada pool en

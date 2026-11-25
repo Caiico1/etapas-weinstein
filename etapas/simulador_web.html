@@ -101,6 +101,17 @@ summary{cursor:pointer;color:var(--text)}
     <div class="err" id="err"></div>
   </section>
 
+  <section class="panel" id="outRank">
+    <h2>¿En qué pool añade más ser LP? <span class="mut" style="font-weight:400;font-size:13px">(ranking de MetaProDB)</span></h2>
+    <div class="ranges" style="margin-top:0">
+      <button class="primary" id="rankRun">Calcular ranking</button>
+      <span class="hint" style="margin:0" id="rankEstado"></span>
+    </div>
+    <div class="hint">Todos los pools con datos recientes, TVL ≥ 0,5 M$ y ≥ 1 año de histórico (sin pares de dos estables ni datos anómalos), simulados al plazo y capital de arriba con su mejor ancho, y ordenados por <b>«vs mantener» medio</b>: lo que añade la posición frente a guardar los mismos tokens. <b>No ordena por lo que ganarás en total</b>: eso depende sobre todo de hacia dónde vaya el precio, que el simulador no predice (en la validación, ordenar por resultado total no acertó más que el azar). Validado con 53 fechas de dos años: los 10 primeros ganaron de verdad +14 $ por 5.000 $ al mes frente a −13 $ de media, y superaron a la media en el 68 % de las fechas; ordenar por comisiones de los últimos 7 días no lo consigue.</div>
+    <div class="tw" style="margin-top:8px"><table id="rankTab" style="min-width:1000px"></table></div>
+    <div class="hint" id="rankTxt"></div>
+  </section>
+
   <section class="panel" id="outPos">
     <h2>Mis posiciones abiertas <span class="mut" style="font-weight:400;font-size:13px">(Revert)</span></h2>
     <div class="ranges" style="margin-top:0">
@@ -350,6 +361,43 @@ function money(x,valor,signo=true){
   if(valor) s+=` <span class="mut">(${(signo&&x>0?"+":"")+(x/valor*100).toLocaleString("es-ES",{minimumFractionDigits:1,maximumFractionDigits:1})} %)</span>`;
   return s;
 }
+let rankTimer=null;
+async function rankLoad(calcular){
+  const q=new URLSearchParams({dias:$("dias").value,capital:$("capital").value,calcular:calcular?"1":"0"});
+  let r; try{ r=await getJSON("/api/ranking?"+q); }catch(e){ $("rankEstado").innerHTML=`<span class="neg">${esc(e.message)}</span>`; return; }
+  const e=r.estado;
+  if(e.calculando){
+    $("rankRun").disabled=true; $("rankEstado").textContent=`Calculando… ${e.hechos} de ${e.total||"?"} pools`;
+    clearTimeout(rankTimer); rankTimer=setTimeout(()=>rankLoad(false),3000);
+  } else {
+    $("rankRun").disabled=false;
+    $("rankEstado").innerHTML=e.error?`<span class="neg">${esc(e.error)}</span>`:(r.ranking?`Calculado el ${esc(r.ranking.fecha)} a ${r.ranking.dias} días con ${usd(r.ranking.capital)} (tarda menos de un minuto).`:"Aún no se ha calculado (tarda menos de un minuto).");
+  }
+  if(r.ranking) rankDraw(r.ranking);
+}
+function rankDraw(k){
+  const top=k.top_validado||10;
+  $("rankTab").innerHTML=`<thead><tr><th>#</th><th class="lab">Pool</th><th>TVL</th><th>Mejor ancho</th><th>vs mantener<br><span style="font-weight:400">(media)</span></th><th>Comisiones</th><th>En rango</th><th>Valor final<br><span style="font-weight:400">(media)</span></th><th>Escenario malo<br><span style="font-weight:400">(P10)</span></th><th>vs sin riesgo</th><th>Fiabilidad</th><th></th></tr></thead><tbody>`+
+    k.pools.slice(0,30).map((p,i)=>`<tr${i===top?' class="grp"':''}><td class="mut">${i+1}</td>
+      <td class="lab">${esc(p.label)} <span class="mut">${esc(p.chain)} ${esc(p.version)}</span></td>
+      <td class="mut">${(p.tvl/1e6).toLocaleString("es-ES",{maximumFractionDigits:1})} M$</td>
+      <td>${esc(p.ancho)}</td>
+      <td class="${cls(p.vs_media)}"><b>${usd(p.vs_media,true)}</b></td>
+      <td>${usd(p.comisiones)}</td><td>${Math.round(p.en_rango*100)} %</td>
+      <td class="${cls(p.valor_media-k.capital)}">${usd(p.valor_media)}</td>
+      <td class="${cls(p.valor_p10-k.capital)}">${usd(p.valor_p10)}</td>
+      <td class="${cls(p.vs_sin_riesgo)}">${usd(p.vs_sin_riesgo,true)}</td>
+      <td><span class="fiab ${p.fiabilidad}" style="margin:0">${p.fiabilidad}</span></td>
+      <td><button class="chip" data-abrir="${p.chain}|${p.pool_id}" data-rango="${esc(p.ancho)}" data-capital="${Math.round(k.capital)}">Ver en detalle</button></td></tr>`).join("")+"</tbody>";
+  $("rankTab").querySelectorAll("[data-abrir]").forEach(b=>b.addEventListener("click",()=>{
+    $("pool").value=b.dataset.abrir; ranges=[b.dataset.rango,"P10-P90"]; $("capital").value=b.dataset.capital; drawRanges(); run();
+    $("outSum").scrollIntoView({behavior:"smooth"});}));
+  const pos=k.pools.filter(p=>p.vs_media>0).length;
+  $("rankTxt").innerHTML=`${k.pools.length} pools puntuados, ${k.excluidos.length} excluidos. ${pos?`En ${pos} añade algo ser LP frente a guardar los tokens (de media)`:"En ninguno gana de media ser LP frente a guardar los tokens"}. La línea marca los ${top} primeros, que es lo validado. «vs sin riesgo» compara el valor final medio con la referencia sin riesgo de su red, pero lleva dentro el precio, que nadie predice: mira el escenario malo antes de decidir.`+
+    (k.excluidos.length?`<br><span class="mut">Excluidos: ${k.excluidos.map(x=>esc(x.label)+" "+esc(x.chain)+" ("+esc(x.excluido)+")").join(" · ")}</span>`:"");
+}
+$("rankRun").addEventListener("click",()=>rankLoad(true));
+
 $("posRun").addEventListener("click",async()=>{
   const b=$("posRun"); b.disabled=true; b.textContent="Leyendo Revert y simulando…"; $("posTab").innerHTML=""; $("posAvisos").textContent="";
   try{ posDraw(await getJSON("/api/posiciones?"+new URLSearchParams({dias:$("dias").value,escenarios:$("escenarios").value}))); }
@@ -623,12 +671,13 @@ function table(d){
 
 drawRanges();
 loadPools().then(run).then(()=>{
-  histLoad();
+  histLoad(); rankLoad(false);
   // http://localhost:8768/#buscar,comparar abre con el buscador y la comparación ya lanzados
   const h=location.hash.slice(1).split(",");
   if(h.includes("buscar")) $("optRun").click();
   if(h.includes("comparar")) $("cmpRun").click();
   if(h.includes("posiciones")) $("posRun").click();
+  if(h.includes("ranking")) $("rankRun").click();
 }).catch(e=>$("err").textContent="No se pudo leer MetaProDB: "+e.message);
 </script>
 </body>

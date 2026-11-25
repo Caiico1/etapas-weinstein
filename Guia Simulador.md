@@ -58,7 +58,8 @@ La pantalla tiene estos bloques, de arriba abajo:
 ```mermaid
 flowchart TB
     A["① Controles<br/>pool, capital, plazo, histórico,<br/>escenarios, tendencia, comisiones"] --> B["② Rangos<br/>uno o varios, cada uno con su color"]
-    B --> M["Mis posiciones abiertas (Revert)<br/>(botón Cargar y simular)"]
+    B --> RK["¿En qué pool añade más ser LP?<br/>ranking de MetaProDB (botón Calcular ranking)"]
+    RK --> M["Mis posiciones abiertas (Revert)<br/>(botón Cargar y simular)"]
     M --> R["③ En resumen<br/>conclusión en frases + semáforo de fiabilidad"]
     R --> C["④ Gráfico de precio<br/>abanico de escenarios y tus rangos"]
     C --> D["⑤ Gráfico de resultado<br/>ganancia o pérdida de cada rango"]
@@ -76,13 +77,61 @@ flowchart TB
 ```
 
 Los dos últimos y «Mis posiciones» no se calculan solos: pulsa su botón. Para abrir la página con ellos ya
-lanzados: **http://localhost:8768/#posiciones,buscar,comparar** (o solo los que quieras).
+lanzados: **http://localhost:8768/#ranking,posiciones,buscar,comparar** (o solo los que quieras).
 
 Empieza por **③ En resumen**: dice en tres o cuatro frases lo que hay en los gráficos y en la tabla, y
 cuánto fiarte.
 
 Cada vez que cambias un campo o un rango, **vuelve a simular solo** (en menos de medio segundo). El
 botón **Simular** fuerza una nueva simulación. Mientras calcula, la pantalla se atenúa.
+
+---
+
+## 2 a. ¿En qué pool añade más ser LP? (ranking)
+
+Pulsa **Calcular ranking** (menos de un minuto; el último calculado se muestra al abrir la página). El
+simulador:
+
+1. Toma **todos los pools de MetaProDB** con datos recientes, **TVL ≥ 0,5 M$** y **≥ 1 año de histórico**,
+   sin pares de dos estables ni los pools con comisiones anómalas.
+2. Simula cada uno al plazo y capital de arriba con **su mejor ancho** (el del buscador, sección 8 b).
+3. Los ordena por **«vs mantener» medio**: lo que añade la posición (comisiones − pérdida impermanente −
+   costes) frente a guardar los mismos tokens.
+
+| Columna | Qué es |
+|---|---|
+| **Mejor ancho** | El rango que más gana de media frente a mantener en ese pool. |
+| **vs mantener** | La puntuación del ranking. |
+| **Comisiones, En rango** | Lo que cobra de media y el tiempo dentro. |
+| **Valor final, Escenario malo** | Media y P10 de lo que acabarías teniendo, con el precio incluido. |
+| **vs sin riesgo** | Valor final medio frente a la referencia sin riesgo de su red. |
+| **Ver en detalle** | Carga ese pool con su mejor ancho arriba, con el stop y las coberturas. |
+
+**Por qué no ordena por lo que ganarás en total.** El resultado total depende sobre todo de hacia dónde va
+el precio, y el simulador no lo predice. En la validación, ordenar por resultado total no acertó más que el
+azar (correlación ≈ 0). Ordenar por «vs mantener» sí:
+
+**Validación (25-nov-2026):** 63 pools, 53 fechas cada 14 días de los dos últimos años, a 30 días, con
+datos solo de antes de cada fecha y el resultado real del mejor ancho de cada pool:
+
+| Por 5.000 $ a 30 días, «vs mantener» real | Ranking del simulador | Ordenar por comisiones/TVL de 7 días |
+|---|---|---|
+| Los 10 primeros | **+14 $** | −12 $ |
+| Todos (media) | −13 $ | −13 $ |
+| Los 10 últimos | −25 $ | −19 $ |
+| Fechas en que los 10 primeros ganan a la media | **68 %** (73 % y 63 % cada año) | 55 % |
+
+Por quintiles del ranking, lo real sube con la puntuación: −26, −27, −24, −3 y +15 $. Es una ventaja
+modesta pero estable: los primeros de la lista tienden a ganar algo a mantener; el resto, a perder. Ordenar
+por las comisiones recientes, como hace un cribado típico, no la tiene, porque los pools que más cobran
+suelen ser los que más pérdida impermanente tienen.
+
+**Datos sospechosos.** La validación sacó a la luz pools cuyas comisiones en MetaProDB son imposibles
+(VIRTUAL, PENDLE, SKY, algunos de estables: rendimientos de miles de veces el capital). El ranking excluye
+los que el mejor rango cobraría más de un 15 % al mes o cuyo «vs mantener» supera el capital, y los lista
+debajo con el motivo.
+
+Desde la consola: `python -m etapas.ranking --dias 30` (guarda `out/ranking.json`).
 
 ---
 
