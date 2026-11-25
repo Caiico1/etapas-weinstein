@@ -230,9 +230,18 @@ plazo**. Debajo, en gris, aparecen los motivos (⚠ en contra, ✓ a favor):
 
 | Nivel | Cuándo |
 |---|---|
-| 🟢 **Alta** | Pool como los validados (≥ 2 años de histórico y TVL > 2 M$), plazo de hasta 90 días y, si el pool está en la calibración mensual, con un resultado razonable (comisiones reales entre ×0,75 y ×1,33 de las simuladas y al menos el 60 % de los casos reales dentro del P10–P90). |
-| 🟡 **Media** | Algo se sale de lo validado: menos de ~2 años de histórico, TVL de 0,5 a 2 M$, plazo de 180 días, o su calibración algo desviada. |
+| 🟢 **Alta** | Pool como los validados (≥ 1 año de histórico y TVL > 2 M$), plazo de hasta 90 días y, si el pool está en la calibración mensual, con un resultado razonable (comisiones reales entre ×0,75 y ×1,33 de las simuladas y al menos el 60 % de los casos reales dentro del P10–P90). |
+| 🟡 **Media** | Algo se sale de lo validado: entre 180 días y 1 año de histórico, TVL de 0,5 a 2 M$, plazo de 180 días, o su calibración algo desviada. |
 | 🔴 **Baja** | Menos de 180 días de histórico, TVL < 0,5 M$, comisiones anómalas en MetaProDB, o su calibración muy desviada (comisiones fuera de ×0,5–×2 o menos del 40 % dentro del P10–P90). |
+
+**¿Y los pools con poco histórico? (probado, nov-2026).** Se probó completar el histórico de un pool joven
+con los días que le faltan de otro pool del mismo par: los movimientos del precio en dólares y el ritmo de
+comisiones, reescalado al nivel del pool joven. Para medirlo se recortaron 13 pools veteranos a 180 y a 365
+días y se compararon con su histórico completo de 730 días, en 901 aperturas reales del último año, a 7 y a
+30 días. **Completar no mejoró nada, y recortar tampoco empeoró:** a 30 días, lo real cayó dentro del
+P10–P90 el 67–69 % de las veces en todas las variantes, con el mismo error medio (242–246 $ por 5.000 $).
+Por eso no se completa nada, y el semáforo ya no baja a «media» con un año o más de histórico. Entre 180 y
+365 días baja a «media», porque cubre menos rachas distintas del mercado, y por debajo de 180, a «baja».
 
 La calibración de cada pool la deja la tarea mensual en un archivo local
 (`out/simulador_calibracion.jsonl`, no se sube a GitHub). Solo los ~21 pools de referencia la tienen;

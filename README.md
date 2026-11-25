@@ -455,7 +455,7 @@ la misma red.
 **Resumen, semáforo y desglose (pantalla y `--json`).** `conclusiones` escribe 3–4 frases a partir de
 la tabla: si algún rango supera a mantener, si supera a la referencia sin riesgo, el riesgo de cola
 (mediana que gana con media que pierde) y los rangos que se salen mucho. `fiabilidad` da un semáforo
-alta/media/baja con sus motivos: histórico (≥ 2 años validado), TVL (> 2 M$), plazo (> 90 días baja a
+alta/media/baja con sus motivos: histórico (≥ 1 año: recortado a 180 o 365 días acertó como con 730; completarlo con otro pool del mismo par no mejoró, 25-nov-2026), TVL (> 2 M$), plazo (> 90 días baja a
 media), pools con datos anómalos y, si existe, la calibración mensual del propio pool
 (`calibracion_pool`, que lee `out/simulador_calibracion.jsonl`, local y sin subir). `desglose` reparte el
 resultado medio en precio de los tokens + pérdida impermanente + comisiones + costes (suma exacta;

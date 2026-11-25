@@ -750,7 +750,7 @@ def calibracion_pool(pool_id: str, chain: str, dias: int, log: Path | None = Non
 
 
 def fiabilidad(h: History, dias: int, calib: dict | None = None) -> dict:
-    """Semáforo: alta / media / baja, con los motivos. Se basa en lo validado (pools con ≥ 2 años y
+    """Semáforo: alta / media / baja, con los motivos. Se basa en lo validado (pools con ≥ 1 año y
     TVL > 2 M$; 7–180 días) y, si existe, en la calibración mensual del propio pool."""
     from .simulador_aviso import ANOMALOS, MIN_TVL
     malos: list[tuple[int, str]] = []          # (0 media / 1 baja, motivo)
@@ -759,10 +759,14 @@ def fiabilidad(h: History, dias: int, calib: dict | None = None) -> dict:
     if (pool["chain"], pool["pool_id"]) in ANOMALOS:
         malos.append((1, "MetaProDB tiene comisiones anómalas en este pool: el simulador no las reproduce"))
     hist = h.dias_historia
+    # 25-nov-2026 (13 pools, 901 aperturas del último año a 7 y 30 días): recortado a 365 o 180 días, el
+    # histórico acertó igual que con 730 (P10–P90 68–69 % a 30 días, error medio 242–246 $ por 5.000 $), y
+    # completarlo con otro pool del mismo par no mejoró nada. Por debajo de 180 no está medido.
     if hist < 180:
         malos.append((1, f"solo {hist:.0f} días de histórico"))
-    elif hist < HISTORIA_DIAS * 0.9:
-        malos.append((0, f"{hist:.0f} días de histórico (lo validado es {HISTORIA_DIAS})"))
+    elif hist < 365:
+        malos.append((0, f"{hist:.0f} días de histórico: con 180–365 acertó igual que con 730 en el último año, "
+                         "pero cubre menos rachas distintas del mercado"))
     if h.tvl_now < MIN_TVL / 4:
         malos.append((1, f"TVL de {h.tvl_now / 1e6:.2f} M$: comisiones muy ruidosas"))
     elif h.tvl_now < MIN_TVL:
@@ -781,7 +785,7 @@ def fiabilidad(h: History, dias: int, calib: dict | None = None) -> dict:
         else:
             buenos.append(txt)
     elif not malos:
-        buenos.append("pool como los validados (≥ 2 años de histórico, TVL > 2 M$)")
+        buenos.append("pool como los validados (≥ 1 año de histórico, TVL > 2 M$)")
     nivel = _NIVELES[max((m for m, _ in malos), default=-1) + 1]
     return {"nivel": nivel, "motivos": [t for _, t in malos], "a_favor": buenos}
 

@@ -159,7 +159,8 @@ def _hist_fiab(dias_hist, tvl, pool=POOL):
 def test_fiabilidad_semaforo():
     alta = S.fiabilidad(_hist_fiab(740, 5e6), 30)
     assert alta["nivel"] == "alta" and alta["a_favor"]
-    assert S.fiabilidad(_hist_fiab(400, 5e6), 30)["nivel"] == "media"         # poco histórico
+    assert S.fiabilidad(_hist_fiab(400, 5e6), 30)["nivel"] == "alta"          # ≥ 1 año: acertó como con 2
+    assert S.fiabilidad(_hist_fiab(250, 5e6), 30)["nivel"] == "media"         # 180–365 días
     assert S.fiabilidad(_hist_fiab(740, 1e6), 30)["nivel"] == "media"         # TVL bajo
     assert S.fiabilidad(_hist_fiab(740, 5e6), 180)["nivel"] == "media"        # plazo largo
     assert S.fiabilidad(_hist_fiab(100, 5e6), 30)["nivel"] == "baja"
