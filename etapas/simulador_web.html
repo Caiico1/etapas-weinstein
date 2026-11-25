@@ -180,6 +180,13 @@ summary{cursor:pointer;color:var(--text)}
     <div class="hint" id="cobTxt"></div>
   </section>
 
+  <section class="panel" id="outCobP" hidden>
+    <h2>Cubrirlo con un corto en un perpetuo</h2>
+    <div id="cpAviso" class="hint" style="font-size:14px"></div>
+    <div class="hint">Con el capital en la estable: una parte va al pool y otra, de margen aislado en USDT, a un corto del activo en el perpetuo por lo que el pool tiene en activo al abrir (todo o la mitad). Si el activo cae, el corto gana y compensa lo que pierde la posición; si sube, el corto pierde. El corto cobra el funding si es positivo (lo normal) y lo paga si es negativo: en los escenarios, el medio de los últimos 90 días, fijo; comisión de taker al abrir y al cerrar. El margen aguanta la mayor subida del activo en un tramo de este plazo del histórico, más 10 puntos; si no basta, liquidación (se pierde el margen). Validado con aperturas reales de dos años y el funding real: a 30 días, cubierto del todo, la media acierta a menos de 10 $ por 5.000 $, la dispersión real baja a la mitad y el P10 real sube de 4.028 $ a 4.567 $; las liquidaciones salen prudentes.</div>
+    <div class="tw" style="margin-top:8px"><table id="cpTab" style="min-width:1000px"></table></div>
+  </section>
+
   <section class="panel" id="outOpt" hidden>
     <h2>Buscar el mejor ancho</h2>
     <div class="ranges">
@@ -291,8 +298,8 @@ function render(d){
       :`etapa: <span class="mut">${esc(d.etapa.nivel)}</span>`):"",
     `gas <b>${d.gas} $</b>`, `cambio inicial <b>${pct(d.comision_cambio,2,false)}</b>`,
     d.aviso?`<span class="neg">${d.aviso}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
-  ["outSum","outFan","outBars","outDes","outTable","outRea","outEst","outSal","outCob","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);
-  summary(d); fan(d); bars(d); desglose(d); table(d); reaDraw(d); estDraw(d); salDraw(d); cobDraw(d); reco(d.recomendacion||{});
+  ["outSum","outFan","outBars","outDes","outTable","outRea","outEst","outSal","outCob","outCobP","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);
+  summary(d); fan(d); bars(d); desglose(d); table(d); reaDraw(d); estDraw(d); salDraw(d); cobDraw(d); cpDraw(d); reco(d.recomendacion||{});
   const sel=$("cmpRango"), prev=sel.value;
   sel.innerHTML=["P10-P90",...ranges.filter(Boolean)].filter((v,i,a)=>a.indexOf(v)===i).map(r=>`<option>${esc(r)}</option>`).join("");
   if(prev&&[...sel.options].some(o=>o.value===prev)) sel.value=prev;
@@ -557,6 +564,25 @@ function cobDraw(d){
       <td class="${f.prob_liquidacion>0.005?"neg":"mut"}">${f.cobertura?Math.round(f.prob_liquidacion*100)+" %":"—"}</td>
       <td class="mut">${usd(f.en_pool)} · ${usd(f.deposito)} · ${usd(f.deuda)}</td></tr>`;}).join("")).join("")+"</tbody>";
   $("cobTxt").innerHTML=`«vs ${esc(a.estable)} en Aave» = frente a dejar todo el capital depositado sin riesgo de precio (${usd(c.sin_riesgo)} al final del plazo). La cobertura reduce el riesgo de precio cerca del precio de hoy; si el precio se sale mucho del rango, la posición se descubre (ver «Sube 30 %»).`;
+}
+
+function cpDraw(d){
+  const c=d.cobertura_perp; $("outCobP").hidden=!c;
+  if(!c) return;
+  if(c.error){$("cpAviso").innerHTML=`<span class="neg">${esc(c.error)}</span>`;$("cpTab").innerHTML="";return;}
+  const nom={0:"Sin cubrir",0.5:"Cubierto a medias",1:"Cubierto del todo"};
+  $("cpAviso").innerHTML=`Corto en <b>${esc(c.perpetuo)}</b> (${esc(c.fuente)}) · funding medio de los últimos 90 días <b>${pct(c.apr_funding,1,false)}</b> anual (positivo: lo cobra el corto) · margen ${pct(c.margen,0,false)} del corto, apalancamiento <b>${c.apalancamiento.toLocaleString("es-ES",{maximumFractionDigits:2})}x</b> (la mayor subida del activo en ${d.dias} días del histórico fue de ${pct(c.subida_historica-1,0,false)}).`;
+  $("cpTab").innerHTML=`<thead><tr><th>Rango</th><th class="lab">Cobertura</th><th>Valor final<br><span style="font-weight:400">(media)</span></th><th>P10 – P90</th><th>vs sin cubrir</th><th>Funding</th><th>Cae 30 %</th><th>Sube 30 %</th><th>Liquidación</th><th>Pool · margen · corto</th></tr></thead><tbody>`+
+    c.rangos.map(it=>it.filas.map((f,j)=>{const e=Object.fromEntries((f.estres||[]).map(x=>[x.caso,x]));
+      const ec=k=>e[k]?`<span class="${cls(e[k].resultado)}">${usd(e[k].resultado,true)}</span>${e[k].liquidada?' <span class="neg">liq.</span>':''}`:"—";
+      return `<tr class="${j===0?"grp":""}"><td class="name">${j===0?esc(it.texto):""}</td><td class="lab">${nom[f.cobertura]||pct(f.cobertura,0,false)}</td>
+      <td class="${cls(f.valor_media-d.capital)}">${usd(f.valor_media)}</td>
+      <td class="mut">${usd(f.valor_p10)} – ${usd(f.valor_p90)}</td>
+      <td class="${f.cobertura?cls(f.vs_sin_cubrir):"mut"}">${f.cobertura?usd(f.vs_sin_cubrir,true):"—"}</td>
+      <td class="${f.cobertura?cls(f.funding):"mut"}">${f.cobertura?usd(f.funding,true):"—"}</td>
+      <td>${ec("Cae 30 %")}</td><td>${ec("Sube 30 %")}</td>
+      <td class="${f.prob_liquidacion>0.005?"neg":"mut"}">${f.cobertura?Math.round(f.prob_liquidacion*100)+" %":"—"}</td>
+      <td class="mut">${usd(f.en_pool)} · ${usd(f.margen)} · ${usd(f.corto)}</td></tr>`;}).join("")).join("")+"</tbody>";
 }
 
 async function histLoad(){

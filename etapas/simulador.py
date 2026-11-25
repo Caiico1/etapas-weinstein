@@ -1124,6 +1124,24 @@ def recomendacion(res: dict) -> dict:
             txt = "Hoy no se puede: " + "; ".join(av["motivos"]) + ". Si Aave lo vuelve a permitir: " + txt[0].lower() + txt[1:]
         mejorar.append(txt)
 
+    cp = res.get("cobertura_perp") or {}
+    it = next((x for x in cp.get("rangos", []) if x["texto"] == foco), None)
+    if it and len(it["filas"]) > 1:
+        f0 = it["filas"][0]
+        f1 = max(it["filas"][1:], key=lambda f: f["valor_p10"])
+        nombre = "del todo" if f1["cobertura"] >= 1 else f"al {f1['cobertura']:.0%}"
+        cae = lambda f: next((e["resultado"] for e in f.get("estres", []) if e["caso"] == "Cae 30 %"), None)
+        txt = (f"Cubrir {foco} con un corto en el perpetuo {cp['perpetuo']} de {cp['fuente']} ({nombre}, "
+               f"{_usd(f1['margen'], False)} de margen, apalancamiento {_num1(cp['apalancamiento'])}x): de media "
+               f"{_usd(f1['vs_sin_cubrir'])} frente a no cubrirlo (funding al {_pct(cp['apr_funding'])} anual), y el "
+               f"escenario malo (P10) pasa de {_usd(f0['valor_p10'] - cap)} a {_usd(f1['valor_p10'] - cap)}")
+        if cae(f0) is not None:
+            txt += f"; si {asset} cae un 30 %, de {_usd(cae(f0))} a {_usd(cae(f1))}"
+        txt += (f". Si {asset} sube, el corto pierde y el pool no lo compensa"
+                + (f"; liquidación en el {_pct(f1['prob_liquidacion'])} de los escenarios" if f1["prob_liquidacion"] > 0.005
+                   else "") + ". Necesita cuenta en el exchange y vigilar el margen.")
+        mejorar.append(txt)
+
     mb = res.get("mejor_ancho")
     if mb:
         if mb["vs_media"] > max(vm(r) for r in rs) and not (mb["es_el_mas_ancho"] and mb["vs_media"] <= 0):
@@ -1444,6 +1462,11 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
     res["salida"] = comparar_salidas(h, dias, rgs, paths, capital, gas, apy=ref["apy"] if ref else 0.0)
     ep, ei = _paths_estres(h, dias * 24, ajuste * h.nivel(nivel_dias) * factor_plazo(dias, exponente))
     res["cobertura"] = cobertura(h, dias, rgs, paths, capital, gas, ep, ei)
+    try:
+        from . import perpetuo
+        res["cobertura_perp"] = perpetuo.cobertura(h, dias, rgs, paths, capital, gas, ep, ei)
+    except Exception as e:                                                    # noqa: BLE001 (sin red no cae todo)
+        res["cobertura_perp"] = {"error": f"no se pudo calcular la cobertura con perpetuo ({type(e).__name__})"}
     res["recomendacion"] = recomendacion(res)
     return res
 

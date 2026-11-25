@@ -497,6 +497,16 @@ Coincide con `aave_backtest cubierta` a pocos dólares; validado en 10 pools y ~
 todo: sesgo ±4 $, P10–P90 78–84 %). **Desde el 29-oct-2026 USDC y USDT tienen LTV 0 en Aave** (Ethereum, Base,
 Arbitrum): la pantalla lo avisa y las cifras son hipotéticas.
 
+**Cobertura con perpetuo (`etapas/perpetuo.py`).** La alternativa que sí se puede abrir hoy: en pares
+activo/estable con perpetuo en Bybit, parte del capital va de margen aislado a un corto del activo por la
+parte c (0, ½, 1) de lo que el pool tiene en activo al abrir; margen = (r − 1) + MMR·r por $ de corto, con
+r = mayor subida histórica en el plazo + 0,1; V = C / (1 + c·s·m). El corto cobra el funding (medio de 90
+días de la API pública de Bybit, caché en `out/`), paga taker al abrir y cerrar y se liquida si el margen no
+aguanta. Validado (25-nov-2026, 10 pools, dos años, 30/90 d, funding real hora a hora): cubierto del todo,
+sesgo −4 $ a 30 d, P10–P90 76 %, dispersión real ÷2 (565 → 295 $), P10 real 4.028 → 4.567 $; liquidaciones
+prudentes (0,8 % frente a 0 %). Pruebas en `tests/test_perpetuo.py`. Las comisiones a 90–180 días se
+revisaron con dos años: ×0,96–0,97 en todos los plazos, sin corrección.
+
 **Historial de tus simulaciones (`simulador_historial`).** Cada rango simulado en la pantalla se guarda en
 `out/simulador_historial.jsonl` (local, fuera de git; uno por pool, plazo, capital, rango y día). Al vencer,
 `evaluar` lo rehace con las horas reales del pool desde aquel día y anota lo real en

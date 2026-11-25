@@ -68,7 +68,8 @@ flowchart TB
     RJ --> ES["¿Y si sale mal?<br/>casos de estrés y dónde deja de cobrar"]
     ES --> SL["¿Y si pones un stop?<br/>sin stop frente a cerrar a dólares bajo el borde"]
     SL --> CB["Cubrirlo con un préstamo en Aave<br/>sin cubrir, a medias, del todo"]
-    CB --> O["⑧ Buscar el mejor ancho<br/>(botón Buscar)"]
+    CB --> CP["Cubrirlo con un corto en un perpetuo<br/>Bybit: sin cubrir, a medias, del todo"]
+    CP --> O["⑧ Buscar el mejor ancho<br/>(botón Buscar)"]
     O --> P["⑨ Comparar con otros pools del mismo par<br/>(botón Comparar)"]
     P --> Q["⑩ Recomendación<br/>qué haría, qué no y cómo mejorarlo, en lenguaje llano"]
     Q --> HI["¿Cómo ha acertado con tus simulaciones?<br/>lo que dijo frente a lo que pasó"]
@@ -606,6 +607,57 @@ Aun así, queda 60 $ por debajo de dejar el dinero en USDC en Aave.
 
 ---
 
+## 8 a c b. Cubrirlo con un corto en un perpetuo
+
+La alternativa que **sí se puede abrir hoy** (la de Aave no: USDC y USDT tienen LTV 0). En pares
+activo/estable cuyo activo tiene perpetuo en Bybit (ETH, BTC y algunos más), con el capital en la estable:
+
+1. Una parte va al pool y otra, de **margen aislado en USDT**, a un **corto** del activo en el perpetuo por lo
+   que el pool tiene en activo al abrir: todo («cubierto del todo») o la mitad.
+2. Si el activo cae, el corto gana y compensa lo que pierde la posición; si sube, el corto pierde y la
+   posición, que va soltando activo, no lo compensa.
+3. El corto **cobra el funding** si es positivo (lo normal) y lo paga si es negativo. En los escenarios se
+   usa el medio de los últimos 90 días de Bybit, fijo todo el plazo. Comisión de taker (0,055 %) al abrir y
+   al cerrar.
+4. El **margen** se elige para aguantar la mayor subida del activo en un tramo de este plazo del histórico
+   del pool, más 10 puntos (como el HF de Aave). Si aun así no basta, **liquidación**: se pierde el margen y
+   el corto desaparece.
+
+| Columna | Qué es |
+|---|---|
+| **vs sin cubrir** | Lo que gana o pierde de media frente a no cubrirlo. |
+| **Funding** | Lo que cobra (o paga) el corto en el plazo. |
+| **Cae 30 %, Sube 30 %** | El resultado en esos casos de estrés. |
+| **Liquidación** | En qué parte de los escenarios se liquidaría el corto. |
+| **Pool · margen · corto** | Cuánto va al pool, cuánto de margen y de cuánto es el corto. |
+
+**Ejemplo (WETH/USDC de Base, 5.000 $, 30 días, ±10 %, nov-2026):** funding al 3,4 % anual, margen del 88 %
+del corto (apalancamiento 1,14x, porque ETH llegó a subir un 77 % en 30 días). Cubierto del todo: 3.529 $ al
+pool y 1.471 $ de margen. De media +12 $ frente a no cubrirlo; el escenario malo (P10) pasa de 4.157 $ a
+4.606 $; si ETH cae un 30 %, de −1.297 $ a −409 $; si sube un 30 %, de +289 $ a −296 $.
+
+**Validación (25-nov-2026):** 10 pools activo/estable de ETH y BTC, aperturas de dos años, 30 y 90 días,
+±10 % y ±20 %; los escenarios con el funding medio de 90 días antes de cada apertura y lo real con el
+funding real de Bybit hora a hora:
+
+| Por 5.000 $, ±10 % | 30 días | 90 días |
+|---|---|---|
+| Error de la media, sin cubrir / cubierto del todo | −51 / −4 $ | −141 / −44 $ |
+| Real dentro del P10–P90, cubierto del todo | 76 % | 95 % |
+| Dispersión real (desviación), sin cubrir → cubierto | 565 → 295 $ | 825 → 378 $ |
+| P10 real, sin cubrir → cubierto | 4.028 → 4.567 $ | 3.733 → 4.268 $ |
+| Liquidaciones, simuladas / reales | 0,8 % / 0 % | 4,9 % / 1,8 % |
+| Funding, simulado / real | 6,8 / 5,6 $ | 17,6 / 14,5 $ |
+
+Acierta la media y reduce de verdad el riesgo: la dispersión real baja a la mitad. Las liquidaciones salen
+prudentes y el funding algo optimista (un 20 %, pocos dólares).
+
+**Ojo:** necesita cuenta en el exchange, mover USDT allí y vigilar el margen; si el activo sube mucho, el
+corto pierde más de lo que gana el pool. El histórico de funding se descarga de la API pública de Bybit y se
+guarda en `out/` (local).
+
+---
+
 ## 8 b. Buscar el mejor ancho
 
 ![Buscar el mejor ancho](docs/img/simulador-5-buscador.png)
@@ -881,6 +933,11 @@ xychart-beta
   comprobación a **7, 30, 90 y 180 días**. Si algún plazo se desvía de su banda, abre una issue en
   GitHub, que llega por correo, con lo que hay que mirar: a 30 días, el ajuste propuesto; a los demás
   plazos, revisar el exponente de la corrección por plazo.
+- **Comisiones a 90–180 días: sin corrección (25-nov-2026).** Con dos años de aperturas (16 pools, ±10 % y
+  ±20 %), las comisiones reales salen ×0,96–0,97 de las simuladas en todos los plazos de 7 a 180 días. El
+  ×0,80 de 180 días de la tabla es de este año: el anterior salió ×1,05, así que corregirlo empeoraría el
+  otro. A 90 días la mediana por pool sale ×0,91 los dos años, pero el total da ×0,96–0,98: dentro del
+  margen.
 - **La horquilla P10–P90 se queda algo corta en años de tendencia fuerte** (72 % frente al 80 % ideal): con
   tendencia neutral, una caída sostenida como la de este año cae más a menudo por debajo del P10.
 - **Calibrar la horquilla por plazo, probado y descartado (25-nov-2026).** Con dos años de aperturas
