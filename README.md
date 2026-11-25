@@ -479,6 +479,13 @@ del histórico del pool (sus movimientos y comisiones). Da el día y el precio e
 valor de la posición en cada borde (el de abajo, sitio para el stop). No es una previsión: pone la cola
 con nombre y cifra. La Recomendación lo resume en «Ten clara tu salida».
 
+**Stop (`simulate_salida`, `comparar_salidas`, `SALIDAS`).** Cada rango sin stop frente a cerrar y pasar a
+dólares la primera hora que el activo cierra al borde de abajo, un 5 % o un 10 % por debajo (comisión del
+pool + gas), en los escenarios de la tabla. Se sugiere el que más sube el P10 si lo sube ≥ 2 % del capital
+costando de media < 1 %. Validado (25-nov-2026, 16 pools, dos años, 7/30/90 d): las veces que salta salen
+casi exactas (30 d ±10 %: 52 % simulado, 46 % real) y recorta la cola real (P10 de 3.881 $ a 4.453 $); lo que
+cuesta de media depende del año (en el lateral coincidió, en el bajista el stop ganó).
+
 **Cobertura con Aave (`cobertura`, `_cubierta`, `aave_hoy`).** En pares activo/estable, el pool sin
 cubrir, cubierto a medias y del todo (el activo que pide el rango, prestado en Aave con la estable de
 garantía; V = C / (1 + c·s·(1/u − 1)), como `aave_backtest.simulate_covered`), en los escenarios de la tabla

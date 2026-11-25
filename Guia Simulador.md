@@ -66,7 +66,8 @@ flowchart TB
     G --> E["⑦ Tabla de detalle<br/>todas las cifras + referencia sin riesgo"]
     E --> RJ["¿Y si lo reajustas?<br/>dejarlo fijo frente a recentrarlo al salirse"]
     RJ --> ES["¿Y si sale mal?<br/>casos de estrés y dónde deja de cobrar"]
-    ES --> CB["Cubrirlo con un préstamo en Aave<br/>sin cubrir, a medias, del todo"]
+    ES --> SL["¿Y si pones un stop?<br/>sin stop frente a cerrar a dólares bajo el borde"]
+    SL --> CB["Cubrirlo con un préstamo en Aave<br/>sin cubrir, a medias, del todo"]
     CB --> O["⑧ Buscar el mejor ancho<br/>(botón Buscar)"]
     O --> P["⑨ Comparar con otros pools del mismo par<br/>(botón Comparar)"]
     P --> Q["⑩ Recomendación<br/>qué haría, qué no y cómo mejorarlo, en lenguaje llano"]
@@ -466,6 +467,54 @@ del 30 % y en el peor tramo real.
 
 ---
 
+## 8 a b b. ¿Y si pones un stop?
+
+Cada rango sin stop frente a tres reglas de salida, en los mismos escenarios que la tabla principal:
+**cerrar y pasar todo a dólares** la primera hora en que el precio del activo cierra por debajo del nivel
+del stop, y quedarse en dólares hasta el final del plazo. Salir paga la comisión del pool sobre lo que no
+es estable y un gas.
+
+| Stop | Nivel |
+|---|---|
+| **Al salirse por abajo** | El borde de abajo del rango. |
+| **5 % bajo el borde** | Un 5 % por debajo del borde de abajo. |
+| **10 % bajo el borde** | Un 10 % por debajo. |
+
+| Columna | Qué es |
+|---|---|
+| **Precio del stop** | El precio que lo dispara. |
+| **Salta** | En qué parte de los escenarios llega a saltar. |
+| **Frente a sin stop** | Lo que gana o pierde de media frente a no poner stop. |
+| **Escenario malo (P10), Muy malo (P5)** | El resultado en el 10 % y el 5 % de escenarios peores: lo que el stop mejora. |
+| **Prob. de perder** | **Sube con el stop**: fija pérdidas pequeñas que sin stop a veces se recuperan; lo que evita son las grandes. |
+
+Se **sugiere** (fila verde) el stop que más sube el P10, si lo sube al menos un 2 % del capital y cuesta de
+media menos del 1 %. La Recomendación lo añade a «Ten clara tu salida»; si ninguno cumple, dice que es
+mejor vigilar y decidir al salirse.
+
+**Ejemplo (WETH/USDC de Base, 5.000 $, 30 días, nov-2026):** con ±10 %, el stop al salirse por abajo
+(1.486 $) salta en el 53 % de los escenarios, sube el P10 de 4.168 $ a 4.606 $ y gana +13 $ de media; la
+probabilidad de perder pasa del 40 % al 55 %. Con ±20 % ningún stop compensa: el rango ya aguanta más y
+el stop solo salta en caídas que luego se recuperan a menudo.
+
+**Validación (25-nov-2026):** 16 pools de referencia, aperturas de dos años, 7, 30 y 90 días, ±10 % y
+±20 %, con los datos de antes de cada apertura:
+
+| ±10 %, por 5.000 $ | 30 días | 90 días |
+|---|---|---|
+| Salta (stop al salirse), simulado / real | 52 % / 46 % | 74 % / 70 % |
+| P10 real de las aperturas, sin stop → con stop | 3.881 → 4.453 $ | 3.516 → 4.321 $ |
+| Frente a sin stop, año lateral (hasta ago-2025), simulado / real | −45 / −38 $ | −125 / −119 $ |
+| Frente a sin stop, año bajista (desde ago-2025), simulado / real | −29 / +87 $ | −67 / +230 $ |
+| Real dentro del P10–P90 con stop | 82 % | 84 % |
+
+Las veces que salta y el recorte de la cola salen como en la realidad. Lo que cuesta de media depende de
+la tendencia, que el simulador no apuesta: en el año lateral coincidió; en el bajista, el stop ganó. A
+7 días casi nunca compensa (salta poco y cuesta el cambio). Validado hasta 90 días; a 180 la pantalla
+avisa.
+
+---
+
 ## 8 a c. Cubrirlo con un préstamo en Aave
 
 Solo para pares de un activo con una estable (ETH/USDC, BTC/USDC…). La idea: no comprar el ETH que
@@ -823,7 +872,7 @@ xychart-beta
 
 **Lo que NO modela:**
 
-- Reajustar, cerrar antes o poner stop-loss (solo rango fijo).
+- Reajustes y stops más allá de las reglas fijas de sus secciones (recentrar al salirse; cerrar a dólares bajo el borde), ni volver a entrar después del stop.
 - MEV y liquidez *just-in-time* (bots que entran y salen en un bloque y se llevan parte de las comisiones).
 - Cambios bruscos de la liquidez del pool (llegada o salida de grandes LPs).
 - Hechos que no estén en el histórico: un desanclaje de un estable, un hackeo, un cambio de comisión del pool.

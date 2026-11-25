@@ -165,6 +165,13 @@ summary{cursor:pointer;color:var(--text)}
     <div class="tw" style="margin-top:8px"><table id="estTab" style="min-width:900px"></table></div>
   </section>
 
+  <section class="panel" id="outSal" hidden>
+    <h2>¿Y si pones un stop?</h2>
+    <div class="hint">Cada rango sin stop frente a cerrar y pasar todo a dólares la primera hora que el precio cierra por debajo del nivel del stop (pagando la comisión del pool y un gas), en los mismos escenarios. Es un seguro: recorta el escenario malo y, con tendencia neutral, suele costar algo de media. Sube la probabilidad de perder, porque fija pérdidas pequeñas que sin stop a veces se recuperan; lo que evita son las grandes. Validado con aperturas reales de dos años a 7, 30 y 90 días: las veces que salta salen casi exactas y recorta la cola como dice el simulador; lo que cuesta de media depende del año (en el lateral coincidió, en el bajista el stop ganó).</div>
+    <div class="tw" style="margin-top:8px"><table id="salTab" style="min-width:860px"></table></div>
+    <div class="hint" id="salTxt"></div>
+  </section>
+
   <section class="panel" id="outCob" hidden>
     <h2>Cubrirlo con un préstamo en Aave</h2>
     <div id="cobAviso" class="hint" style="font-size:14px"></div>
@@ -284,8 +291,8 @@ function render(d){
       :`etapa: <span class="mut">${esc(d.etapa.nivel)}</span>`):"",
     `gas <b>${d.gas} $</b>`, `cambio inicial <b>${pct(d.comision_cambio,2,false)}</b>`,
     d.aviso?`<span class="neg">${d.aviso}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
-  ["outSum","outFan","outBars","outDes","outTable","outRea","outEst","outCob","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);
-  summary(d); fan(d); bars(d); desglose(d); table(d); reaDraw(d); estDraw(d); cobDraw(d); reco(d.recomendacion||{});
+  ["outSum","outFan","outBars","outDes","outTable","outRea","outEst","outSal","outCob","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);
+  summary(d); fan(d); bars(d); desglose(d); table(d); reaDraw(d); estDraw(d); salDraw(d); cobDraw(d); reco(d.recomendacion||{});
   const sel=$("cmpRango"), prev=sel.value;
   sel.innerHTML=["P10-P90",...ranges.filter(Boolean)].filter((v,i,a)=>a.indexOf(v)===i).map(r=>`<option>${esc(r)}</option>`).join("");
   if(prev&&[...sel.options].some(o=>o.value===prev)) sel.value=prev;
@@ -499,6 +506,26 @@ function estDraw(d){
       <td class="${cls(c.vs_mantener)}">${usd(c.vs_mantener,true)}</td>
       <td>${usd(c.comisiones)}</td><td>${Math.round(c.en_rango*100)} %</td>
       <td class="mut">${c.sale_dia===null?"no se sale":"día "+c.sale_dia.toLocaleString("es-ES",{maximumFractionDigits:1})+" a "+price(c.sale_precio)}</td></tr>`).join("")).join("")+"</tbody>";
+}
+
+function salDraw(d){
+  const sl=d.salida; $("outSal").hidden=!sl;
+  if(!sl) return;
+  $("salTab").innerHTML=`<thead><tr><th>Rango</th><th class="lab">Stop</th><th>Precio del stop</th><th>Salta</th><th>Frente a sin stop<br><span style="font-weight:400">(media)</span></th><th>Valor final<br><span style="font-weight:400">(media)</span></th><th>Escenario malo<br><span style="font-weight:400">(P10)</span></th><th>Muy malo<br><span style="font-weight:400">(P5)</span></th><th>Prob. de perder</th></tr></thead><tbody>`+
+    sl.rangos.map(it=>it.reglas.map((x,j)=>`<tr class="${j===0?"grp":""}"${x.regla===it.sugerido?' style="background:rgba(79,209,139,.08)"':''}>
+      <td class="name">${j===0?esc(it.texto):""}</td>
+      <td class="lab">${x.x===null?"Sin stop":"Stop "+esc(x.regla)}${x.regla===it.sugerido?' <b class="pos">· sugerido</b>':''}</td>
+      <td>${x.precio===null?'<span class="mut">—</span>':price(x.precio)}</td>
+      <td class="mut">${x.x===null?"—":Math.round(x.prob_salta*100)+" %"}</td>
+      <td class="${x.x===null?"mut":cls(x.dif_media)}">${x.x===null?"—":usd(x.dif_media,true)}</td>
+      <td class="${cls(x.valor_media-d.capital)}">${usd(x.valor_media)}</td>
+      <td class="${cls(x.valor_p10-d.capital)}">${usd(x.valor_p10)}</td>
+      <td class="${cls(x.valor_p5-d.capital)}">${usd(x.valor_p5)}</td>
+      <td class="${x.prob_perdida>0.5?"neg":""}">${Math.round(x.prob_perdida*100)} %</td></tr>`).join("")).join("")+"</tbody>";
+  const sug=sl.rangos.filter(it=>it.sugerido);
+  $("salTxt").innerHTML=(sug.length?`Stop sugerido en ${sug.map(it=>`<b>${esc(it.texto)}</b> («${esc(it.sugerido)}»)`).join(", ")}: sube el escenario malo (P10) al menos un 2 % del capital y cuesta de media menos del 1 %.`
+    :"Ningún stop sube el escenario malo un 2 % del capital costando de media menos del 1 %: aquí mejor vigilar y decidir al salirse.")
+    +(sl.validado?"":` <span class="neg">A ${d.dias} días el stop no está validado (solo hasta 90): tómalo como orientación.</span>`);
 }
 
 function cobDraw(d){

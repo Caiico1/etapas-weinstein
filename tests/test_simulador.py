@@ -342,6 +342,7 @@ def test_run_devuelve_media_y_recomendacion(monkeypatch):
         assert r["valor_media"] == pytest.approx(5000 + r["desglose"]["total"])
     assert d["recomendacion"]["veredicto"] in ("favorable", "desfavorable") and d["mejor_ancho"]["texto"]
     assert [f["cobertura"] for f in d["cobertura"]["rangos"][0]["filas"]] == list(S.COBERTURAS)
+    assert [x["regla"] for x in d["salida"]["rangos"][0]["reglas"]] == list(S.SALIDAS)
     json.dumps(d)                                                           # la pantalla lo recibe en JSON
 
 
@@ -476,6 +477,61 @@ def test_recomendacion_da_la_salida_con_el_estres():
     r = S.recomendacion(base)
     t = next(x for x in r["hacer"] if "Ten clara tu salida" in x)
     assert "1.522" in t and "−374 $" in t.replace("-", "−") and "cae un 30 %" in t and "−45 %" in t and "07-01-2026" in t
+
+
+# --- regla de salida (stop) -------------------------------------------------------------------
+
+@pytest.mark.parametrize("pool", [POOL, POOL_INV])
+def test_stop_vende_en_el_borde_si_cae_y_no_salta_si_sube(pool):
+    h = S.features(pool, _walk(pool=pool, n=24 * 60, g0=1e-20, g1=1e-12))
+    paths, info = S._paths_estres(h, 24 * 10, 1.0)
+    j = {x["caso"]: i for i, x in enumerate(info)}
+    rg = S.parse_rango("10", h)
+    sin = S.simulate(h, paths, rg, 5000, 0.05)
+    s0 = S.simulate_salida(h, paths, rg, None, 5000, 0.05)
+    assert np.array_equal(s0.final, sin.final) and not s0.reajustes.any()
+    st = S.simulate_salida(h, paths, rg, 0.0, 5000, 0.05)
+    borde = S.estres(h, 10, [rg])["rangos"][0]["bordes"]["abajo"]["valor"]
+    cae, sube = j["Cae 30 %"], j["Sube 30 %"]
+    assert st.reajustes[cae] == 1 and st.reajustes[sube] == 0
+    assert st.final[cae] == pytest.approx(borde * (1 - h.swap_fee), rel=0.01)      # vendido al cruzar el borde
+    assert st.final[cae] > sin.final[cae] + 500                                    # se ahorra el resto de la caída
+    assert st.final[sube] == sin.final[sube]
+    st10 = S.simulate_salida(h, paths, rg, 0.10, 5000, 0.05)
+    assert st10.final[cae] == pytest.approx(st.final[cae] * 0.9, rel=0.02)          # 10 % más abajo
+
+
+def test_comparar_salidas_sugiere_un_stop_que_sube_el_p10():
+    h = S.features(POOL, _walk(n=24 * 200, vol=0.006, g0=1e-20, g1=1e-12))
+    paths = S.bootstrap(h, 24 * 30, 400)
+    r = S.comparar_salidas(h, 30, [S.parse_rango("5", h)], paths, 5000, 0.05)
+    it = r["rangos"][0]
+    assert [x["regla"] for x in it["reglas"]] == list(S.SALIDAS) and r["validado"]
+    assert it["reglas"][0]["precio"] is None and it["reglas"][1]["precio"] == pytest.approx(S.parse_rango("5", h).lo)
+    assert it["reglas"][1]["prob_salta"] > it["reglas"][3]["prob_salta"] > 0
+    if it["sugerido"]:
+        sg = next(x for x in it["reglas"] if x["regla"] == it["sugerido"])
+        assert sg["valor_p10"] >= it["reglas"][0]["valor_p10"] + 100 and sg["dif_media"] >= -50
+
+
+def test_recomendacion_menciona_el_stop_sugerido():
+    est = {"rangos": [{"texto": "±10%", "bordes": {"abajo": {"precio": 1522, "valor": 4626, "resultado": -374},
+                                                    "arriba": {"precio": 1861, "valor": 5115, "resultado": 115}},
+                       "casos": []}]}
+    fila = lambda regla, x, p10, dif, prec: {"regla": regla, "x": x, "precio": prec, "valor_p10": p10,
+                                              "dif_media": dif, "prob_salta": 0.46}
+    sal = {"rangos": [{"texto": "±10%", "sugerido": "al salirse por abajo",
+                       "reglas": [fila("sin stop", None, 4168, 0, None), fila("al salirse por abajo", 0.0, 4606, -30, 1522)]}]}
+    base = {"capital": 5000, "dias": 30, "par": "ETH/USDC", "nivel_reciente": 1.0, "escala_vol": 1.0,
+            "sin_riesgo": {"nombre": "USDC en Aave base", "valor_final": 5020},
+            "fiabilidad": {"nivel": "alta", "motivos": []},
+            "mejor_ancho": {"texto": "±30%", "vs_media": 50, "es_el_mas_ancho": False},
+            "rangos": [_rg_reco("±10%", 5120, 5060, 40, p10=4300)], "estres": est, "salida": sal}
+    t = next(x for x in S.recomendacion(base)["hacer"] if "Ten clara tu salida" in x)
+    assert "stop al salirse por abajo" in t and "4.168 $" in t and "4.606 $" in t and "46 %" in t
+    sal["rangos"][0]["sugerido"] = None
+    t = next(x for x in S.recomendacion(base)["hacer"] if "Ten clara tu salida" in x)
+    assert "stop automático apenas mejora" in t
 
 
 # --- cobertura con Aave -----------------------------------------------------------------------
