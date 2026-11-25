@@ -314,8 +314,9 @@ class Sim:
 
 
 def simulate(h: History, paths: Paths, rango: Rango, capital: float = 5000.0, gas: float | None = None,
-             diluir: bool = True, abierta: bool = False) -> Sim:
-    """`abierta`: la posición ya existe (vale `capital` hoy): sin gas ni cambio inicial."""
+             diluir: bool = True, abierta: bool = False, cambio: float = 1.0) -> Sim:
+    """`abierta`: la posición ya existe (vale `capital` hoy): sin gas ni cambio inicial. `cambio`: parte
+    del cambio inicial que se paga (con cobertura, el activo prestado no hay que comprarlo)."""
     pool = h.pool
     d1 = 10 ** pool["dec1"]
     gas = 0.0 if abierta else GAS.get(pool["chain"], 0.05) if gas is None else gas
@@ -331,7 +332,7 @@ def simulate(h: History, paths: Paths, rango: Rango, capital: float = 5000.0, ga
     share0 = val(a0u, 0, sp0, u10) / per_l
     stable0, stable1 = pool["symbol0"] in B._STABLE, pool["symbol1"] in B._STABLE
     value = capital - gas
-    swap = 0.0 if abierta else value * h.swap_fee * ((1 - share0) if stable0 else share0 if stable1 else 0.5)
+    swap = 0.0 if abierta else cambio * value * h.swap_fee * ((1 - share0) if stable0 else share0 if stable1 else 0.5)
     costs = gas + swap
     L = (value - swap) / per_l
     a0, a1 = a0u * L, a1u * L
@@ -954,6 +955,25 @@ def recomendacion(res: dict) -> dict:
                     f"{pd.Timestamp(peor['desde']):%d-%m-%Y}), de {_usd(peor['resultado'])}." if peor else ".")
         (hacer if buenos else mejorar).append(txt if buenos else "Si aun así abres: " + txt[0].lower() + txt[1:])
 
+    cb = res.get("cobertura") or {}
+    it = next((x for x in cb.get("rangos", []) if x["texto"] == foco), None)
+    if it and len(it["filas"]) > 1:
+        av, f0 = cb["aave"], it["filas"][0]
+        f1 = max(it["filas"][1:], key=lambda f: f["valor_media"])
+        nombre = "del todo" if f1["cobertura"] >= 1 else f"al {f1['cobertura']:.0%}"
+        cae = lambda f: next((e["resultado"] for e in f.get("estres", []) if e["caso"] == "Cae 30 %"), None)
+        txt = (f"Cubrir {foco} con un préstamo de {av['activo']} en Aave ({nombre}, HF {_num1(cb['hf'])}): de media "
+               f"{_usd(f1['vs_sin_cubrir'])} frente a no cubrirlo, y el escenario malo (P10) pasa de "
+               f"{_usd(f0['valor_p10'] - cap)} a {_usd(f1['valor_p10'] - cap)}")
+        if cae(f0) is not None:
+            txt += f"; si {asset} cae un 30 %, de {_usd(cae(f0))} a {_usd(cae(f1))}"
+        txt += (f". Aun así, frente a dejar el dinero en {av['estable']} en Aave queda en {_usd(f1['vs_sin_riesgo'])}"
+                + (f", y te liquidarían en el {_pct(f1['prob_liquidacion'])} de los escenarios" if f1["prob_liquidacion"] > 0.005
+                   else "") + ".")
+        if not av.get("disponible", True):
+            txt = "Hoy no se puede: " + "; ".join(av["motivos"]) + ". Si Aave lo vuelve a permitir: " + txt[0].lower() + txt[1:]
+        mejorar.append(txt)
+
     mb = res.get("mejor_ancho")
     if mb:
         if mb["vs_media"] > max(vm(r) for r in rs) and not (mb["es_el_mas_ancho"] and mb["vs_media"] <= 0):
@@ -991,6 +1011,164 @@ def comparar_reajustes(h: History, dias: int, rangos: list[Rango], capital: floa
                       "mejor": mejor["regla"] if mejor["dif_media"] > 0.005 * capital else "nunca"})
     return {"rangos": items, "validado": dias <= PLAZO_REAJUSTE_VALIDADO, "escenarios": escenarios,
             "gas": GAS.get(h.pool["chain"], 0.05) if gas is None else gas}
+
+
+# --- cobertura con Aave -----------------------------------------------------------------------------
+#
+# Liquidez cubierta (como aave_backtest.simulate_covered): con el capital C en la estable de un pool
+# activo/estable, se deposita D de la estable en Aave, se pide prestada una parte c del activo que pide
+# el rango y el pool recibe ese activo (el resto se compra) más la estable. Con s = parte del activo en la
+# posición y u = umbral / HF: V = C / (1 + c·s·(1/u − 1)), D = c·s·V / u, deuda = c·s·V. Si el activo cae,
+# la deuda vale menos y compensa lo que pierde la posición; si sube, la deuda crece y el HF baja (riesgo de
+# liquidación). Tipos y parámetros de Aave: los de hoy (MetaProDB), fijos durante el plazo.
+
+COBERTURAS = (0.0, 0.5, 1.0)
+HF_COBERTURA = 2.0                 # perfil de Javier: liquidez cubierta con HF ≥ 2 (aave-estrategias/perfil.md)
+
+
+def aave_hoy(pool: dict) -> dict | None:
+    """Datos de hoy de Aave en la red del pool: la estable como garantía y el activo como deuda.
+    None si el par no es activo/estable o Aave no tiene esas reservas; {"error": …} si no deja pedir."""
+    from . import aave_backtest as AB
+    s0, s1 = pool["symbol0"] in B._STABLE, pool["symbol1"] in B._STABLE
+    if s0 == s1:
+        return None
+    stable, asset = (pool["symbol0"], pool["symbol1"]) if s0 else (pool["symbol1"], pool["symbol0"])
+    try:
+        con = B._connect()
+        try:
+            a_st, n_st = AB._reserve(con, pool["chain"], pool["chain"], stable)
+            a_as, n_as = AB._reserve(con, pool["chain"], pool["chain"], asset)
+            q = """SELECT arg_max(supply_apy, hour), arg_max(borrow_apy, hour), arg_max(liq_threshold, hour),
+                          arg_max(liq_bonus, hour), arg_max(ltv, hour),
+                          arg_max(borrowing AND active AND NOT frozen AND NOT paused, hour), max(hour)
+                   FROM aave_reserve_hour_v WHERE chain = ? AND market = ? AND asset = ?"""
+            st = con.execute(q, [pool["chain"], pool["chain"], a_st]).fetchone()
+            ast = con.execute(q, [pool["chain"], pool["chain"], a_as]).fetchone()
+        finally:
+            con.close()
+    except Exception as e:                                       # noqa: BLE001 (la cobertura es un complemento)
+        return {"error": f"Aave no tiene {stable} y {asset} en {pool['chain']} ({type(e).__name__})"}
+    if not st or st[0] is None or not ast or ast[1] is None:
+        return {"error": f"sin datos de Aave para {stable}/{asset} en {pool['chain']}"}
+    if not st[2]:
+        return {"error": f"{n_st} no cuenta como garantía en Aave {pool['chain']} (umbral 0)"}
+    motivos = []
+    if not st[4]:          # desde el 29-oct-2026 las estables tienen LTV 0 en Ethereum, Base y Arbitrum
+        motivos.append(f"{n_st} tiene LTV 0 en Aave {pool['chain']}: cuenta para no ser liquidado, pero no deja "
+                       "pedir prestado con ella")
+    if not ast[5]:
+        motivos.append(f"Aave {pool['chain']} no deja pedir {n_as} ahora")
+    return {"estable": n_st, "activo": n_as, "apy_garantia": float(st[0]), "apy_prestamo": float(ast[1]),
+            "umbral": float(st[2]), "bonus": float(st[3]), "ltv": float(st[4]), "hora": str(st[6]),
+            "asset_token0": not s0, "disponible": not motivos, "motivos": motivos}
+
+
+def _precio_activo(h: History, sp: np.ndarray, u1: np.ndarray, asset_token0: bool) -> np.ndarray:
+    """Precio del activo en $ en cada punto de los caminos."""
+    if asset_token0:
+        return sp ** 2 * 10 ** (h.pool["dec0"] - h.pool["dec1"]) * u1
+    return u1
+
+
+def hf_historico(h: History, dias: int, asset_token0: bool) -> float:
+    """HF inicial que habría aguantado la mayor subida del activo en cualquier tramo de `dias` del
+    histórico (deuda = activo, garantía = estable; sin intereses): la mayor subida desde el inicio del tramo."""
+    a = np.log(_precio_activo(h, h.df["sqrt_price"].to_numpy(float), h.df["usd1"].to_numpy(float), asset_token0))
+    n = dias * 24 + 1
+    if len(a) <= n:
+        return 1.0
+    fut_max = pd.Series(a[::-1]).rolling(n, min_periods=1).max().to_numpy()[::-1]
+    return float(np.exp(np.max(fut_max - a)))
+
+
+def _cubierta(h: History, paths: Paths, rg: Rango, c: float, capital: float, gas_tx: float, av: dict,
+              hf: float) -> dict:
+    """Pool + préstamo en cada camino (arrays de tamaño S)."""
+    S_, H = paths.sp.shape[0], paths.sp.shape[1] - 1
+    pa = _precio_activo(h, paths.sp, paths.usd1, av["asset_token0"])
+    sp0, u10 = float(paths.sp[0, 0]), float(paths.usd1[0, 0])
+    a0u, a1u = B._amounts(sp0, B._sqrt(rg.tl), B._sqrt(rg.tu))
+    v0, v1 = a0u * sp0 ** 2 * u10, a1u * u10
+    s = (v0 if av["asset_token0"] else v1) / (v0 + v1)
+    u = av["umbral"] / hf
+    V = capital / (1 + c * s * (1 / u - 1))
+    D = c * s * V / u
+    debt0 = c * s * V
+    lp = simulate(h, paths, rg, V, gas_tx, cambio=1 - c)
+    t = np.arange(H + 1) / (24 * 365)
+    g = (1 + av["apy_garantia"]) ** t                       # crecimiento de la garantía
+    b = (1 + av["apy_prestamo"]) ** t                       # crecimiento de la deuda (en unidades)
+    coll = np.full(S_, D)                                   # garantía y deuda «escaladas» (valor al abrir)
+    units = np.full(S_, debt0 / float(pa[0, 0]))
+    liq = np.zeros(S_, bool)
+    perdida_liq = np.zeros(S_)
+    hf_min = np.full(S_, np.inf)
+    if debt0 > 0:
+        for i in range(H + 1):
+            cu, du = coll * g[i], units * b[i] * pa[:, i]
+            hfi = np.where(du > 0, cu * av["umbral"] / np.where(du > 0, du, 1), np.inf)
+            bad = hfi < 1
+            for _ in range(10):                             # liquidaciones de esa hora (como aave_backtest)
+                if not bad.any():
+                    break
+                cf = np.where((hfi < 0.95) | (du < 2000) | (cu < 2000), 1.0, 0.5)
+                repay = np.where(bad, cf * du, 0.0)
+                seize = np.minimum(repay * (1 + av["bonus"]), cu)
+                repay = seize / (1 + av["bonus"])
+                coll = coll - seize / g[i]
+                units = units - repay / (b[i] * pa[:, i])
+                perdida_liq += seize - repay
+                liq |= bad
+                cu, du = coll * g[i], units * b[i] * pa[:, i]
+                hfi = np.where(du > 1e-9, cu * av["umbral"] / np.where(du > 1e-9, du, 1), np.inf)
+                bad = hfi < 1
+            hf_min = np.minimum(hf_min, hfi)
+    gas_aave = 4 * gas_tx if c > 0 else 0.0
+    aave_final = coll * g[-1] - units * b[-1] * pa[:, -1]
+    interes = debt0 * (b[-1] - 1) * pa[:, -1] / float(pa[0, 0])  # aproximado (sin liquidaciones)
+    rend = D * (g[-1] - 1)
+    return {"final": lp.final + aave_final - gas_aave, "V": V, "D": D, "deuda": debt0, "s": s, "lp": lp,
+            "hf_min": hf_min, "liquidada": liq, "perdida_liq": perdida_liq, "interes": interes, "rend": rend,
+            "gas_aave": gas_aave}
+
+
+def cobertura(h: History, dias: int, rangos: list[Rango], paths: Paths, capital: float = 5000,
+              gas: float | None = None, est_paths: Paths | None = None, est_info: list[dict] | None = None,
+              coberturas: tuple = COBERTURAS) -> dict | None:
+    """Cada rango sin cubrir, cubierto a medias y cubierto del todo, en los escenarios de la tabla (y en los
+    de estrés). None si el par no es activo/estable; {"error": …} si Aave no lo permite hoy."""
+    av = aave_hoy(h.pool)
+    if av is None or "error" in av:
+        return av
+    gas_tx = GAS.get(h.pool["chain"], 0.05) if gas is None else gas
+    hf_hist = hf_historico(h, dias, av["asset_token0"])
+    hf = round(max(HF_COBERTURA, math.ceil((hf_hist + 0.1) * 10) / 10), 2)
+    sin_riesgo = capital * (1 + av["apy_garantia"]) ** (dias / 365)
+    out = []
+    for rg in rangos:
+        filas, base, base_est = [], None, None
+        for c in coberturas:
+            r = _cubierta(h, paths, rg, c, capital, gas_tx, av, hf)
+            f = r["final"]
+            base = f if base is None else base
+            fila = {"cobertura": c, "valor_media": float(np.mean(f)), "valor_mediana": float(np.median(f)),
+                    "valor_p10": float(np.percentile(f, 10)), "valor_p90": float(np.percentile(f, 90)),
+                    "vs_sin_cubrir": float(np.mean(f - base)), "vs_sin_riesgo": float(np.mean(f) - sin_riesgo),
+                    "prob_perdida": float(np.mean(f < capital)), "en_pool": r["V"], "deposito": r["D"],
+                    "deuda": r["deuda"], "comisiones": float(np.mean(r["lp"].fees)),
+                    "aave_neto": float(np.mean(r["rend"] - r["interes"])),
+                    "hf_min_p5": float(np.percentile(r["hf_min"], 5)) if c > 0 else None,
+                    "prob_liquidacion": float(np.mean(r["liquidada"])),
+                    "perdida_liq_media": float(np.mean(r["perdida_liq"]))}
+            if est_paths is not None:
+                e = _cubierta(h, est_paths, rg, c, capital, gas_tx, av, hf)
+                base_est = e["final"] if base_est is None else base_est
+                fila["estres"] = [{"caso": inf["caso"], "resultado": float(e["final"][j] - capital),
+                                   "liquidada": bool(e["liquidada"][j])} for j, inf in enumerate(est_info or [])]
+            filas.append(fila)
+        out.append({"texto": rg.texto, "filas": filas})
+    return {"aave": av, "hf": hf, "hf_historico": hf_hist, "sin_riesgo": sin_riesgo, "rangos": out}
 
 
 # --- estrés: ¿y si sale mal? --------------------------------------------------------------------
@@ -1112,6 +1290,8 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
     res["etapa"] = etapa_del_par(h.pool, dias)
     res["reajuste"] = comparar_reajustes(h, dias, rgs, capital, gas, ajuste=ajuste)
     res["estres"] = estres(h, dias, rgs, capital, gas, ajuste=ajuste)
+    ep, ei = _paths_estres(h, dias * 24, ajuste * h.nivel(nivel_dias) * factor_plazo(dias, exponente))
+    res["cobertura"] = cobertura(h, dias, rgs, paths, capital, gas, ep, ei)
     res["recomendacion"] = recomendacion(res)
     return res
 

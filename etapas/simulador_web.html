@@ -165,6 +165,14 @@ summary{cursor:pointer;color:var(--text)}
     <div class="tw" style="margin-top:8px"><table id="estTab" style="min-width:900px"></table></div>
   </section>
 
+  <section class="panel" id="outCob" hidden>
+    <h2>Cubrirlo con un préstamo en Aave</h2>
+    <div id="cobAviso" class="hint" style="font-size:14px"></div>
+    <div class="hint">Con el capital en la estable: una parte se deposita en Aave como garantía, se pide prestado el activo que pide el rango (todo o la mitad) y va al pool con el resto de la estable. Si el activo cae, la deuda vale menos y compensa lo que pierde la posición; si sube, la deuda crece y el factor de salud baja. Mismos escenarios que la tabla, con los tipos de Aave de hoy fijos todo el plazo y liquidación como en Aave V3. HF al abrir: el de tu perfil (≥ 2) o el que habría aguantado la mayor subida del activo del histórico, más 0,1.</div>
+    <div class="tw" style="margin-top:8px"><table id="cobTab" style="min-width:1100px"></table></div>
+    <div class="hint" id="cobTxt"></div>
+  </section>
+
   <section class="panel" id="outOpt" hidden>
     <h2>Buscar el mejor ancho</h2>
     <div class="ranges">
@@ -269,8 +277,8 @@ function render(d){
       :`etapa: <span class="mut">${esc(d.etapa.nivel)}</span>`):"",
     `gas <b>${d.gas} $</b>`, `cambio inicial <b>${pct(d.comision_cambio,2,false)}</b>`,
     d.aviso?`<span class="neg">${d.aviso}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
-  ["outSum","outFan","outBars","outDes","outTable","outRea","outEst","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);
-  summary(d); fan(d); bars(d); desglose(d); table(d); reaDraw(d); estDraw(d); reco(d.recomendacion||{});
+  ["outSum","outFan","outBars","outDes","outTable","outRea","outEst","outCob","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);
+  summary(d); fan(d); bars(d); desglose(d); table(d); reaDraw(d); estDraw(d); cobDraw(d); reco(d.recomendacion||{});
   const sel=$("cmpRango"), prev=sel.value;
   sel.innerHTML=["P10-P90",...ranges.filter(Boolean)].filter((v,i,a)=>a.indexOf(v)===i).map(r=>`<option>${esc(r)}</option>`).join("");
   if(prev&&[...sel.options].some(o=>o.value===prev)) sel.value=prev;
@@ -484,6 +492,29 @@ function estDraw(d){
       <td class="${cls(c.vs_mantener)}">${usd(c.vs_mantener,true)}</td>
       <td>${usd(c.comisiones)}</td><td>${Math.round(c.en_rango*100)} %</td>
       <td class="mut">${c.sale_dia===null?"no se sale":"día "+c.sale_dia.toLocaleString("es-ES",{maximumFractionDigits:1})+" a "+price(c.sale_precio)}</td></tr>`).join("")).join("")+"</tbody>";
+}
+
+function cobDraw(d){
+  const c=d.cobertura; $("outCob").hidden=!c;
+  if(!c) return;
+  if(c.error){$("cobAviso").innerHTML=`<span class="neg">${esc(c.error)}</span>`;$("cobTab").innerHTML="";$("cobTxt").innerHTML="";return;}
+  const a=c.aave, nom={0:"Sin cubrir",0.5:"Cubierto a medias",1:"Cubierto del todo"};
+  $("cobAviso").innerHTML=(a.disponible?"":`<b class="neg">Hoy no se puede abrir: ${esc(a.motivos.join("; "))}.</b> Las cifras dicen si compensaría si Aave lo vuelve a permitir.<br>`)+
+    `${esc(a.estable)} como garantía al ${pct(a.apy_garantia,2,false)}, ${esc(a.activo)} prestado al ${pct(a.apy_prestamo,2,false)} · umbral ${pct(a.umbral,0,false)} · HF al abrir <b>${c.hf.toLocaleString("es-ES",{maximumFractionDigits:2})}</b> (la mayor subida del activo en ${d.dias} días del histórico pedía ${c.hf_historico.toLocaleString("es-ES",{maximumFractionDigits:2})}) · tipos de MetaProDB, ${esc(a.hora.slice(0,16))}.`;
+  const est=n=>`Si ${n}`;
+  $("cobTab").innerHTML=`<thead><tr><th>Rango</th><th class="lab">Cobertura</th><th>Valor final<br><span style="font-weight:400">(media)</span></th><th>P10 – P90</th><th>vs sin cubrir</th><th>vs ${esc(a.estable)} en Aave</th><th>Cae 30 %</th><th>Sube 30 %</th><th>HF mínimo<br><span style="font-weight:400">(5 % peor)</span></th><th>Liquidación</th><th>Pool · garantía · deuda</th></tr></thead><tbody>`+
+    c.rangos.map(it=>it.filas.map((f,j)=>{const e=Object.fromEntries((f.estres||[]).map(x=>[x.caso,x]));
+      const ec=k=>e[k]?`<span class="${cls(e[k].resultado)}">${usd(e[k].resultado,true)}</span>${e[k].liquidada?' <span class="neg">liq.</span>':''}`:"—";
+      return `<tr class="${j===0?"grp":""}"><td class="name">${j===0?esc(it.texto):""}</td><td class="lab">${nom[f.cobertura]||pct(f.cobertura,0,false)}</td>
+      <td class="${cls(f.valor_media-d.capital)}">${usd(f.valor_media)}</td>
+      <td class="mut">${usd(f.valor_p10)} – ${usd(f.valor_p90)}</td>
+      <td class="${f.cobertura?cls(f.vs_sin_cubrir):"mut"}">${f.cobertura?usd(f.vs_sin_cubrir,true):"—"}</td>
+      <td class="${cls(f.vs_sin_riesgo)}">${usd(f.vs_sin_riesgo,true)}</td>
+      <td>${ec("Cae 30 %")}</td><td>${ec("Sube 30 %")}</td>
+      <td>${f.hf_min_p5===null?"—":f.hf_min_p5.toLocaleString("es-ES",{maximumFractionDigits:2})}</td>
+      <td class="${f.prob_liquidacion>0.005?"neg":"mut"}">${f.cobertura?Math.round(f.prob_liquidacion*100)+" %":"—"}</td>
+      <td class="mut">${usd(f.en_pool)} · ${usd(f.deposito)} · ${usd(f.deuda)}</td></tr>`;}).join("")).join("")+"</tbody>";
+  $("cobTxt").innerHTML=`«vs ${esc(a.estable)} en Aave» = frente a dejar todo el capital depositado sin riesgo de precio (${usd(c.sin_riesgo)} al final del plazo). La cobertura reduce el riesgo de precio cerca del precio de hoy; si el precio se sale mucho del rango, la posición se descubre (ver «Sube 30 %»).`;
 }
 
 function niceStep(m){const raw=m/3,p=10**Math.floor(Math.log10(raw)),f=raw/p;return (f<1.5?1:f<3.5?2:f<7.5?5:10)*p;}

@@ -335,10 +335,13 @@ def test_run_devuelve_media_y_recomendacion(monkeypatch):
     monkeypatch.setattr(S, "referencia_sin_riesgo", lambda chain: None)
     monkeypatch.setattr(S, "calibracion_pool", lambda *a, **k: None)
     monkeypatch.setattr(S, "etapa_del_par", lambda pool, dias: None)       # sin red
+    monkeypatch.setattr(S, "aave_hoy", lambda pool: dict(AV))               # sin MetaProDB
     d = S.run("x", "base", ["±5%", "±20%"], dias=14, escenarios=200, h=h)
     for r in d["rangos"]:
         assert r["valor_media"] == pytest.approx(5000 + r["desglose"]["total"])
     assert d["recomendacion"]["veredicto"] in ("favorable", "desfavorable") and d["mejor_ancho"]["texto"]
+    assert [f["cobertura"] for f in d["cobertura"]["rangos"][0]["filas"]] == list(S.COBERTURAS)
+    json.dumps(d)                                                           # la pantalla lo recibe en JSON
 
 
 def test_side_en_precio_mostrado_para_pool_invertido():
@@ -472,3 +475,58 @@ def test_recomendacion_da_la_salida_con_el_estres():
     r = S.recomendacion(base)
     t = next(x for x in r["hacer"] if "Ten clara tu salida" in x)
     assert "1.522" in t and "−374 $" in t.replace("-", "−") and "cae un 30 %" in t and "−45 %" in t and "07-01-2026" in t
+
+
+# --- cobertura con Aave -----------------------------------------------------------------------
+
+AV = {"estable": "USDC", "activo": "WETH", "apy_garantia": 0.04, "apy_prestamo": 0.02, "umbral": 0.78, "bonus": 0.05,
+      "ltv": 0.0, "hora": "2026-11-24 15:00:00", "asset_token0": True, "disponible": False,
+      "motivos": ["USDC tiene LTV 0 en Aave base"]}
+
+
+def test_cobertura_reduce_el_riesgo_de_precio_y_no_cubrir_es_el_pool(monkeypatch):
+    monkeypatch.setattr(S, "aave_hoy", lambda pool: dict(AV))
+    h = S.features(POOL, _walk(n=24 * 60, vol=0.004, g0=1e-20, g1=1e-12))
+    paths = S.bootstrap(h, 24 * 10, 300)
+    rg = S.parse_rango("10", h)
+    ep, ei = S._paths_estres(h, 24 * 10, 1.0)
+    r = S.cobertura(h, 10, [rg], paths, 5000, 0.05, ep, ei)
+    assert r["hf"] >= S.HF_COBERTURA
+    f0, fm, f1 = r["rangos"][0]["filas"]
+    sin = S.simulate(h, paths, rg, 5000, 0.05)
+    assert f0["valor_media"] == pytest.approx(float(np.mean(sin.final))) and f0["deuda"] == 0
+    assert f1["en_pool"] < fm["en_pool"] < f0["en_pool"] and f1["deuda"] > fm["deuda"] > 0
+    assert f1["valor_p90"] - f1["valor_p10"] < fm["valor_p90"] - fm["valor_p10"] < f0["valor_p90"] - f0["valor_p10"]
+    cae = lambda f: next(e["resultado"] for e in f["estres"] if e["caso"] == "Cae 30 %")
+    assert cae(f1) > cae(fm) > cae(f0)
+    # el capital cuadra al abrir: garantía + lo que va al pool sin préstamo = capital
+    assert f1["deposito"] + f1["en_pool"] - f1["deuda"] == pytest.approx(5000)
+
+
+def test_cobertura_liquida_si_el_activo_sube_mucho():
+    h = S.features(POOL, _walk(n=24 * 60, g0=1e-20, g1=1e-12))
+    ep, ei = S._paths_estres(h, 24 * 10, 1.0)
+    r = S._cubierta(h, ep, S.parse_rango("10", h), 1.0, 5000, 0.05, AV, 1.2)   # HF 1,2 y el activo +30 %
+    i = [x["caso"] for x in ei].index("Sube 30 %")
+    assert bool(r["liquidada"][i]) and r["perdida_liq"][i] > 0
+    assert not bool(r["liquidada"][[x["caso"] for x in ei].index("Cae 30 %")])
+
+
+def test_cobertura_no_aplica_a_pares_sin_estable():
+    assert S.aave_hoy({**POOL, "symbol1": "WBTC"}) is None
+
+
+def test_recomendacion_habla_de_la_cobertura_y_de_que_hoy_no_se_puede():
+    filas = [{"cobertura": 0.0, "valor_media": 4891, "valor_p10": 4169, "vs_sin_cubrir": 0, "vs_sin_riesgo": -126,
+              "prob_liquidacion": 0.0, "estres": [{"caso": "Cae 30 %", "resultado": -1344}]},
+             {"cobertura": 1.0, "valor_media": 4935, "valor_p10": 4686, "vs_sin_cubrir": 44, "vs_sin_riesgo": -82,
+              "prob_liquidacion": 0.0, "estres": [{"caso": "Cae 30 %", "resultado": -352}]}]
+    base = {"capital": 5000, "dias": 30, "par": "ETH/USDC", "nivel_reciente": 1.0, "escala_vol": 1.0,
+            "sin_riesgo": {"nombre": "USDC en Aave base", "valor_final": 5020},
+            "fiabilidad": {"nivel": "alta", "motivos": []},
+            "mejor_ancho": {"texto": "±30%", "vs_media": 50, "es_el_mas_ancho": False},
+            "rangos": [_rg_reco("±10%", 5120, 5060, 40, p10=4300)],
+            "cobertura": {"aave": AV, "hf": 2.0, "rangos": [{"texto": "±10%", "filas": filas}]}}
+    t = next(x for x in S.recomendacion(base)["mejorar"] if "Cubrir" in x or "cubrir" in x)
+    assert t.startswith("Hoy no se puede: USDC tiene LTV 0") and "+44 $" in t and "−831 $" in t.replace("-", "−")
+    assert "de −1.344 $ a −352 $" in t.replace("-", "−")

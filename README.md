@@ -479,6 +479,14 @@ del histórico del pool (sus movimientos y comisiones). Da el día y el precio e
 valor de la posición en cada borde (el de abajo, sitio para el stop). No es una previsión: pone la cola
 con nombre y cifra. La Recomendación lo resume en «Ten clara tu salida».
 
+**Cobertura con Aave (`cobertura`, `_cubierta`, `aave_hoy`).** En pares activo/estable, el pool sin
+cubrir, cubierto a medias y del todo (el activo que pide el rango, prestado en Aave con la estable de
+garantía; V = C / (1 + c·s·(1/u − 1)), como `aave_backtest.simulate_covered`), en los escenarios de la tabla
+y en los de estrés, con los tipos de hoy fijos y liquidación de Aave V3. HF = máx(2, HF histórico + 0,1).
+Coincide con `aave_backtest cubierta` a pocos dólares; validado en 10 pools y ~680 aperturas (cubierto del
+todo: sesgo ±4 $, P10–P90 78–84 %). **Desde el 29-oct-2026 USDC y USDT tienen LTV 0 en Aave** (Ethereum, Base,
+Arbitrum): la pantalla lo avisa y las cifras son hipotéticas.
+
 **Valor final medio y Recomendación.** La tabla muestra el valor final en la mediana y en la **media**
 (`valor_media`), porque una posición de liquidez gana poco y a menudo y pierde mucho de vez en cuando: la
 mediana puede salir en verde con la media en rojo. `recomendacion` cierra la página con un veredicto en

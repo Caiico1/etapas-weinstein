@@ -66,7 +66,8 @@ flowchart TB
     G --> E["⑦ Tabla de detalle<br/>todas las cifras + referencia sin riesgo"]
     E --> RJ["¿Y si lo reajustas?<br/>dejarlo fijo frente a recentrarlo al salirse"]
     RJ --> ES["¿Y si sale mal?<br/>casos de estrés y dónde deja de cobrar"]
-    ES --> O["⑧ Buscar el mejor ancho<br/>(botón Buscar)"]
+    ES --> CB["Cubrirlo con un préstamo en Aave<br/>sin cubrir, a medias, del todo"]
+    CB --> O["⑧ Buscar el mejor ancho<br/>(botón Buscar)"]
     O --> P["⑨ Comparar con otros pools del mismo par<br/>(botón Comparar)"]
     P --> Q["⑩ Recomendación<br/>qué haría, qué no y cómo mejorarlo, en lenguaje llano"]
 ```
@@ -452,6 +453,61 @@ tramo real del pool (ETH −45 % desde el 7-ene-2026) sería −2.007 $.
 
 La Recomendación lo resume en **«Ten clara tu salida»**: el precio del stop y lo que perderías en la caída
 del 30 % y en el peor tramo real.
+
+---
+
+## 8 a c. Cubrirlo con un préstamo en Aave
+
+Solo para pares de un activo con una estable (ETH/USDC, BTC/USDC…). La idea: no comprar el ETH que
+pide el rango, sino **pedirlo prestado en Aave**. Si ETH cae, la deuda vale menos y compensa lo que pierde
+la posición.
+
+> **Hoy no se puede abrir.** Desde el 29-oct-2026, USDC y USDT tienen **LTV 0** en Aave (Ethereum, Base
+> y Arbitrum): siguen contando para no ser liquidado, pero no dejan pedir prestado con ellas. Comprobado en
+> la blockchain y en MetaProDB. La sección lo avisa en rojo y sus cifras dicen **si compensaría si Aave lo
+> vuelve a permitir**.
+
+**Cómo se monta.** Con el capital en la estable, una parte se deposita en Aave como garantía, se pide
+prestado el activo que pide el rango y va al pool con el resto de la estable. Tres opciones:
+
+| Opción | Qué es |
+|---|---|
+| **Sin cubrir** | El pool de la tabla, tal cual. |
+| **Cubierto a medias** | Se pide prestada la mitad del activo; la otra mitad se compra. |
+| **Cubierto del todo** | Se pide prestado todo el activo que pide el rango. |
+
+Al cubrir, una parte del capital queda de garantía, así que la posición en el pool es más pequeña (con
+5.000 $ y ±10 %: unos 2.870 $ en el pool, 3.550 $ de garantía y 1.385 $ de deuda).
+
+**Factor de salud al abrir:** el de tu perfil para liquidez cubierta (≥ 2), o el que habría aguantado la
+mayor subida del activo en ese plazo de todo el histórico del pool, más 0,1, el mayor de los dos. Tipos de
+Aave: los de hoy (MetaProDB), fijos todo el plazo. Liquidación como en Aave V3.
+
+| Columna | Qué es |
+|---|---|
+| **Valor final (media), P10–P90** | Como en la tabla. Al cubrir, la horquilla se estrecha mucho: menos riesgo de precio. |
+| **vs sin cubrir** | Lo que gana o pierde de media frente a no cubrirlo. |
+| **vs USDC en Aave** | Frente a dejar todo el capital depositado, sin riesgo de precio. Es la vara que decide. |
+| **Cae 30 % / Sube 30 %** | Los casos de estrés de la sección anterior, ahora con la cobertura. Al subir, la deuda crece: cubierto, se gana menos o se pierde. |
+| **HF mínimo (5 % peor)** | El factor de salud más bajo que se alcanza en el 5 % de escenarios peores. |
+| **Liquidación** | En qué parte de los escenarios te liquidarían. |
+| **Pool · garantía · deuda** | Cómo se reparte el capital al abrir. |
+
+**Comprobado:**
+- **Misma mecánica que el backtest de liquidez cubierta** (`aave_backtest cubierta`): sobre el histórico
+  real coinciden a pocos dólares, también con liquidación.
+- **Validado con 10 pools activo/estable y unas 680 aperturas reales** del último año a 7 y 30 días (con los
+  tipos de Aave de la semana anterior). Cubierto del todo, el valor medio simulado quedó a ±4 $ del real y
+  lo real cayó dentro del P10–P90 el 78–84 % de las veces. Con HF 2 no hubo ninguna liquidación real (el
+  simulador daba un 0,2 %).
+- **Lo que hace la cobertura de verdad:** a 30 días y ±10 %, la dispersión real del resultado bajó de
+  712 $ a 239 $ por 5.000 $. En el último año, que fue bajista para ETH, cubrirse ganó de media unos
+  110 $ en el primer semestre y entre 7 y 24 $ en el segundo. El simulador, que no apuesta por la dirección,
+  esperaba entre −40 $ y 0 $.
+
+**Ejemplo (WETH/USDC de Base, 5.000 $, 30 días, ±20 %, nov-2026):** cubierto del todo, de media +26 $ frente
+a no cubrirlo. El escenario malo (P10) pasa de −682 $ a −247 $, y si ETH cae un 30 %, de −1.213 $ a −302 $.
+Aun así, queda 60 $ por debajo de dejar el dinero en USDC en Aave.
 
 ---
 
