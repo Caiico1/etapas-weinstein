@@ -501,6 +501,17 @@ def test_stop_vende_en_el_borde_si_cae_y_no_salta_si_sube(pool):
     assert st10.final[cae] == pytest.approx(st.final[cae] * 0.9, rel=0.02)          # 10 % más abajo
 
 
+def test_tras_el_stop_los_dolares_rinden_el_apy():
+    h = S.features(POOL, _walk(n=24 * 60, g0=1e-20, g1=1e-12))
+    paths, info = S._paths_estres(h, 24 * 10, 1.0)
+    cae = [x["caso"] for x in info].index("Cae 30 %")
+    rg = S.parse_rango("10", h)
+    a, b = S.simulate_salida(h, paths, rg, 0.0, 5000, 0.05), S.simulate_salida(h, paths, rg, 0.0, 5000, 0.05, apy=0.05)
+    salto = a.reajustes == 1
+    assert (b.final[salto] > a.final[salto]).all() and np.array_equal(b.final[~salto], a.final[~salto])
+    assert b.final[cae] / a.final[cae] < 1.05 ** (10 / 365) + 1e-9           # como mucho el plazo entero
+
+
 def test_comparar_salidas_sugiere_un_stop_que_sube_el_p10():
     h = S.features(POOL, _walk(n=24 * 200, vol=0.006, g0=1e-20, g1=1e-12))
     paths = S.bootstrap(h, 24 * 30, 400)

@@ -484,7 +484,10 @@ dólares la primera hora que el activo cierra al borde de abajo, un 5 % o un 10 
 pool + gas), en los escenarios de la tabla. Se sugiere el que más sube el P10 si lo sube ≥ 2 % del capital
 costando de media < 1 %. Validado (25-nov-2026, 16 pools, dos años, 7/30/90 d): las veces que salta salen
 casi exactas (30 d ±10 %: 52 % simulado, 46 % real) y recorta la cola real (P10 de 3.881 $ a 4.453 $); lo que
-cuesta de media depende del año (en el lateral coincidió, en el bajista el stop ganó).
+cuesta de media depende del año (en el lateral coincidió, en el bajista el stop ganó). Tras salir, los dólares
+rinden la referencia sin riesgo (`apy`). Volver a entrar al regresar el precio al rango se probó y se
+descartó: en la realidad salió peor que el stop solo en todos los casos y perdía la protección de la cola
+(entraba y salía 2–6 veces por plazo).
 
 **Cobertura con Aave (`cobertura`, `_cubierta`, `aave_hoy`).** En pares activo/estable, el pool sin
 cubrir, cubierto a medias y del todo (el activo que pide el rango, prestado en Aave con la estable de

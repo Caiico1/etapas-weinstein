@@ -499,8 +499,8 @@ del 30 % y en el peor tramo real.
 
 Cada rango sin stop frente a tres reglas de salida, en los mismos escenarios que la tabla principal:
 **cerrar y pasar todo a dólares** la primera hora en que el precio del activo cierra por debajo del nivel
-del stop, y quedarse en dólares hasta el final del plazo. Salir paga la comisión del pool sobre lo que no
-es estable y un gas.
+del stop, y quedarse en dólares hasta el final del plazo, **rindiendo lo de la referencia sin riesgo**
+(USDC en Aave, la misma de la tabla). Salir paga la comisión del pool sobre lo que no es estable y un gas.
 
 | Stop | Nivel |
 |---|---|
@@ -540,6 +540,14 @@ Las veces que salta y el recorte de la cola salen como en la realidad. Lo que cu
 la tendencia, que el simulador no apuesta: en el año lateral coincidió; en el bajista, el stop ganó. A
 7 días casi nunca compensa (salta poco y cuesta el cambio). Validado hasta 90 días; a 180 la pantalla
 avisa.
+
+**Volver a entrar después del stop, probado y descartado (25-nov-2026).** Reabrir el mismo rango en cuanto
+el precio vuelve a entrar (con el stop en el borde o un 5 % por debajo) salió en la realidad **peor que el
+stop solo en todos los casos**: a 30 días con ±10 %, −12 $ frente a +29 $ de media; a 90 días, −77 $
+frente a +44 $. Y perdía casi toda la protección: P10 real 4.148 $ frente a 4.453 $. El precio ronda el
+borde y la posición entra y sale una y otra vez (2,1 salidas de media a 30 días, 5,7 a 90), pagando
+cambio y gas en cada vuelta. Si salta el stop, mejor quedarse fuera y decidir con calma si abrir otro
+rango.
 
 ---
 

@@ -458,11 +458,12 @@ SALIDAS = {"sin stop": None, "al salirse por abajo": 0.0, "5 % bajo el borde": 0
 
 
 def simulate_salida(h: History, paths: Paths, rango: Rango, x: float | None, capital: float = 5000.0,
-                    gas: float | None = None, diluir: bool = True, abierta: bool = False) -> Sim:
+                    gas: float | None = None, diluir: bool = True, abierta: bool = False, apy: float = 0.0) -> Sim:
     """Como `simulate`, pero con un stop: la primera hora en que el precio del activo cierra un `x` por
     debajo del borde de abajo, se retira todo (posición + comisiones), se vende a dólares pagando la
     comisión del pool sobre lo que no es estable y un gas, y se queda en dólares. `x` None = sin stop.
-    `Sim.reajustes` = 1 si saltó el stop; `costes_reajuste` = lo que costó salir."""
+    `Sim.reajustes` = 1 si saltó el stop; `costes_reajuste` = lo que costó salir. `apy`: lo que rinden los
+    dólares hasta el final del plazo (la referencia sin riesgo, USDC en Aave)."""
     base = simulate(h, paths, rango, capital, gas, diluir, abierta)
     n = len(base.final)
     if x is None:
@@ -499,7 +500,8 @@ def simulate_salida(h: History, paths: Paths, rango: Rango, x: float | None, cap
     estable0, estable1 = pool["symbol0"] in B._STABLE, pool["symbol1"] in B._STABLE
     no_estable = (v1 if estable0 else v0 if estable1 else v0 + v1)
     coste = gas_tx + no_estable * h.swap_fee
-    final = np.where(hay, v0 + v1 - coste, base.final)
+    resto = (nxt.shape[1] - 1 - t) / 8760                       # años que quedan tras salir
+    final = np.where(hay, (v0 + v1 - coste) * (1 + apy) ** resto, base.final)
     fees = np.where(hay, ((F0[r, t] * s ** 2 + F1[r, t]) * u / d1), base.fees)
     in_r = np.where(hay, part.cumsum(axis=1)[r, t] / max(nxt.shape[1], 1), base.in_range)
     nombre = next((k for k, v in SALIDAS.items() if v == x), f"{x:.0%} bajo el borde")
@@ -507,7 +509,7 @@ def simulate_salida(h: History, paths: Paths, rango: Rango, x: float | None, cap
                hay.astype(float), np.where(hay, coste, 0.0), nombre)
 
 
-CERCA_STOP = 0.03                  # «cerca del stop»: a menos de un 3 % del precio del stop
+CERCA_STOP = 0.03                 # «cerca del stop»: a menos de un 3 % del precio del stop
 
 
 def nivel_stop(pool: dict, tl: int, tu: int, x: float) -> dict:
@@ -533,11 +535,11 @@ def estado_stop(tick: float, nivel: dict) -> str:
 
 
 def salidas(h: History, paths: Paths, rango: Rango, capital: float = 5000.0, gas: float | None = None,
-            abierta: bool = False, reglas: dict | None = None) -> list[dict]:
+            abierta: bool = False, reglas: dict | None = None, apy: float = 0.0) -> list[dict]:
     """Cada stop frente a no poner ninguno, en los mismos escenarios (en $)."""
     out, fijo = [], None
     for nombre, x in (reglas or SALIDAS).items():
-        s = simulate_salida(h, paths, rango, x, capital, gas, abierta=abierta)
+        s = simulate_salida(h, paths, rango, x, capital, gas, abierta=abierta, apy=apy)
         fijo = s.final if fijo is None else fijo
         out.append({"regla": nombre, "x": x, "dif_media": float(np.mean(s.final - fijo)),
                     "prob_salta": float(np.mean(s.reajustes)),
@@ -553,26 +555,30 @@ def salidas(h: History, paths: Paths, rango: Rango, capital: float = 5000.0, gas
 # los escenarios de la tabla principal): las veces que salta el stop salen casi exactas (30 d ±10 % «al
 # salirse por abajo»: 52 % simulado frente a 46 % real; 90 d: 74 % frente a 70 %), el P10–P90 con stop
 # recoge el 77–88 % y el stop recorta la cola real como dice el simulador (30 d ±10 %: P10 real de 3.881 $
-# a 4.453 $ por 5.000 $). Lo que cuesta de media depende de la tendencia, que el simulador no apuesta: en
+# a 4.453 $ por 5.000 $). Tras salir, los dólares rinden la referencia sin riesgo (USDC en Aave).
+# Volver a entrar cuando el precio regresa al rango, probado y descartado (25-nov-2026, mismas aperturas): en
+# la realidad salió peor que el stop solo en todos los casos (30 d ±10 %: −12 $ frente a +29 $; 90 d: −77 $
+# frente a +44 $) y perdía casi toda la protección de la cola (P10 real 4.148 $ frente a 4.453 $): entra y
+# sale una y otra vez (2,1 salidas de media a 30 días, 5,7 a 90) pagando cambio y gas en cada vuelta. Lo que cuesta de media depende de la tendencia, que el simulador no apuesta: en
 # el año lateral (hasta ago-2025) coincidió (30 d −38 $ real, −45 $ simulado; 90 d −119 $ y −125 $), en el
 # bajista (desde ago-2025) el stop ganó (+87 $ y +230 $). A 7 días casi nunca compensa.
 PLAZO_SALIDA_VALIDADO = 90
 
 
 def comparar_salidas(h: History, dias: int, rangos: list[Rango], paths: Paths, capital: float = 5000,
-                     gas: float | None = None, abierta: bool = False) -> dict:
+                     gas: float | None = None, abierta: bool = False, apy: float = 0.0) -> dict:
     """Para cada rango, sin stop frente a cada regla de SALIDAS en los escenarios principales. Se sugiere
     el stop que más sube el P10 si lo sube al menos un 2 % del capital y cuesta de media menos del 1 %."""
     items = []
     for rg in rangos:
-        tabla = salidas(h, paths, rg, capital, gas, abierta)
+        tabla = salidas(h, paths, rg, capital, gas, abierta, apy=apy)
         for x in tabla:
             x["precio"] = None if x["x"] is None else rg.lo * (1 - x["x"])
         p10 = tabla[0]["valor_p10"]
         ok = [x for x in tabla[1:] if x["valor_p10"] - p10 >= 0.02 * capital and x["dif_media"] >= -0.01 * capital]
         items.append({"texto": rg.texto, "reglas": tabla,
                       "sugerido": max(ok, key=lambda x: x["valor_p10"])["regla"] if ok else None})
-    return {"rangos": items, "validado": dias <= PLAZO_SALIDA_VALIDADO}
+    return {"rangos": items, "validado": dias <= PLAZO_SALIDA_VALIDADO, "apy": apy}
 
 
 # Escenarios para comparar reglas de reajuste. Validado el 24-nov-2026 (16 pools de referencia, 1.113
@@ -1435,7 +1441,7 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
     res["etapa"] = etapa_del_par(h.pool, dias)
     res["reajuste"] = comparar_reajustes(h, dias, rgs, capital, gas, ajuste=ajuste)
     res["estres"] = estres(h, dias, rgs, capital, gas, ajuste=ajuste)
-    res["salida"] = comparar_salidas(h, dias, rgs, paths, capital, gas)
+    res["salida"] = comparar_salidas(h, dias, rgs, paths, capital, gas, apy=ref["apy"] if ref else 0.0)
     ep, ei = _paths_estres(h, dias * 24, ajuste * h.nivel(nivel_dias) * factor_plazo(dias, exponente))
     res["cobertura"] = cobertura(h, dias, rgs, paths, capital, gas, ep, ei)
     res["recomendacion"] = recomendacion(res)
