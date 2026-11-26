@@ -155,7 +155,7 @@ contaminadas por las comisiones fantasma, que aparecían a la vez en lo simulado
   | Grandes y limpios (WETH/USDC, WBTC/USDT, LINK…) | ×0,77–0,95 (MetaProDB mide lo que cobra un LP pasivo; Revert suma también a los LP *just-in-time*: el factor de ajuste de comisiones ya lo recoge) |
   | Pares pegados, tal cual | ×20–270 (tBTC/WBTC ×22, wstETH/WETH ×38, USDC/USDT ×270) |
   | Pares pegados, sin las horas pico | ×0,8–1,3 |
-  | Todos (141 pools con dato) | mediana ×0,92; 70 % dentro de ×0,67–1,5; 13 % fuera de ×0,5–2, sobre todo pools v4 |
+  | Todos (163 pools con dato) | mediana ×0,94; 67 % dentro de ×0,67–1,5; 16 % fuera de ×0,5–2, sobre todo pools v4 |
 
   El contraste entra en el **semáforo**: fuera de ×0,5–2, fiabilidad baja («sus comisiones no son
   fiables»); fuera de ×0,67–1,5, media. Se guarda en `out/contraste_revert.json` y lo refresca la tarea

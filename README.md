@@ -548,7 +548,7 @@ escenarios. `History.concentracion()` mide qué parte de las comisiones cae en e
 encima de `MAX_CONCENTRACION` (0,30), `quitar_picos` anula las horas de más de 1.000 × la mediana.
 `etapas/contraste_revert.py` compara las comisiones de los LP del último año según Revert (`discover_pools`,
 eventos propios) con las de MetaProDB ya limpias: grandes ×0,77–0,95 (Revert suma los LP just-in-time),
-pegados ×20–270 tal cual y ×0,8–1,3 sin picos; 141 pools, mediana ×0,92, 13 % fuera de ×0,5–2 (sobre todo
+pegados ×20–270 tal cual y ×0,8–1,3 sin picos; 163 pools, mediana ×0,94, 16 % fuera de ×0,5–2 (sobre todo
 v4). Va al semáforo (fuera de ×0,5–2 baja; de ×0,67–1,5 media), se guarda en `out/contraste_revert.json` y lo
 refresca `simulador_aviso` cada mes. Pruebas en `tests/test_contraste_revert.py`.
 
