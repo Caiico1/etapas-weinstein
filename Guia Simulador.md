@@ -111,25 +111,26 @@ simulador:
 el precio, y el simulador no lo predice. En la validación, ordenar por resultado total no acertó más que el
 azar (correlación ≈ 0). Ordenar por «vs mantener» algo ayuda, poco:
 
-**Validación (26-nov-2026, con los datos limpios):** 56 pools, 53 fechas cada 14 días de los dos últimos
-años, a 30 días, con datos solo de antes de cada fecha y el resultado real del mejor ancho de cada pool:
+**Validación (26-nov-2026, con los datos corregidos y comprobados contra Revert):** 61 pools, 53 fechas
+cada 14 días de los dos últimos años, a 30 días, con datos solo de antes de cada fecha y el resultado real
+del mejor ancho de cada pool:
 
 | Por 5.000 $ a 30 días, «vs mantener» real | Ranking del simulador | Ordenar por comisiones/TVL de 7 días |
 |---|---|---|
-| Los 10 primeros | **0 $** | −9 $ |
-| Todos (media) | −17 $ | −17 $ |
-| Los 10 últimos | −19 $ | −27 $ |
-| Fechas en que los 10 primeros ganan a la media | **68 %** (69 % y 67 % cada año) | 62 % |
-| Solo pools con TVL ≥ 2 M$: los 10 primeros / la media | −14 / −21 $ (55 %) | −13 / −21 $ (59 %) |
+| Los 10 primeros | **−10 $** | −17 $ |
+| Todos (media) | −23 $ | −23 $ |
+| Los 10 últimos | −39 $ | −36 $ |
+| Fechas en que los 10 primeros ganan a la media | **66 %** | 60 % |
+| Solo pools con TVL ≥ 2 M$: los 10 primeros / la media | **−11 / −24 $ (70 %; 69 % y 70 % cada año)** | −26 / −24 $ (53 %) |
 
-Por quintiles del ranking solo se separa el primero (−18, −21, −26, −16 y 0 $). **Lectura honesta:** en
-estos dos años, ser LP perdió de media 17 $ al mes por cada 5.000 $ frente a guardar los tokens; los
-primeros del ranking quedaron en tablas. **Sirve para no perder frente a mantener, no para encontrar pools
-que ganen.**
+Por quintiles del ranking, lo real sube con la puntuación: −41, −27, −24, −14 y −8 $. **Lectura honesta:**
+en estos dos años, ser LP perdió de media 23 $ al mes por cada 5.000 $ frente a guardar los tokens, y ni los
+mejores del ranking ganaron de media. El ranking sirve para **perder menos** (unos 13 $ al mes por cada
+5.000 $ frente a la media), no para encontrar pools que ganen. Ordenar por las comisiones recientes no lo
+consigue, porque los pools que más cobran suelen ser los que más pérdida impermanente tienen.
 
-Una primera validación, con los datos sin limpiar, daba +14 $ a los 10 primeros. Esa ventaja venía de
-pares «pegados» (wstETH/WETH, tBTC/WBTC…) cuyas comisiones fantasma (abajo) estaban a la vez en lo simulado y
-en lo «real».
+Las validaciones anteriores (+14 $ con los datos sin limpiar, 0 $ quitando los pares pegados) estaban
+contaminadas por las comisiones fantasma, que aparecían a la vez en lo simulado y en lo «real».
 
 **Datos de MetaProDB que se limpian o excluyen (26-nov-2026):**
 
@@ -142,7 +143,23 @@ en lo «real».
   comisiones reúne el 3,5–10 % del total; en los pares pegados al 0,01 %, el 30–93 %. Son excursiones del
   precio, dentro de la hora, a ticks casi vacíos: `feeGrowthGlobal` se dispara (wstETH/WETH de Arbitrum,
   18-abr-2026 18:00: 595.592 $ de comisiones y 7.941 M$ de volumen con 0,9 M$ de TVL), pero un LP con un
-  rango normal no las cobra. Por encima del 30 %, fiabilidad **baja** (sección 5 b) y fuera del ranking.
+  rango normal no las cobra. En esos pools (más del 30 %) el simulador **anula las horas con más de 1.000
+  veces la mediana** (`quitar_picos`) y avisa en el semáforo (fiabilidad media como mínimo).
+- **Contraste con Revert, la verdad externa (26-nov-2026).** Todas las validaciones comparan lo simulado
+  con un replay hecho con los mismos datos de MetaProDB: si los datos están mal, no lo ven. Por eso se
+  comparan las comisiones de los LP de cada pool en el último año según Revert (calculadas con sus propios
+  eventos) con las de MetaProDB en la misma ventana:
+
+  | Pools | MetaProDB ÷ Revert |
+  |---|---|
+  | Grandes y limpios (WETH/USDC, WBTC/USDT, LINK…) | ×0,77–0,95 (MetaProDB mide lo que cobra un LP pasivo; Revert suma también a los LP *just-in-time*: el factor de ajuste de comisiones ya lo recoge) |
+  | Pares pegados, tal cual | ×20–270 (tBTC/WBTC ×22, wstETH/WETH ×38, USDC/USDT ×270) |
+  | Pares pegados, sin las horas pico | ×0,8–1,3 |
+  | Todos (141 pools con dato) | mediana ×0,92; 70 % dentro de ×0,67–1,5; 13 % fuera de ×0,5–2, sobre todo pools v4 |
+
+  El contraste entra en el **semáforo**: fuera de ×0,5–2, fiabilidad baja («sus comisiones no son
+  fiables»); fuera de ×0,67–1,5, media. Se guarda en `out/contraste_revert.json` y lo refresca la tarea
+  mensual de calibración. Desde la consola: `python -m etapas.contraste_revert`.
 - **Datos sospechosos que queden:** el ranking también excluye los pools cuyo mejor rango cobraría más de un
   15 % al mes o cuyo «vs mantener» supera el capital.
 
@@ -325,8 +342,8 @@ plazo**. Debajo, en gris, aparecen los motivos (⚠ en contra, ✓ a favor):
 | Nivel | Cuándo |
 |---|---|
 | 🟢 **Alta** | Pool como los validados (≥ 1 año de histórico y TVL > 2 M$), plazo de hasta 90 días y, si el pool está en la calibración mensual, con un resultado razonable (comisiones reales entre ×0,75 y ×1,33 de las simuladas y al menos el 60 % de los casos reales dentro del P10–P90). |
-| 🟡 **Media** | Algo se sale de lo validado: entre 180 días y 1 año de histórico, TVL de 0,5 a 2 M$, plazo de 180 días, o su calibración algo desviada. |
-| 🔴 **Baja** | Menos de 180 días de histórico, TVL < 0,5 M$, comisiones anómalas en MetaProDB o concentradas en unas pocas horas (más del 30 % en el 0,1 % de horas, ver sección 2 a), o su calibración muy desviada (comisiones fuera de ×0,5–×2 o menos del 40 % dentro del P10–P90). |
+| 🟡 **Media** | Algo se sale de lo validado: comisiones de MetaProDB a ×0,5–0,67 o ×1,5–2 de las de Revert, horas de comisiones fantasma anuladas, entre 180 días y 1 año de histórico, TVL de 0,5 a 2 M$, plazo de 180 días, o su calibración algo desviada. |
+| 🔴 **Baja** | Menos de 180 días de histórico, TVL < 0,5 M$, comisiones anómalas en MetaProDB o que no cuadran con Revert (fuera de ×0,5–2, ver sección 2 a), o su calibración muy desviada (comisiones fuera de ×0,5–×2 o menos del 40 % dentro del P10–P90). |
 
 **¿Y los pools con poco histórico? (probado, nov-2026).** Se probó completar el histórico de un pool joven
 con los días que le faltan de otro pool del mismo par: los movimientos del precio en dólares y el ritmo de

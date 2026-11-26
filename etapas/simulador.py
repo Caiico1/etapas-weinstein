@@ -118,6 +118,8 @@ class History:
     swap_fee: float          # comisión del pool (fracción) para el cambio al abrir
     hour_now: pd.Timestamp
     tvl_now: float = 0.0     # TVL de la última hora con dato ($)
+    picos_quitados: int = 0  # horas de comisiones fantasma anuladas (ver quitar_picos)
+    concentracion_bruta: float | None = None   # concentración antes de quitarlas
 
     def vol_reciente(self, dias: int = 90, paso: int = 4) -> float:
         """Volatilidad de los últimos `dias` frente a la de todo el histórico, con rendimientos de `paso`
@@ -162,10 +164,31 @@ def features(pool: dict, df: pd.DataFrame) -> History:
     if fee > 0.1:                                  # comisión dinámica sin dato: la del pool nominal no sirve
         fee = 0.003
     tvl = df["tvl_usd"].dropna() if "tvl_usd" in df else pd.Series(dtype=float)
-    return History(pool, df, 2 * np.log(sp[1:] / sp[:-1]), np.log(u1[1:] / u1[:-1]),
-                   g0 * sp[1:], g1 / sp[1:], float(sp[-1]), float(u1[-1]),
-                   float(np.median(recent)) if len(recent) else 0.0, fee, df["hour"].iloc[-1],
-                   float(tvl.iloc[-1]) if len(tvl) else 0.0)
+    h = History(pool, df, 2 * np.log(sp[1:] / sp[:-1]), np.log(u1[1:] / u1[:-1]),
+                g0 * sp[1:], g1 / sp[1:], float(sp[-1]), float(u1[-1]),
+                float(np.median(recent)) if len(recent) else 0.0, fee, df["hour"].iloc[-1],
+                float(tvl.iloc[-1]) if len(tvl) else 0.0)
+    return quitar_picos(h)
+
+
+def quitar_picos(h: History) -> History:
+    """En los pools con las comisiones concentradas en unas pocas horas (concentración > MAX_CONCENTRACION),
+    anula las horas con más de PICO_COMISIONES veces la mediana: son excursiones del precio a ticks casi
+    vacíos que un LP con un rango normal no cobra. Comprobado contra Revert (26-nov-2026, comisiones de los LP
+    del último año calculadas con sus eventos): MetaProDB daba ×22 en tBTC/WBTC, ×38 en wstETH/WETH de
+    Ethereum, ×270 en USDC/USDT; sin esas horas, ×0,8–1,3. En los pools normales no se toca nada: allí el
+    recorte quitaba comisiones legítimas (WBTC/WETH 0,3 % de Ethereum se quedaba en ×0,15 de Revert)."""
+    c = h.concentracion()
+    if c <= MAX_CONCENTRACION:
+        return h
+    y = np.nan_to_num(h.q0 + h.q1)
+    pos = y[y > 0]
+    if not len(pos):
+        return h
+    k = y > PICO_COMISIONES * float(np.median(pos))
+    h.q0, h.q1 = np.where(k, 0.0, h.q0), np.where(k, 0.0, h.q1)
+    h.picos_quitados, h.concentracion_bruta = int(k.sum()), c
+    return h
 
 
 def load(key: str, chain: str | None = None, historia: int = HISTORIA_DIAS, hasta: str | None = None) -> History:
@@ -894,9 +917,10 @@ def calibracion_pool(pool_id: str, chain: str, dias: int, log: Path | None = Non
 # 18-abr-2026 18:00: 595.592 $ de comisiones con 0,9 M$ de TVL; MetaProDB la marca «suspect»). Por encima de
 # este umbral la fiabilidad es baja y el ranking excluye el pool.
 MAX_CONCENTRACION = 0.30
+PICO_COMISIONES = 1000             # en esos pools, horas con más de 1.000 × la mediana: fuera (quitar_picos)
 
 
-def fiabilidad(h: History, dias: int, calib: dict | None = None) -> dict:
+def fiabilidad(h: History, dias: int, calib: dict | None = None, revert: dict | None | bool = True) -> dict:
     """Semáforo: alta / media / baja, con los motivos. Se basa en lo validado (pools con ≥ 1 año y
     TVL > 2 M$; 7–180 días) y, si existe, en la calibración mensual del propio pool."""
     from .simulador_aviso import ANOMALOS, MIN_TVL
@@ -915,6 +939,10 @@ def fiabilidad(h: History, dias: int, calib: dict | None = None) -> dict:
         malos.append((0, f"{hist:.0f} días de histórico: con 180–365 acertó igual que con 730 en el último año, "
                          "pero cubre menos rachas distintas del mercado"))
     conc = h.concentracion()
+    if h.picos_quitados:
+        malos.append((0, f"se anularon {h.picos_quitados} horas de comisiones fantasma (el "
+                         f"{h.concentracion_bruta * 100:.0f} % de lo que daba MetaProDB caía en el 0,1 % de horas; sin "
+                         "ellas cuadra con Revert): sus comisiones son las menos seguras"))
     if conc > MAX_CONCENTRACION:
         malos.append((1, f"el {conc * 100:.0f} % de sus comisiones del histórico está en el 0,1 % de horas más altas: "
                          "son excursiones del precio, dentro de la hora, a ticks casi vacíos, que un LP de un rango "
@@ -923,6 +951,20 @@ def fiabilidad(h: History, dias: int, calib: dict | None = None) -> dict:
         malos.append((1, f"TVL de {h.tvl_now / 1e6:.2f} M$: comisiones muy ruidosas"))
     elif h.tvl_now < MIN_TVL:
         malos.append((0, f"TVL de {h.tvl_now / 1e6:.1f} M$ (lo validado es > {MIN_TVL / 1e6:.0f} M$)"))
+    if revert is True:                             # el contraste guardado con Revert (contraste_revert)
+        from .contraste_revert import de_pool
+        revert = de_pool(pool["pool_id"], pool["chain"])
+    if revert:
+        from .contraste_revert import BANDA_BAJA, BANDA_MEDIA
+        r = revert["ratio"]
+        txt = (f"sus comisiones en MetaProDB son ×{r:.2f} de las que mide Revert en el último año"
+               + (" (ya sin las horas fantasma)" if revert.get("picos_quitados") else "")).replace(".", ",")
+        if not BANDA_BAJA[0] <= r <= BANDA_BAJA[1]:
+            malos.append((1, txt + ": no son fiables"))
+        elif not BANDA_MEDIA[0] <= r <= BANDA_MEDIA[1]:
+            malos.append((0, txt))
+        else:
+            buenos.append(txt)
     if dias > 90:
         malos.append((0, f"a {dias} días el error por pool es mayor (en comisiones, la mitad de los pools se "
                          "desvía más de un 20 %)"))

@@ -9,16 +9,18 @@ mantener» medio: lo que añade la posición (comisiones − pérdida impermanen
 los mismos tokens. También da el valor final medio y el escenario malo frente a la referencia sin riesgo,
 pero NO ordena por eso: el simulador no predice hacia dónde irá el precio.
 
-Validado el 26-nov-2026, con los datos limpios (sin horas de pool vacío ni pools de comisiones concentradas;
-56 pools, 53 fechas cada 14 días de dos años, a 30 días, datos solo del pasado):
-  - por «vs mantener», los 10 primeros quedaron de verdad en 0 $ por 5.000 $ frente a −17 $ de media de todos
-    (−19 $ los 10 últimos) y superaron a la media en el 68 % de las fechas (69 % y 67 % en cada año); por
-    quintiles solo se separa el primero (−18, −21, −26, −16 y 0 $). Con TVL ≥ 2 M$ la ventaja casi
-    desaparece (−14 $ frente a −21 $, 55 % de las fechas). Ayuda a no perder frente a mantener, no a ganar;
-  - ordenar por comisiones/TVL de los últimos 7 días da algo parecido (−9 $, 62 %);
+Validado el 26-nov-2026 con los datos corregidos (sin horas de pool vacío y sin las horas de comisiones fantasma
+de los pares pegados, comprobadas contra Revert; 61 pools, 53 fechas cada 14 días de dos años, a 30 días, datos
+solo del pasado):
+  - por «vs mantener», los 10 primeros quedaron de verdad en −10 $ por 5.000 $ frente a −23 $ de media (−39 $
+    los 10 últimos) y superaron a la media en el 66 % de las fechas; con TVL ≥ 2 M$, −11 $ frente a −24 $ y el
+    70 % de las fechas (69 % y 70 % cada año). Por quintiles, lo real sube con la puntuación: −41, −27, −24,
+    −14 y −8 $. Ayuda a perder menos frente a mantener; ninguno gana de media;
+  - ordenar por comisiones/TVL de los últimos 7 días no lo consigue (−17 $; con TVL ≥ 2 M$, −26 $, peor que la
+    media);
   - por resultado total (con el precio) ninguno ordena: correlación ≈ 0.
-  (Con los datos sin limpiar salía +14 $ frente a −13 $: la ventaja venía de pares pegados cuyas comisiones
-  fantasma estaban a la vez en lo simulado y en lo «real».)
+  (Con los datos sin corregir salía +14 $ frente a −13 $: la ventaja venía de comisiones fantasma que estaban a
+  la vez en lo simulado y en lo «real».)
 Se excluyen los de fiabilidad baja (entre ellos, los de comisiones concentradas en unas pocas horas, ver
 `simulador.MAX_CONCENTRACION`) y, como «datos sospechosos», los que cobrarían > 15 % al mes o cuyo «vs
 mantener» supera el capital.

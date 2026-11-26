@@ -303,6 +303,14 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--simular", action="store_true", help="no tocar GitHub")
     a = ap.parse_args(argv)
+    try:                                   # contraste de comisiones con Revert (lo usa el semáforo de fiabilidad)
+        from . import contraste_revert as CR
+        r = CR.calcular()
+        CR.guardar(r)
+        s = CR.resumen(r)
+        print(f"contraste con Revert: {s['pools']} pools, MetaProDB ÷ Revert ×{s['mediana']:.2f} (mediana)")
+    except Exception as e:                 # noqa: BLE001 (sin red, sigue la calibración)
+        print(f"contraste con Revert no disponible: {type(e).__name__}: {e}", file=sys.stderr)
     try:
         print(run(None if a.simular else GitHub(), a.simular))
     except subprocess.CalledProcessError as e:

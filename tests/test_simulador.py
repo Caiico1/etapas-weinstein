@@ -600,16 +600,28 @@ def test_recomendacion_habla_de_la_cobertura_y_de_que_hoy_no_se_puede():
     assert "de −1.344 $ a −352 $" in t.replace("-", "−")
 
 
-def test_fiabilidad_baja_si_las_comisiones_se_concentran_en_unas_horas(monkeypatch):
+def test_picos_de_comisiones_se_quitan_en_pools_concentrados(monkeypatch):
     df = _walk(n=24 * 400, g0=1e-20, g1=1e-12)
     df["tvl_usd"] = 5e6
     h = S.features(POOL, df)
-    assert h.concentracion() < 0.05 and S.fiabilidad(h, 30)["nivel"] != "baja"
+    assert h.picos_quitados == 0 and h.concentracion() < 0.05
+    assert S.fiabilidad(h, 30, revert=None)["nivel"] == "alta"
     df.loc[df.index[[100, 2000, 5000]], "fee_growth1"] *= 1e5               # tres horas con comisiones disparadas
     h2 = S.features(POOL, df)
-    f = S.fiabilidad(h2, 30)
-    assert h2.concentracion() > S.MAX_CONCENTRACION and f["nivel"] == "baja"
-    assert any("0,1 % de horas" in m for m in f["motivos"])
+    assert h2.picos_quitados == 3 and h2.concentracion_bruta > S.MAX_CONCENTRACION
+    assert h2.concentracion() < 0.05 and np.allclose((h2.q0 + h2.q1).sum(), (h.q0 + h.q1).sum(), rtol=0.01)
+    f = S.fiabilidad(h2, 30, revert=None)
+    assert f["nivel"] == "media" and any("comisiones fantasma" in m for m in f["motivos"])
+
+
+def test_fiabilidad_con_el_contraste_de_revert():
+    df = _walk(n=24 * 400, g0=1e-20, g1=1e-12)
+    df["tvl_usd"] = 5e6
+    h = S.features(POOL, df)
+    nivel = lambda r: S.fiabilidad(h, 30, revert={"ratio": r})
+    assert nivel(0.9)["nivel"] == "alta" and "×0,90" in nivel(0.9)["a_favor"][0]
+    assert nivel(1.6)["nivel"] == "media" and nivel(0.6)["nivel"] == "media"
+    assert nivel(3.0)["nivel"] == "baja" and "no son fiables" in nivel(3.0)["motivos"][0]
 
 
 def test_load_hours_quita_las_horas_con_el_pool_vacio(monkeypatch):
