@@ -39,6 +39,8 @@ import pandas as pd
 DB_PATH = os.environ.get("METAPRO_DB", r"D:\MetaProDB\metapro.duckdb")
 TICK_BASE = 1.0001
 MIN_TICK, MAX_TICK = -887272, 887272
+EMPTY_TICK = 887000                # a partir de aquí, el pool está vacío (precio en el límite)
+MIN_TVL_POOL = 1000                # v3: con menos TVL, el pool está vacío a efectos de simular
 
 
 class BacktestError(RuntimeError):
@@ -129,11 +131,21 @@ def load_hours(key: str, chain: str | None = None, start: str | None = None, end
     finally:
         con.close()
     df = df.dropna(subset=["usd0", "usd1"]).reset_index(drop=True)
+    # Horas con el pool vacío: liquidez activa 0, el precio en el tick mínimo o máximo, o (v3) menos de 1.000 $
+    # de TVL. Pasa al nacer el pool o cuando un gestor retira toda la liquidez y la vuelve a poner. Es real en la
+    # cadena, pero un LP no estaría ahí: el precio salta a ±887.272 ticks (×e^±78) y vuelve, y con esas horas
+    # los escenarios del simulador explotaban (SKY, VIRTUAL, PENDLE…). Se quitan; si el vacío dura más de
+    # 6 horas cuenta como hueco (abajo). 26-nov-2026: 175.745 horas en 84 pools.
+    vacio = ((df["liquidity"].fillna(1) <= 0) | (df["tick"].abs() >= EMPTY_TICK)
+             | (df["tvl_usd"].notna() & (df["tvl_usd"] < MIN_TVL_POOL)))
+    if vacio.any():
+        pool["horas_pool_vacio"] = int(vacio.sum())
+        df = df[~vacio].reset_index(drop=True)
     # Mientras se carga el histórico puede haber huecos: se usa el tramo continuo más reciente.
     gaps = df.index[df["hour"].diff() > pd.Timedelta(hours=6)]
     if len(gaps):
         cut = gaps[-1]
-        pool["aviso"] = (f"hay huecos en el histórico; se usa el tramo continuo desde "
+        pool["aviso"] = (f"hay huecos en el histórico (o horas con el pool vacío); se usa el tramo continuo desde "
                          f"{df['hour'].iloc[cut]:%Y-%m-%d %H:00} (descartadas {cut} horas anteriores)")
         df = df.iloc[cut:]
     if len(df) < 48:

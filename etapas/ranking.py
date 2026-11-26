@@ -9,15 +9,19 @@ mantener» medio: lo que añade la posición (comisiones − pérdida impermanen
 los mismos tokens. También da el valor final medio y el escenario malo frente a la referencia sin riesgo,
 pero NO ordena por eso: el simulador no predice hacia dónde irá el precio.
 
-Validado el 25-nov-2026 (63 pools, 53 fechas cada 14 días de dos años, a 30 días, datos solo del pasado):
-  - por «vs mantener», los 10 primeros ganaron de verdad +14 $ por 5.000 $ frente a −13 $ de media de todos
-    (−25 $ los 10 últimos) y superaron a la media en el 68 % de las fechas (73 % y 63 % en cada año); por
-    quintiles, lo real sube con la puntuación (−26, −27, −24, −3, +15 $);
-  - ordenar por comisiones/TVL de los últimos 7 días (un cribado típico) no lo consigue: sus 10 primeros
-    −12 $, como la media;
+Validado el 26-nov-2026, con los datos limpios (sin horas de pool vacío ni pools de comisiones concentradas;
+56 pools, 53 fechas cada 14 días de dos años, a 30 días, datos solo del pasado):
+  - por «vs mantener», los 10 primeros quedaron de verdad en 0 $ por 5.000 $ frente a −17 $ de media de todos
+    (−19 $ los 10 últimos) y superaron a la media en el 68 % de las fechas (69 % y 67 % en cada año); por
+    quintiles solo se separa el primero (−18, −21, −26, −16 y 0 $). Con TVL ≥ 2 M$ la ventaja casi
+    desaparece (−14 $ frente a −21 $, 55 % de las fechas). Ayuda a no perder frente a mantener, no a ganar;
+  - ordenar por comisiones/TVL de los últimos 7 días da algo parecido (−9 $, 62 %);
   - por resultado total (con el precio) ninguno ordena: correlación ≈ 0.
-Se excluyen como «datos sospechosos» los pools cuyo mejor rango simulado cobra > 15 % al mes o cuyo «vs
-mantener» supera el capital: son errores de fee_growth en MetaProDB, no oportunidades.
+  (Con los datos sin limpiar salía +14 $ frente a −13 $: la ventaja venía de pares pegados cuyas comisiones
+  fantasma estaban a la vez en lo simulado y en lo «real».)
+Se excluyen los de fiabilidad baja (entre ellos, los de comisiones concentradas en unas pocas horas, ver
+`simulador.MAX_CONCENTRACION`) y, como «datos sospechosos», los que cobrarían > 15 % al mes o cuyo «vs
+mantener» supera el capital.
 """
 from __future__ import annotations
 
@@ -63,6 +67,9 @@ def puntuar(p: dict, dias: int = 30, capital: float = 5000, escenarios: int = 50
     h = cargar(p["pool_id"], p["chain"])
     if h.dias_historia < MIN_HIST:
         return base | {"excluido": f"solo {h.dias_historia:.0f} días de histórico"}
+    fiab = S.fiabilidad(h, dias, S.calibracion_pool(p["pool_id"], p["chain"], dias))
+    if fiab["nivel"] == "baja":
+        return base | {"excluido": "fiabilidad baja: " + "; ".join(fiab["motivos"])[:160]}
     paths = S.bootstrap(h, dias * 24, escenarios)
     best = S.mejor_rango(S.barrido(h, paths, capital), "media")
     if (not np.isfinite(best["vs_media"]) or best["comisiones"] / capital > MAX_COMISIONES_MES * dias / 30
@@ -78,7 +85,7 @@ def puntuar(p: dict, dias: int = 30, capital: float = 5000, escenarios: int = 50
                    "hi": best["hi"], "vs_media": best["vs_media"], "vs_mediana": best["vs_mediana"],
                    "comisiones": best["comisiones"], "en_rango": best["en_rango"], "valor_media": best["valor_media"],
                    "valor_p10": best["valor_p10"], "vs_sin_riesgo": best["valor_media"] - sr_final,
-                   "fiabilidad": S.fiabilidad(h, dias, S.calibracion_pool(p["pool_id"], p["chain"], dias))["nivel"],
+                   "fiabilidad": fiab["nivel"],
                    "nivel_comisiones": h.nivel(S.NIVEL_DIAS)}
 
 

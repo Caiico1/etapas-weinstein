@@ -109,27 +109,42 @@ simulador:
 
 **Por qué no ordena por lo que ganarás en total.** El resultado total depende sobre todo de hacia dónde va
 el precio, y el simulador no lo predice. En la validación, ordenar por resultado total no acertó más que el
-azar (correlación ≈ 0). Ordenar por «vs mantener» sí:
+azar (correlación ≈ 0). Ordenar por «vs mantener» algo ayuda, poco:
 
-**Validación (25-nov-2026):** 63 pools, 53 fechas cada 14 días de los dos últimos años, a 30 días, con
-datos solo de antes de cada fecha y el resultado real del mejor ancho de cada pool:
+**Validación (26-nov-2026, con los datos limpios):** 56 pools, 53 fechas cada 14 días de los dos últimos
+años, a 30 días, con datos solo de antes de cada fecha y el resultado real del mejor ancho de cada pool:
 
 | Por 5.000 $ a 30 días, «vs mantener» real | Ranking del simulador | Ordenar por comisiones/TVL de 7 días |
 |---|---|---|
-| Los 10 primeros | **+14 $** | −12 $ |
-| Todos (media) | −13 $ | −13 $ |
-| Los 10 últimos | −25 $ | −19 $ |
-| Fechas en que los 10 primeros ganan a la media | **68 %** (73 % y 63 % cada año) | 55 % |
+| Los 10 primeros | **0 $** | −9 $ |
+| Todos (media) | −17 $ | −17 $ |
+| Los 10 últimos | −19 $ | −27 $ |
+| Fechas en que los 10 primeros ganan a la media | **68 %** (69 % y 67 % cada año) | 62 % |
+| Solo pools con TVL ≥ 2 M$: los 10 primeros / la media | −14 / −21 $ (55 %) | −13 / −21 $ (59 %) |
 
-Por quintiles del ranking, lo real sube con la puntuación: −26, −27, −24, −3 y +15 $. Es una ventaja
-modesta pero estable: los primeros de la lista tienden a ganar algo a mantener; el resto, a perder. Ordenar
-por las comisiones recientes, como hace un cribado típico, no la tiene, porque los pools que más cobran
-suelen ser los que más pérdida impermanente tienen.
+Por quintiles del ranking solo se separa el primero (−18, −21, −26, −16 y 0 $). **Lectura honesta:** en
+estos dos años, ser LP perdió de media 17 $ al mes por cada 5.000 $ frente a guardar los tokens; los
+primeros del ranking quedaron en tablas. **Sirve para no perder frente a mantener, no para encontrar pools
+que ganen.**
 
-**Datos sospechosos.** La validación sacó a la luz pools cuyas comisiones en MetaProDB son imposibles
-(VIRTUAL, PENDLE, SKY, algunos de estables: rendimientos de miles de veces el capital). El ranking excluye
-los que el mejor rango cobraría más de un 15 % al mes o cuyo «vs mantener» supera el capital, y los lista
-debajo con el motivo.
+Una primera validación, con los datos sin limpiar, daba +14 $ a los 10 primeros. Esa ventaja venía de
+pares «pegados» (wstETH/WETH, tBTC/WBTC…) cuyas comisiones fantasma (abajo) estaban a la vez en lo simulado y
+en lo «real».
+
+**Datos de MetaProDB que se limpian o excluyen (26-nov-2026):**
+
+- **Horas con el pool vacío** (liquidez activa 0, precio en el tick extremo o, en v3, menos de 1.000 $ de
+  TVL): 175.745 horas en 84 pools. Pasa al nacer el pool o cuando un gestor retira toda la liquidez y la
+  vuelve a poner; el precio salta a ×e^±78 y vuelve, y hacía explotar los escenarios (SKY, VIRTUAL, PENDLE).
+  Se quitan al leer el histórico (`backtest.load_hours`, también para el backtest); si el vacío dura más de
+  6 horas, cuenta como hueco y se usa el tramo más reciente.
+- **Comisiones concentradas en unas pocas horas:** en los pools grandes, el 0,1 % de horas con más
+  comisiones reúne el 3,5–10 % del total; en los pares pegados al 0,01 %, el 30–93 %. Son excursiones del
+  precio, dentro de la hora, a ticks casi vacíos: `feeGrowthGlobal` se dispara (wstETH/WETH de Arbitrum,
+  18-abr-2026 18:00: 595.592 $ de comisiones y 7.941 M$ de volumen con 0,9 M$ de TVL), pero un LP con un
+  rango normal no las cobra. Por encima del 30 %, fiabilidad **baja** (sección 5 b) y fuera del ranking.
+- **Datos sospechosos que queden:** el ranking también excluye los pools cuyo mejor rango cobraría más de un
+  15 % al mes o cuyo «vs mantener» supera el capital.
 
 Desde la consola: `python -m etapas.ranking --dias 30` (guarda `out/ranking.json`).
 
@@ -311,7 +326,7 @@ plazo**. Debajo, en gris, aparecen los motivos (⚠ en contra, ✓ a favor):
 |---|---|
 | 🟢 **Alta** | Pool como los validados (≥ 1 año de histórico y TVL > 2 M$), plazo de hasta 90 días y, si el pool está en la calibración mensual, con un resultado razonable (comisiones reales entre ×0,75 y ×1,33 de las simuladas y al menos el 60 % de los casos reales dentro del P10–P90). |
 | 🟡 **Media** | Algo se sale de lo validado: entre 180 días y 1 año de histórico, TVL de 0,5 a 2 M$, plazo de 180 días, o su calibración algo desviada. |
-| 🔴 **Baja** | Menos de 180 días de histórico, TVL < 0,5 M$, comisiones anómalas en MetaProDB, o su calibración muy desviada (comisiones fuera de ×0,5–×2 o menos del 40 % dentro del P10–P90). |
+| 🔴 **Baja** | Menos de 180 días de histórico, TVL < 0,5 M$, comisiones anómalas en MetaProDB o concentradas en unas pocas horas (más del 30 % en el 0,1 % de horas, ver sección 2 a), o su calibración muy desviada (comisiones fuera de ×0,5–×2 o menos del 40 % dentro del P10–P90). |
 
 **¿Y los pools con poco histórico? (probado, nov-2026).** Se probó completar el histórico de un pool joven
 con los días que le faltan de otro pool del mismo par: los movimientos del precio en dólares y el ritmo de

@@ -532,12 +532,19 @@ una hora; tarda unos 5 segundos la primera vez por par. No cambia los escenarios
 queda como experimento, que solo se activaría si la validación fuera de muestra lo justifica.
 
 **Ranking de pools (`etapas/ranking.py`, pantalla y consola).** Todos los pools de MetaProDB con datos
-recientes, TVL ≥ 0,5 M$ y ≥ 1 año de histórico (sin pares de dos estables ni `ANOMALOS`) con su mejor ancho
-a `dias`, ordenados por «vs mantener» medio; excluye los de comisiones imposibles (> 15 % al mes o |vs| >
-capital). Validado (25-nov-2026, 63 pools, 53 fechas de dos años, 30 d): los 10 primeros +14 $ reales por
-5.000 $ frente a −13 $ de media, ganan a la media el 68 % de las fechas; ordenar por comisiones de 7 días
-no (−12 $); por resultado total ninguno ordena (correlación ≈ 0). `python -m etapas.ranking`; en la página,
-«Calcular ranking» (en segundo plano, `/api/ranking`) o `#ranking`. Pruebas en `tests/test_ranking.py`.
+recientes, TVL ≥ 0,5 M$, ≥ 1 año de histórico y fiabilidad media o alta (sin pares de dos estables ni
+`ANOMALOS`) con su mejor ancho a `dias`, ordenados por «vs mantener» medio; excluye los de comisiones
+imposibles (> 15 % al mes o |vs| > capital). Validado con los datos limpios (26-nov-2026, 56 pools, 53 fechas
+de dos años, 30 d): los 10 primeros 0 $ reales por 5.000 $ frente a −17 $ de media, ganan a la media el 68 %
+de las fechas; con TVL ≥ 2 M$ casi no hay ventaja (−14 frente a −21 $); por resultado total nadie ordena.
+Sirve para no perder frente a mantener, no para encontrar pools que ganen. `python -m etapas.ranking`; en la
+página, «Calcular ranking» (en segundo plano, `/api/ranking`) o `#ranking`. Pruebas en `tests/test_ranking.py`.
+
+**Limpieza de MetaProDB (26-nov-2026).** `backtest.load_hours` quita las horas con el pool vacío (liquidez 0,
+tick ≥ ±887.000 o TVL v3 < 1.000 $; 175.745 horas en 84 pools) antes de buscar huecos: hacían explotar los
+escenarios. `History.concentracion()` mide qué parte de las comisiones cae en el 0,1 % de horas más altas
+(3,5–10 % en pools grandes, 30–93 % en pares pegados al 0,01 % por excursiones a ticks casi vacíos); por
+encima de `MAX_CONCENTRACION` (0,30), fiabilidad baja.
 
 **Mis posiciones abiertas (`etapas/posiciones_lp.py`, pantalla y consola).** Lee las posiciones abiertas
 del MCP público de Revert (`https://mcp.revert.finance/mcp`, JSON-RPC por HTTP, solo `get_positions`)

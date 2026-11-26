@@ -133,6 +133,12 @@ class History:
     def dias_historia(self) -> float:
         return (self.df["hour"].iloc[-1] - self.df["hour"].iloc[0]) / pd.Timedelta(days=1)
 
+    def concentracion(self) -> float:
+        """Parte de las comisiones del histórico (por unidad de liquidez) que cae en el 0,1 % de horas más altas."""
+        y = np.nan_to_num(self.q0 + self.q1)
+        y = np.sort(y[y > 0])[::-1]
+        return float(y[:max(1, len(y) // 1000)].sum() / y.sum()) if len(y) else 0.0
+
     def nivel(self, dias: int | None = NIVEL_DIAS) -> float:
         """Comisiones por unidad de liquidez de los últimos `dias` frente a la media del histórico."""
         y = self.q0 + self.q1
@@ -881,6 +887,15 @@ def calibracion_pool(pool_id: str, chain: str, dias: int, log: Path | None = Non
     return None
 
 
+# Comisiones concentradas (26-nov-2026). En los pools grandes y limpios, el 0,1 % de horas con más comisiones
+# por unidad de liquidez (unas 17 de dos años) reúne el 3,5–10 % del total; en pares «pegados» al 0,01 %
+# (wstETH/WETH, tBTC/WBTC, rETH/WETH, weETH/WETH, cbBTC/WBTC, estables, oro), el 30–93 %. En esas horas el
+# precio hace una excursión a ticks casi vacíos y feeGrowthGlobal se dispara (p. ej. wstETH/WETH de Arbitrum,
+# 18-abr-2026 18:00: 595.592 $ de comisiones con 0,9 M$ de TVL; MetaProDB la marca «suspect»). Por encima de
+# este umbral la fiabilidad es baja y el ranking excluye el pool.
+MAX_CONCENTRACION = 0.30
+
+
 def fiabilidad(h: History, dias: int, calib: dict | None = None) -> dict:
     """Semáforo: alta / media / baja, con los motivos. Se basa en lo validado (pools con ≥ 1 año y
     TVL > 2 M$; 7–180 días) y, si existe, en la calibración mensual del propio pool."""
@@ -899,6 +914,11 @@ def fiabilidad(h: History, dias: int, calib: dict | None = None) -> dict:
     elif hist < 365:
         malos.append((0, f"{hist:.0f} días de histórico: con 180–365 acertó igual que con 730 en el último año, "
                          "pero cubre menos rachas distintas del mercado"))
+    conc = h.concentracion()
+    if conc > MAX_CONCENTRACION:
+        malos.append((1, f"el {conc * 100:.0f} % de sus comisiones del histórico está en el 0,1 % de horas más altas: "
+                         "son excursiones del precio, dentro de la hora, a ticks casi vacíos, que un LP de un rango "
+                         "normal no cobra y el simulador, con datos horarios, sí le atribuye"))
     if h.tvl_now < MIN_TVL / 4:
         malos.append((1, f"TVL de {h.tvl_now / 1e6:.2f} M$: comisiones muy ruidosas"))
     elif h.tvl_now < MIN_TVL:

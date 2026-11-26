@@ -21,10 +21,14 @@ def test_candidatos_quita_poco_tvl_estables_y_anomalos():
 
 def test_calcular_ordena_por_vs_mantener_y_excluye(monkeypatch):
     monkeypatch.setattr(S, "calibracion_pool", lambda *a, **k: None)
-    hs = {"bueno": S.features(POOL, _walk(n=24 * 400, g0=1e-20, g1=4e-11, seed=1)),
-          "malo": S.features(POOL, _walk(n=24 * 400, g0=1e-20, g1=2e-12, seed=2)),
-          "joven": S.features(POOL, _walk(n=24 * 100, seed=3)),
-          "raro": S.features(POOL, _walk(n=24 * 400, g0=1e-20, g1=1e-6, seed=4))}
+    def W(**k):
+        d = _walk(**k)
+        d["tvl_usd"] = 5e6
+        return d
+    hs = {"bueno": S.features(POOL, W(n=24 * 400, g0=1e-20, g1=4e-11, seed=1)),
+          "malo": S.features(POOL, W(n=24 * 400, g0=1e-20, g1=2e-12, seed=2)),
+          "joven": S.features(POOL, W(n=24 * 100, seed=3)),
+          "raro": S.features(POOL, W(n=24 * 400, g0=1e-20, g1=1e-6, seed=4))}
     todos = [_p(k) for k in hs]
     r = R.calcular(30, 5000, 150, todos=todos, cargar=lambda pid, ch: hs[pid])
     assert [p["label"] for p in r["pools"]] == ["bueno", "malo"]

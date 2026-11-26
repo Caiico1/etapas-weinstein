@@ -598,3 +598,39 @@ def test_recomendacion_habla_de_la_cobertura_y_de_que_hoy_no_se_puede():
     t = next(x for x in S.recomendacion(base)["mejorar"] if "Cubrir" in x or "cubrir" in x)
     assert t.startswith("Hoy no se puede: USDC tiene LTV 0") and "+44 $" in t and "−831 $" in t.replace("-", "−")
     assert "de −1.344 $ a −352 $" in t.replace("-", "−")
+
+
+def test_fiabilidad_baja_si_las_comisiones_se_concentran_en_unas_horas(monkeypatch):
+    df = _walk(n=24 * 400, g0=1e-20, g1=1e-12)
+    df["tvl_usd"] = 5e6
+    h = S.features(POOL, df)
+    assert h.concentracion() < 0.05 and S.fiabilidad(h, 30)["nivel"] != "baja"
+    df.loc[df.index[[100, 2000, 5000]], "fee_growth1"] *= 1e5               # tres horas con comisiones disparadas
+    h2 = S.features(POOL, df)
+    f = S.fiabilidad(h2, 30)
+    assert h2.concentracion() > S.MAX_CONCENTRACION and f["nivel"] == "baja"
+    assert any("0,1 % de horas" in m for m in f["motivos"])
+
+
+def test_load_hours_quita_las_horas_con_el_pool_vacio(monkeypatch):
+    df = _walk(n=300)
+    df["tvl_usd"] = 1e6
+    df.loc[50:52, "liquidity"] = 0.0                                         # 3 h vacío: se quitan, sin cortar
+    df.loc[51, "tick"] = -887272
+    df.loc[150:159, "tvl_usd"] = 10.0                                        # 10 h vacío: hueco, tramo más reciente
+
+    class Con:
+        def execute(self, *a):
+            return self
+
+        def df(self):
+            return df.copy()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(B, "_connect", lambda: Con())
+    monkeypatch.setattr(B, "find_pool", lambda con, key, chain: dict(POOL))
+    pool, out = B.load_hours("x", "base")
+    assert pool["horas_pool_vacio"] == 13 and out["hour"].iloc[0] == df["hour"].iloc[160]
+    assert "huecos" in pool["aviso"] and (out["liquidity"] > 0).all()
