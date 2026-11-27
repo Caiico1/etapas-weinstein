@@ -504,7 +504,7 @@ pool y el corto (`simulate_plan`, que reproduce exactamente `simulate`, `simulat
 sube el P10 ≥ 2 % del capital). Panel «Tu plan» y primeras frases de la Recomendación. Validado (27-nov-2026,
 24 pools, dos años, 30/90 d, funding real): mejor media frente a ±10 % sin más, +37/+68/+106/+229 $ reales por
 5.000 $ en los dos años, casi todo por elegir el más ancho; protegerse solo funciona con perpetuo (30 d: P10
-real 4.397 → 4.864 $, coste según el año). Pruebas en `tests/test_plan.py`.
+real 4.397 → 4.864 $, coste según el año). Rangos de más de ±50 % probados y descartados (F3): ±70 y ±90 % pierden aún menos frente a guardar los tokens (30 d: −32 y −25 $ frente a −41 $ con ±50 %) pero siguen perdiendo, sin óptimo; ampliar el plan mejoró solo 5–40 $ y no en los dos años. La frase del plan da el «vs guardar los tokens». Pruebas en `tests/test_plan.py`.
 
 **Cobertura con perpetuo (`etapas/perpetuo.py`).** La alternativa que sí se puede abrir hoy: en pares
 activo/estable con perpetuo en Bybit, parte del capital va de margen aislado a un corto del activo por la

@@ -401,6 +401,21 @@ a hora):
   el bajista). Sin perpetuo, los stops cuestan casi lo que protegen y el P10 apenas se mueve.
 - Validado de 30 a 90 días; en otros plazos la pantalla avisa.
 
+**Rangos de más de ±50 %, probados y descartados (F3, 27-nov-2026).** Como el plan elegía casi siempre ±50 %,
+se probaron ±70 % y ±90 % con las mismas aperturas. Frente a guardar los mismos tokens, en lo real y por
+5.000 $:
+
+| Ancho (sin stop ni cobertura) | ±10 % | ±30 % | ±50 % | ±70 % | ±90 % |
+|---|---|---|---|---|---|
+| 30 días | −101 $ | −60 $ | −41 $ | −32 $ | −25 $ |
+| 90 días | −267 $ | −183 $ | −110 $ | −81 $ | −62 $ |
+| Comisiones cobradas a 30 días | 166 $ | 113 $ | 75 $ | 53 $ | 38 $ |
+
+Cuanto más ancho, menos pierde, sin un punto óptimo: ninguno gana a guardar los tokens en ninguno de los
+dos años. Ensanchar solo acerca a no hacer nada. Ampliar el plan hasta ±90 % mejoró lo real apenas 5–40 $
+y no en los dos años en todos los casos, así que el plan se queda en ±50 %. Desde entonces la frase del plan
+dice también cuánto gana o pierde frente a guardar los mismos tokens.
+
 ## 6. Gráfico 1: precio en los escenarios y tus rangos
 
 ![Gráfico de abanico del precio](docs/img/simulador-2-abanico-precio.png)

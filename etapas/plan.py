@@ -84,7 +84,9 @@ def _fila(w, st, c, r, capital) -> dict:
             "valor_mediana": float(np.median(fv)), "valor_p10": float(np.percentile(fv, 10)),
             "valor_p90": float(np.percentile(fv, 90)), "prob_perdida": float(np.mean(fv < capital)),
             "prob_stop": float(np.mean(r["salta"])), "prob_liquidacion": float(np.mean(r["liquidada"])),
-            "en_pool": r["V"], "margen": r["M"], "corto": r["N"]}
+            "en_pool": r["V"], "margen": r["M"], "corto": r["N"],
+            # frente a guardar los mismos tokens que se depositan (solo sin cobertura: con ella, parte va al margen)
+            "vs_mantener": float(np.mean(fv - r["lp"].hodl)) if c == 0 else None}
 
 
 def planes(h: S.History, dias: int, paths: S.Paths, capital: float = 5000, gas: float | None = None,
@@ -129,6 +131,11 @@ def planes(h: S.History, dias: int, paths: S.Paths, capital: float = 5000, gas: 
 # 30 d 4.397 → 4.864 $ frente a «media» (90 d 4.222 → 4.520 $), con un coste que depende del año (30 d:
 # −68 $ frente a «media» en el lateral, +62 $ en el bajista). Sin perpetuo apenas mueve el P10 (los stops
 # cuestan más de lo que protegen). Lo real quedó dentro del P10–P90 del plan elegido el 76–90 % de las veces.
+# Rangos de más de ±50 %, probados y descartados (F3, 27-nov-2026, mismas aperturas): cuanto más ancho, menos
+# pierde frente a guardar los mismos tokens, sin óptimo intermedio (30 d: ±10 % −101 $, ±50 % −41 $, ±70 %
+# −32 $, ±90 % −25 $ por 5.000 $; 90 d: −267, −110, −81, −62 $; ninguno gana ningún año) y las comisiones
+# caen de 166 $ a 38 $ al mes: ensanchar solo acerca a no hacer nada. Ampliar el plan hasta ±90 % mejoró lo
+# real solo 5–40 $ y no en los dos años en todos los casos (90 d sin perpetuo, año bajista: −9 $).
 PLAZOS_PLAN_VALIDADOS = (30, 90)
 MEJORA_P10 = 0.02                  # el prudente se propone si sube el P10 al menos un 2 % del capital
 
@@ -152,9 +159,13 @@ def frases(p: dict, asset: str, capital: float, dias: int) -> dict:
                      f"{S._usd(md['valor_media'] - capital)} en {dias} días ({S._usd(md['valor_media'] - b['valor_media'])} "
                      f"frente a ±10 % sin stop ni cobertura); en un escenario malo (1 de cada 10), "
                      f"{S._usd(md['valor_p10'] - capital)}.")}
+    if md.get("vs_mantener") is not None:
+        out["media"] += (f" Frente a guardar los mismos tokens, {S._usd(md['vs_mantener'])} de media"
+                         + (": ser LP aquí no compensa frente a guardarlos." if md["vs_mantener"] < 0 else "."))
     if md["ancho"] == max(x["ancho"] for x in p["filas"]):
-        out["media"] += (" Es el rango más ancho que se prueba: en este histórico, cuanto más ancho, menos se pierde "
-                         "frente a guardar los tokens.")
+        out["media"] += (" Es el rango más ancho que se prueba. Ensanchar más no cambia la conclusión: en la validación "
+                         "±70 % y ±90 % perdían aún menos, pero seguían perdiendo frente a guardar los tokens (−25 $ al mes "
+                         "por 5.000 $ con ±90 %) y se acercan a no hacer nada.")
     protege = pr is not md and pr["valor_p10"] - md["valor_p10"] >= MEJORA_P10 * capital
     out["proteger"] = protege
     if protege:

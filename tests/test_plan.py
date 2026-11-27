@@ -54,7 +54,9 @@ def test_planes_elige_y_compara_con_la_partida():
     assert md["valor_media"] == max(f["valor_media"] for f in p["filas"])
     assert pr["valor_media"] >= md["valor_media"] - PL.TOLERANCIA_PRUDENTE * 5000
     assert pr["valor_p10"] >= md["valor_p10"]
+    assert all((f["vs_mantener"] is None) == (f["cobertura"] > 0) for f in p["filas"])
     fr = PL.frases(p, "ETH", 5000, 30)
+    assert "Frente a guardar los mismos tokens" in fr["media"] or md["cobertura"] > 0
     assert fr["media"].startswith("Para el mejor resultado medio") and fr["validado"]
     assert not PL.frases(p, "ETH", 5000, 7)["validado"]
 
