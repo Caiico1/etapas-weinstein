@@ -403,6 +403,7 @@ resultado lo bastante para justificar esa complejidad.
 ## Simulador de pools a futuro (rango fijo)
 
 > Manual de uso, campo a campo y con capturas: **[Guía Simulador](Guia%20Simulador.md)**.
+> Las capturas se rehacen con `node tools/capturas_simulador.mjs` (simulador en marcha, Edge y Node ≥ 22).
 
 Simula cómo podría ir una posición de rango fijo en un pool de MetaProDB durante los próximos días:
 valor final, frente a mantener, comisiones, APR, rentabilidad, % del tiempo en rango, probabilidad

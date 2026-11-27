@@ -1301,4 +1301,12 @@ python -m etapas.vigilante_stop --simular    # qué avisaría ahora el vigilante
 python -m etapas.simulador_historial         # cómo han acertado tus simulaciones guardadas
 ```
 
+**Rehacer las capturas de esta guía** cuando cambie la pantalla (con el simulador en marcha; usa Edge sin
+ventana y tarda menos de un minuto; no captura «Mis posiciones»):
+
+```powershell
+node tools/capturas_simulador.mjs                 # todas, en docs/img
+node tools/capturas_simulador.mjs plan detalle    # solo las que contengan esas palabras
+```
+
 Más detalle técnico en el [README](README.md#simulador-de-pools-a-futuro-rango-fijo).
