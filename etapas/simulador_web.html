@@ -130,7 +130,7 @@ summary{cursor:pointer;color:var(--text)}
 
   <section class="panel" id="outPlan" hidden>
     <h2>Tu plan <span class="mut" style="font-weight:400;font-size:13px">(ancho, stop y cobertura juntos)</span></h2>
-    <div class="hint">Prueba a la vez anchos desde el mínimo fiable del pool hasta ±50 %, sin stop o con stop (al salirse o un 5 % por debajo) y, si el par tiene perpetuo, sin cubrir, a medias o del todo, en los mismos escenarios. Si salta el stop se cierran el pool y el corto, y los dólares rinden la referencia sin riesgo. «Mejor media»: el de más valor final medio. «Para protegerte»: el de mejor escenario malo (P10) entre los que ceden como mucho un 1 % del capital de media. Validado con aperturas reales de dos años a 30 y 90 días (24 pools): elegir así ganó en lo real a ±10 % sin más en los dos años (de +37 a +229 $ por 5.000 $), sobre todo porque elige rangos anchos; la protección solo funcionó de verdad con perpetuo (a 30 días, P10 real de 4.397 $ a 4.864 $), con un coste que depende del año. Rangos de más de ±50 % probados y descartados: pierden aún menos, pero siguen perdiendo frente a guardar los tokens y se acercan a no hacer nada.</div>
+    <div class="hint">Prueba a la vez anchos desde el mínimo fiable del pool hasta ±50 %, sin stop o con stop (al salirse o un 5 % por debajo) y, si el par tiene perpetuo, sin cubrir, a medias o del todo, en los mismos escenarios. Si salta el stop se cierran el pool y el corto, y los dólares rinden la referencia sin riesgo. «Mejor media»: el de más valor final medio. «Para protegerte»: el de mejor escenario malo (P10) entre los que ceden como mucho un 1 % del capital de media. Validado con aperturas reales de dos años a 30 y 90 días (24 pools): elegir así ganó en lo real a ±10 % sin más en los dos años (de +37 a +229 $ por 5.000 $), sobre todo porque elige rangos anchos; la protección solo funcionó de verdad con perpetuo (a 30 días, P10 real de 4.397 $ a 4.864 $), con un coste que depende del año. «Tus tokens rindiendo»: los mismos tokens sin pool, ETH como wstETH (staking) y el resto en Aave, con el rendimiento de los últimos 90 días; validado con dos años: rindiendo ganan a guardarlos unos 10 $ al mes por 5.000 $ y el pool perdió frente a ellos en todos los pools y los dos años. Rangos de más de ±50 % probados y descartados: pierden aún menos, pero siguen perdiendo frente a guardar los tokens y se acercan a no hacer nada.</div>
     <ul id="planTxt" class="concl"></ul>
     <div class="tw" style="margin-top:8px"><table id="planTab" style="min-width:980px"></table></div>
     <div class="hint" id="planNota"></div>
@@ -586,7 +586,7 @@ function planDraw(d){
   if(!p) return;
   if(p.error){$("planTxt").innerHTML=`<li class="neg">${esc(p.error)}</li>`;$("planTab").innerHTML="";$("planNota").innerHTML="";return;}
   const fr=p.frases||{};
-  $("planTxt").innerHTML=[fr.media,fr.prudente].filter(Boolean).map(t=>`<li>${esc(t)}</li>`).join("");
+  $("planTxt").innerHTML=[fr.media,fr.rendir,fr.prudente].filter(Boolean).map(t=>`<li>${esc(t)}</li>`).join("");
   const md=p.elegido.media, pr=p.elegido.prudente, b=p.base;
   const filas=[["Mejor media",md],...(fr.proteger?[["Para protegerte",pr]]:[]),["Partida: ±10 % sin más",b]];
   const kk=f=>f.ancho+"|"+f.stop+"|"+f.cobertura; const otros=p.filas.filter(f=>kk(f)!==kk(md)&&!(fr.proteger&&kk(f)===kk(pr))).sort((a,c)=>c.valor_media-a.valor_media).slice(0,3);
@@ -598,7 +598,10 @@ function planDraw(d){
     <td class="mut">${usd(f.valor_p90)}</td><td class="${f.prob_perdida>0.5?"neg":""}">${Math.round(f.prob_perdida*100)} %</td>
     <td class="mut">${f.stop==="sin stop"?"—":Math.round(f.prob_stop*100)+" %"}</td></tr>`;
   $("planTab").innerHTML=`<thead><tr><th class="lab">Plan</th><th>Rango</th><th class="lab">Stop</th><th class="lab">Cobertura${p.perpetuo?" ("+esc(p.perpetuo)+")":""}</th><th>Valor final<br><span style="font-weight:400">(media)</span></th><th>Escenario malo<br><span style="font-weight:400">(P10)</span></th><th>Bueno<br><span style="font-weight:400">(P90)</span></th><th>Prob. de perder</th><th>Salta el stop</th></tr></thead><tbody>`+
-    filas.map(([n,f],i)=>row(n,f,i===0?"grp":"")).join("")+otros.map((f,i)=>row(i===0?'<span class="mut">Siguientes por media</span>':"",f,i===0?"grp":"")).join("")+"</tbody>";
+    filas.map(([n,f],i)=>row(n,f,i===0?"grp":"")).join("")
+    +(p.rendir&&p.rendir.valor_media!==undefined?`<tr class="grp"><td class="lab">Tus tokens rindiendo, sin pool</td><td><span class="mut">los tokens de ±${(md.ancho*100).toLocaleString("es-ES")} %</span></td><td class="lab mut" colspan="2">${p.rendir.tokens.map(x=>`${esc(x.token)} ${x.via.includes("staking")?"como wstETH":"en Aave"} ${pct(x.apy,1,false)}`).join(" · ")}</td>
+      <td class="${cls(p.rendir.valor_media-d.capital)}">${usd(p.rendir.valor_media)}</td><td class="${cls(p.rendir.valor_p10-d.capital)}">${usd(p.rendir.valor_p10)}</td><td class="mut">${usd(p.rendir.valor_p90)}</td><td></td><td></td></tr>`:"")
+    +otros.map((f,i)=>row(i===0?'<span class="mut">Siguientes por media</span>':"",f,i===0?"grp":"")).join("")+"</tbody>";
   $("planNota").innerHTML=(p.aviso?`<span class="neg">${esc(p.aviso)}.</span> `:"")
     +(fr.validado?"":`<span class="neg">A ${d.dias} días el plan no está validado (solo de 30 a 90): tómalo como orientación.</span> `)
     +`${p.filas.length} planes probados en los mismos escenarios${p.perpetuo?`; funding medio de 90 días ${pct(p.apr_funding,1,false)} anual`:""}. Análisis de escenarios, no una orden.`;

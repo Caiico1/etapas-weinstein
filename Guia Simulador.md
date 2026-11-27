@@ -401,6 +401,26 @@ a hora):
   el bajista). Sin perpetuo, los stops cuestan casi lo que protegen y el P10 apenas se mueve.
 - Validado de 30 a 90 días; en otros plazos la pantalla avisa.
 
+**Tus tokens rindiendo, sin pool (J1, 27-nov-2026).** Una fila más en la tabla del plan y una frase: los
+mismos tokens que pide el rango del plan, sin meterlos en el pool, cada uno a su mejor rendimiento simple:
+ETH como wstETH (staking de Lido; el rendimiento sale de cómo sube el precio wstETH/WETH en MetaProDB) y el
+resto en Aave V3 de la misma red (estables al 3–5 %, WBTC, cbBTC, LINK… casi a 0 %). En los escenarios, el
+rendimiento de los últimos 90 días, fijo.
+
+**Validación:** 24 pools de referencia, 3.331 aperturas de dos años, con el rendimiento real de cada plazo,
+por 5.000 $:
+
+| | 30 días | 90 días |
+|---|---|---|
+| Tokens rindiendo frente a guardarlos | +9 a +11 $ | +29 a +32 $ |
+| Pool ±50 % frente a los tokens rindiendo | −48 $ | −139 $ |
+| Pool ±30 % / ±10 % frente a los tokens rindiendo | −66 / −102 $ | −209 / −291 $ |
+| Error de lo simulado de los tokens rindiendo | ±3 $ | ±8 $ |
+
+El pool perdió frente a los tokens rindiendo **en todos los pools y en los dos años**. Riesgos de esta
+alternativa: el contrato de Aave (y la liquidez para retirar cuando el uso es muy alto) y, con wstETH, que
+cotice con descuento frente a ETH al deshacer.
+
 **Rangos de más de ±50 %, probados y descartados (F3, 27-nov-2026).** Como el plan elegía casi siempre ±50 %,
 se probaron ±70 % y ±90 % con las mismas aperturas. Frente a guardar los mismos tokens, en lo real y por
 5.000 $:

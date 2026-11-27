@@ -506,6 +506,13 @@ sube el P10 ≥ 2 % del capital). Panel «Tu plan» y primeras frases de la Reco
 5.000 $ en los dos años, casi todo por elegir el más ancho; protegerse solo funciona con perpetuo (30 d: P10
 real 4.397 → 4.864 $, coste según el año). Rangos de más de ±50 % probados y descartados (F3): ±70 y ±90 % pierden aún menos frente a guardar los tokens (30 d: −32 y −25 $ frente a −41 $ con ±50 %) pero siguen perdiendo, sin óptimo; ampliar el plan mejoró solo 5–40 $ y no en los dos años. La frase del plan da el «vs guardar los tokens». Pruebas en `tests/test_plan.py`.
 
+**Tus tokens rindiendo (`etapas/rendir.py`, J1, 27-nov-2026).** La alternativa al pool con los mismos tokens del
+rango: ETH como wstETH (staking, del precio wstETH/WETH de MetaProDB, mediana diaria) y el resto en Aave V3 de la
+red (`supply_apy` de MetaProDB); escenarios con el rendimiento de 90 días. Fila y frase en «Tu plan». Validado
+(24 pools, 3.331 aperturas, dos años): rindiendo ganan a guardarlos +10 $ al mes por 5.000 $, el pool ±50 % pierde
+frente a ellos −48 $ al mes (−139 $ a 90 d) en todos los pools y los dos años; error de lo simulado ±3 $. Pruebas
+en `tests/test_rendir.py`.
+
 **¿Cuándo compensa ser LP? (I1, 27-nov-2026).** 3.331 aperturas de dos años (24 pools, 30/90 d, ±10/30/50 %),
 14 condiciones conocidas al abrir (comisiones recientes altas, volatilidad baja, precio o etapa laterales,
 simulador positivo, TVL) y sus combinaciones, eligiendo con un año y comprobando con el otro: ninguna ganó a

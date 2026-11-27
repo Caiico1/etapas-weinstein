@@ -166,6 +166,17 @@ def frases(p: dict, asset: str, capital: float, dias: int) -> dict:
         out["media"] += (" Es el rango más ancho que se prueba. Ensanchar más no cambia la conclusión: en la validación "
                          "±70 % y ±90 % perdían aún menos, pero seguían perdiendo frente a guardar los tokens (−25 $ al mes "
                          "por 5.000 $ con ±90 %) y se acercan a no hacer nada.")
+    rd = p.get("rendir") or {}
+    if "valor_media" in rd:
+        toks = ", ".join(f"{t['token']} {('como wstETH' if 'staking' in t['via'] else 'en Aave')} al "
+                         f"{t['apy'] * 100:.1f} %".replace(".", ",") for t in rd["tokens"])
+        dif = md["valor_media"] - rd["valor_media"]
+        out["rendir"] = (f"Frente a tener esos mismos tokens rindiendo sin pool ({toks}), el plan queda en "
+                         f"{S._usd(dif)} de media"
+                         + (". En la validación (dos años, 24 pools) el pool perdió frente a esta alternativa en todos "
+                            "los pools y los dos años (−48 $ al mes por 5.000 $ con ±50 %)." if dif < 0 else
+                            ". Ojo: en la validación (dos años, 24 pools) el pool perdió frente a esta alternativa en "
+                            "todos los pools y los dos años (−48 $ al mes por 5.000 $ con ±50 %)."))
     protege = pr is not md and pr["valor_p10"] - md["valor_p10"] >= MEJORA_P10 * capital
     out["proteger"] = protege
     if protege:

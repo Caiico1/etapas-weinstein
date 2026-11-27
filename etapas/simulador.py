@@ -1247,7 +1247,7 @@ def recomendacion(res: dict) -> dict:
         mejorar.append("Los últimos meses han sido tranquilos y los escenarios lo reflejan: si vuelve la volatilidad, el "
                        "pool saldrá peor que esto. Vuelve a simular antes de abrir.")
     pf = (res.get("plan") or {}).get("frases")
-    plan_txt = [pf["media"], pf["prudente"]] if pf else []
+    plan_txt = [x for x in (pf["media"], pf.get("rendir"), pf["prudente"]) if x] if pf else []
     return {"veredicto": veredicto[0], "texto": veredicto[1], "plan": plan_txt,
             "hacer": hacer, "no_hacer": no_hacer, "mejorar": mejorar,
             "nota": "Análisis de escenarios con el histórico real del pool, no una recomendación de inversión "
@@ -1558,6 +1558,12 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
     try:
         from . import plan
         pl = plan.planes(h, dias, paths, capital, gas, apy=ref["apy"] if ref else 0.0)
+        try:                                   # J1: los mismos tokens del plan rindiendo (staking / Aave)
+            from . import rendir
+            md = pl["elegido"]["media"]
+            pl["rendir"] = rendir.alternativa(h, dias, paths, parse_rango(f"{md['ancho'] * 100:g}", h), capital, gas)
+        except Exception as e:                                                # noqa: BLE001
+            pl["rendir"] = {"error": f"sin tipos de Aave o staking ({type(e).__name__})"}
         pl["frases"] = plan.frases(pl, asset, capital, dias)
         res["plan"] = pl
     except Exception as e:                                                    # noqa: BLE001
