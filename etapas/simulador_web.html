@@ -116,7 +116,7 @@ summary{cursor:pointer;color:var(--text)}
     <h2>Mis posiciones abiertas <span class="mut" style="font-weight:400;font-size:13px">(Revert)</span></h2>
     <div class="ranges" style="margin-top:0">
       <button class="primary" id="posRun">Cargar y simular</button>
-      <span class="hint" style="margin:0">Lee tus posiciones de Revert (solo lectura, con las carteras de tu configuración local) y simula lo que queda desde hoy al plazo de arriba, con su rango y su valor reales y sin gas. «vs cerrar» = frente a cerrarla hoy y guardar los tokens que tiene ahora. «Stop vigilado» = el que sugiere el simulador (o el que elijas en ~/.cripto-renta/stops.json); la tarea «Vigilante stop» mira cada hora si está cerca o lo cruza y te avisa.</span>
+      <span class="hint" style="margin:0">Lee tus posiciones de Revert (solo lectura, con las carteras de tu configuración local) y simula lo que queda desde hoy al plazo de arriba, con su rango y su valor reales y sin gas. «vs cerrar» = frente a cerrarla hoy y guardar los tokens que tiene ahora. «Stop vigilado» = el que sugiere el simulador (o el que elijas en ~/.cripto-renta/stops.json); la tarea «Vigilante stop» mira cada hora si está cerca o lo cruza y te avisa. «Tu plan» = qué hacer con ella en los mismos escenarios: mantenerla, con stop, cubrirla con un corto en el perpetuo (margen aparte), cerrarla y dejar sus tokens rindiendo o cerrarla y pasar a USDC en Aave.</span>
     </div>
     <div class="tw" style="margin-top:8px"><table id="posTab" style="min-width:1050px"></table></div>
     <div class="hint" id="posAvisos"></div>
@@ -426,7 +426,8 @@ function posDraw(d){
     const name=`n.º ${p.id} · ${esc(p.label||p.par)} <span class="mut">${p.red} ${p.version} · ${Math.round(p.edad_dias)} d</span>`;
     if(p.error) return `<tr><td class="name">${name}</td><td>${money(p.valor,null,false)}</td><td colspan="10" class="mut">${esc(p.error)}</td></tr>`;
     const v=p.valor, a=p.acaba;
-    return `<tr><td class="name">${name}<div class="mut" style="white-space:normal;max-width:360px;margin-top:4px">${esc(p.lectura)}</div></td>`+
+    const pl=p.plan&&p.plan.texto?`<div style="white-space:normal;max-width:360px;margin-top:4px"><b>Tu plan:</b> ${esc(p.plan.texto)}</div>`:"";
+    return `<tr><td class="name">${name}<div class="mut" style="white-space:normal;max-width:360px;margin-top:4px">${esc(p.lectura)}</div>${pl}</td>`+
       `<td>${money(v,null,false)}<br><span class="mut">${money(p.comisiones_pendientes,null,false)}</span></td>`+
       `<td>${price(p.lo)}–${price(p.hi)}<br><span class="${p.en_rango_hoy?"pos":"neg"}">${price(p.precio)} · ${p.en_rango_hoy?"dentro":"FUERA"}</span></td>`+
       `<td>${stopCell(p.stop)}</td>`+

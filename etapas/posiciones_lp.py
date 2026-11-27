@@ -196,7 +196,15 @@ def simular(pos: dict, dias: int = 30, escenarios: int = 1000, cargar=None) -> d
     best = S.mejor_rango(S.barrido(h, paths, max(pos["valor"], 1e-6)), "media")
     sal = S.comparar_salidas(h, dias, [rg], paths, max(pos["valor"], 1e-6), abierta=True)["rangos"][0]
     st = stop_de(h.pool, pos, sal, stops_elegidos().get(str(pos["id"])))
-    return base | {
+    plan = None
+    try:                                         # G2: qué hacer con ella (mantener, stop, cubrir, cerrar)
+        from . import plan as PL
+        ref = S.referencia_sin_riesgo(h.pool["chain"])
+        plan = PL.opciones_abierta(h, dias, paths, rg, max(pos["valor"], 1e-6), apy_usdc=ref["apy"] if ref else 0.0)
+        plan["texto"] = texto_plan(plan, pos["valor"])
+    except Exception as e:                       # noqa: BLE001
+        plan = {"error": f"no se pudo calcular el plan ({type(e).__name__})"}
+    return base | {"plan": plan,
         "label": h.pool["label"], "dias": dias, "precio": p_hoy, "lo": rg.lo, "hi": rg.hi,
         "en_rango_hoy": rg.lo <= p_hoy <= rg.hi,
         "sale_del_rango": float(np.mean(s.in_range < 0.999)), "en_rango": r["en_rango"], "acaba": r["acaba"],
@@ -223,6 +231,25 @@ def stop_de(pool: dict, pos: dict, sal: dict, regla: str | None = None) -> dict:
     if pos.get("tick") is not None:
         out["estado"] = S.estado_stop(pos["tick"], nv)
     return out
+
+
+def _min(t: str) -> str:
+    return t[:1].lower() + t[1:]
+
+
+def texto_plan(plan: dict, valor: float) -> str:
+    """La lectura del plan de una posición abierta, en una frase."""
+    md, base = plan["mejor"], plan["opciones"][0]
+    if md is base:
+        t = f"Lo mejor de media es mantenerla ({dinero(md['resultado_media'], valor)} a este plazo)."
+    else:
+        t = (f"Lo mejor de media: {_min(md['opcion'])} ({dinero(md['resultado_media'], valor)}, "
+             f"{dinero(plan['vs_mantenerla'], valor)} frente a mantenerla tal cual).")
+    pr = plan.get("prudente")
+    if pr:
+        t += (f" Para protegerte: {_min(pr['opcion'])} (el escenario malo pasa de "
+              f"{dinero(md['resultado_p10'], valor)} a {dinero(pr['resultado_p10'], valor)}).")
+    return t
 
 
 def dinero(x: float, valor: float | None = None, signo: bool = True) -> str:

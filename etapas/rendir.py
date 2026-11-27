@@ -86,10 +86,11 @@ def crecimiento(serie: tuple, desde: pd.Timestamp, hasta: pd.Timestamp) -> float
 
 
 def simulate_rendir(h: S.History, paths: S.Paths, rg: S.Rango, g0, g1, capital: float = 5000.0,
-                    gas: float | None = None) -> np.ndarray:
+                    gas: float | None = None, abierta: bool = False) -> np.ndarray:
     """Valor final de los tokens que pediría el rango `rg`, creciendo ×g0 y ×g1 (escalares o por escenario),
-    más los costes que el pool habría pagado (como `Sim.hodl`)."""
-    base = S.simulate(h, paths, rg, capital, gas)
+    más los costes que el pool habría pagado (como `Sim.hodl`). `abierta`: los tokens de una posición que ya
+    existe (sin costes de entrada)."""
+    base = S.simulate(h, paths, rg, capital, gas, abierta=abierta)
     pool = h.pool
     d1 = 10 ** pool["dec1"]
     sp, u1 = paths.sp, paths.usd1

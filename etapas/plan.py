@@ -25,8 +25,9 @@ TOLERANCIA_PRUDENTE = 0.01          # el prudente puede ceder hasta un 1 % del c
 
 def simulate_plan(h: S.History, paths: S.Paths, rg: S.Rango, x: float | None, c: float, capital: float,
                   gas_tx: float, asset0: bool = True, m: float = 1.0, apr: float = 0.0,
-                  funding_h: np.ndarray | None = None, apy: float = 0.0) -> dict:
-    """Pool (con stop `x`) + corto de la parte `c`, en cada camino. Devuelve final, salta, liquidada y el reparto."""
+                  funding_h: np.ndarray | None = None, apy: float = 0.0, abierta: bool = False) -> dict:
+    """Pool (con stop `x`) + corto de la parte `c`, en cada camino. Devuelve final, salta, liquidada y el reparto.
+    `abierta`: la posición ya existe (sin cambio ni gas de entrada)."""
     Sn, H = paths.sp.shape[0], paths.sp.shape[1] - 1
     sp0, u10 = float(paths.sp[0, 0]), float(paths.usd1[0, 0])
     a0u, a1u = B._amounts(sp0, B._sqrt(rg.tl), B._sqrt(rg.tu))
@@ -35,7 +36,7 @@ def simulate_plan(h: S.History, paths: S.Paths, rg: S.Rango, x: float | None, c:
     V = capital / (1 + c * s * m)
     N = c * s * V
     M = m * N
-    lp = S.simulate_salida(h, paths, rg, x, V, gas_tx, apy=apy)
+    lp = S.simulate_salida(h, paths, rg, x, V, gas_tx, apy=apy, abierta=abierta)
     salta = lp.reajustes.astype(bool)
     base = {"V": V, "M": M, "N": N, "s": s, "lp": lp, "salta": salta}
     if N <= 0:
@@ -193,3 +194,65 @@ def frases(p: dict, asset: str, capital: float, dias: int) -> dict:
                                                                        " (este par no tiene perpetuo para cubrirlo)") + ".")
     out["validado"] = PLAZOS_PLAN_VALIDADOS[0] <= dias <= PLAZOS_PLAN_VALIDADOS[1]
     return out
+
+
+# --- G2: qué hacer con una posición que ya está abierta ------------------------------------------
+
+def opciones_abierta(h: S.History, dias: int, paths: S.Paths, rg: S.Rango, valor: float, gas: float | None = None,
+                     apy_usdc: float = 0.0, f: pd.Series | None = None, sr: dict | None = None) -> dict:
+    """Para una posición abierta que vale `valor` hoy, en los mismos escenarios: mantenerla, con stop,
+    cubierta con un corto (el margen se pone aparte), cerrarla y dejar sus tokens rindiendo, o cerrarla y
+    pasar a USDC en Aave. Resultado = valor final − lo puesto (valor + margen). Todas las piezas están
+    validadas por separado (stop E2, perpetuo C8, tokens rindiendo J1)."""
+    from . import rendir as RD
+    gas_tx = S.GAS.get(h.pool["chain"], 0.05) if gas is None else gas
+    _, _, asset0 = B.pair_of(h.pool)
+    sim = P.simbolo(h.pool)
+    m, apr, cubrir = 1.0, 0.0, False
+    if sim:
+        try:
+            f = P.funding(sim[0]) if f is None else f
+            asset0, m, apr, cubrir = sim[1], P.margen(S.hf_historico(h, dias, sim[1])), P.apr_reciente(f, h.hour_now), True
+        except OSError:
+            pass
+    op = []
+
+    def fila(nombre, fv, puesto, **extra):
+        res = fv - puesto
+        op.append({"opcion": nombre, "resultado_media": float(res.mean()), "resultado_p10": float(np.percentile(res, 10)),
+                   "resultado_p90": float(np.percentile(res, 90)), "prob_perdida": float(np.mean(res < 0)),
+                   "puesto": float(puesto)} | extra)
+
+    for st, x in STOPS_PLAN.items():
+        r = simulate_plan(h, paths, rg, x, 0.0, valor, gas_tx, asset0, apy=apy_usdc, abierta=True)
+        fila("Mantenerla" if x is None else f"Mantenerla con stop {st}", r["final"], valor,
+             precio_stop=None if x is None else rg.lo * (1 - x), prob_stop=float(r["salta"].mean()))
+    if cubrir:
+        sp0, u10 = float(paths.sp[0, 0]), float(paths.usd1[0, 0])
+        a0u, a1u = B._amounts(sp0, B._sqrt(rg.tl), B._sqrt(rg.tu))
+        v0, v1 = a0u * sp0 ** 2 * u10, a1u * u10
+        s = (v0 if asset0 else v1) / (v0 + v1)
+        for c in (0.5, 1.0):
+            cap = valor * (1 + c * s * m)
+            r = simulate_plan(h, paths, rg, None, c, cap, gas_tx, asset0, m, apr, abierta=True)
+            fila(f"Cubrirla {'del todo' if c >= 1 else 'a medias'} con un corto en {sim[0]}", r["final"], cap,
+                 margen=r["M"], corto=r["N"], prob_liquidacion=float(r["liquidada"].mean()))
+    try:
+        sr = sr or RD.series(h.pool)
+        g0 = (1 + RD.apy_reciente(sr[h.pool["symbol0"]], h.hour_now)) ** (dias / 365)
+        g1 = (1 + RD.apy_reciente(sr[h.pool["symbol1"]], h.hour_now)) ** (dias / 365)
+        fila("Cerrarla y dejar sus tokens rindiendo", RD.simulate_rendir(h, paths, rg, g0, g1, valor, gas_tx, abierta=True) - gas_tx,
+             valor)
+    except Exception:                                            # noqa: BLE001 (sin tipos, sin esta opción)
+        pass
+    estables = sum(x in B._STABLE for x in (h.pool["symbol0"], h.pool["symbol1"]))
+    cambio = 0.5 if estables == 1 else 0.0 if estables == 2 else 1.0      # parte aproximada que hay que vender
+    usdc = (valor - gas_tx - valor * cambio * h.swap_fee) * (1 + apy_usdc) ** (dias / 365)
+    fila("Cerrarla y pasar a USDC en Aave", np.full(paths.sp.shape[0], usdc), valor)
+    md = max(op, key=lambda x: x["resultado_media"])
+    ok = [x for x in op if x["resultado_media"] >= md["resultado_media"] - TOLERANCIA_PRUDENTE * valor]
+    pr = max(ok, key=lambda x: x["resultado_p10"])
+    base = op[0]
+    return {"opciones": op, "mejor": md, "prudente": pr if pr is not md and
+            pr["resultado_p10"] - md["resultado_p10"] >= MEJORA_P10 * valor else None,
+            "vs_mantenerla": md["resultado_media"] - base["resultado_media"]}

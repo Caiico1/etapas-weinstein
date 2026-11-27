@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import pytest
 
 from etapas import perpetuo as P
@@ -66,3 +67,23 @@ def test_sin_perpetuo_no_cubre():
     paths = S.bootstrap(h, 24 * 10, 100, seed=5)
     p = PL.planes(h, 10, paths, 5000, 0.05)
     assert p["perpetuo"] is None and {f["cobertura"] for f in p["filas"]} == {0.0}
+
+
+def test_opciones_de_una_posicion_abierta():
+    h = _h()
+    paths = S.bootstrap(h, 24 * 10, 200, seed=7)
+    rg = S.parse_rango("10", h)
+    idx = pd.date_range("2024-01-01", periods=24 * 900, freq="h")
+    sr = {POOL["symbol0"]: ("aave", pd.Series(0.02, index=idx)), POOL["symbol1"]: ("aave", pd.Series(0.04, index=idx))}
+    r = PL.opciones_abierta(h, 10, paths, rg, 1000.0, apy_usdc=0.04, f=_f(0.0001, desde="2024-01-01", dias=900), sr=sr)
+    nombres = [o["opcion"] for o in r["opciones"]]
+    assert nombres[0] == "Mantenerla" and "Cerrarla y pasar a USDC en Aave" in nombres
+    assert any(n.startswith("Cubrirla del todo") for n in nombres) and "Cerrarla y dejar sus tokens rindiendo" in nombres
+    m = r["opciones"][0]
+    lp = S.simulate(h, paths, rg, 1000.0, 0.05, abierta=True)                    # mantenerla = la posición sin costes
+    assert m["resultado_media"] == pytest.approx(float((lp.final - 1000).mean()))
+    usdc = next(o for o in r["opciones"] if "USDC" in o["opcion"])
+    assert usdc["resultado_p10"] == pytest.approx(usdc["resultado_media"]) and usdc["prob_perdida"] in (0.0, 1.0)
+    cub = next(o for o in r["opciones"] if o["opcion"].startswith("Cubrirla del todo"))
+    assert cub["puesto"] == pytest.approx(1000 + cub["margen"])
+    assert r["mejor"]["resultado_media"] == max(o["resultado_media"] for o in r["opciones"])

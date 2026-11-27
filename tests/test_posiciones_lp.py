@@ -42,6 +42,9 @@ def test_simular_posicion_abierta_sin_costes():
     assert 0 < r["sale_del_rango"] <= 1 and 0 < r["en_rango"] <= 1
     assert r["comisiones"] > 0 and r["mejor_ancho"]["texto"].startswith("±")
     assert r["fiabilidad"]["nivel"] in ("alta", "media", "baja") and r["lectura"]
+    assert r["plan"].get("texto") or r["plan"].get("error")                # G2: qué hacer con ella
+    if r["plan"].get("opciones"):
+        assert r["plan"]["opciones"][0]["opcion"] == "Mantenerla"
     # sin gas ni cambio inicial: igual que simular a mano con abierta=True
     paths = S.bootstrap(h, 30 * 24, 300)
     s = S.simulate(h, paths, S.rango_de_ticks(h, tl, tu), capital=1000, abierta=True)

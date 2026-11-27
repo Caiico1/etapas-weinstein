@@ -513,6 +513,12 @@ red (`supply_apy` de MetaProDB); escenarios con el rendimiento de 90 días. Fila
 frente a ellos −48 $ al mes (−139 $ a 90 d) en todos los pools y los dos años; error de lo simulado ±3 $. Pruebas
 en `tests/test_rendir.py`.
 
+**Tu plan para tus posiciones (`plan.opciones_abierta`, G2, 27-nov-2026).** En «Mis posiciones», para cada posición
+abierta y en los mismos escenarios: mantenerla, con stop, cubierta con un corto (margen aparte), cerrarla y dejar sus
+tokens rindiendo o pasar a USDC en Aave; la mejor de media y, si protege de verdad, la prudente (`texto_plan`). Reúsa
+piezas validadas (stop, perpetuo, J1); `simulate_plan` y `simulate_rendir` aceptan `abierta=True` (sin costes de
+entrada). Pruebas en `tests/test_plan.py` y `tests/test_posiciones_lp.py`.
+
 **¿Cuándo compensa ser LP? (I1, 27-nov-2026).** 3.331 aperturas de dos años (24 pools, 30/90 d, ±10/30/50 %),
 14 condiciones conocidas al abrir (comisiones recientes altas, volatilidad baja, precio o etapa laterales,
 simulador positivo, TVL) y sus combinaciones, eligiendo con un año y comprobando con el otro: ninguna ganó a

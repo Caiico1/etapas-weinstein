@@ -243,6 +243,24 @@ Desde la consola: `python -m etapas.posiciones_lp --dias 30`.
 
 ---
 
+### Tu plan para cada posición abierta (G2, 27-nov-2026)
+
+Debajo de la lectura de cada posición, una frase «Tu plan» compara, en los mismos escenarios y al plazo de
+arriba, qué hacer con ella:
+
+- mantenerla tal cual, o con stop (al salirse por abajo o un 5 % por debajo);
+- cubrirla a medias o del todo con un corto en el perpetuo (si el par lo tiene), poniendo el margen aparte;
+- cerrarla y dejar sus tokens rindiendo (ETH como wstETH, el resto en Aave);
+- cerrarla y pasar a USDC en Aave.
+
+Da la mejor de media (y cuánto gana frente a mantenerla) y, si alguna sube el escenario malo al menos un
+2 % del valor sin ceder más del 1 % de media, la que protege. Todas las piezas están validadas por
+separado (stop, perpetuo, tokens rindiendo); el resultado se mide frente a lo puesto (valor de hoy más el
+margen, si se cubre), y cerrar paga el gas y, para pasar a USDC, el cambio de la parte que no es estable.
+Ejemplo (una posición de 1.000 $ con ±10 % en WETH/USDC de Base, 30 días, nov-2026): mantenerla, −17 $ de
+media y −157 $ en el escenario malo; con stop al salirse, −16 $ y −75 $; cubierta del todo, −17 $ y −94 $;
+cerrarla y dejar sus tokens rindiendo o pasar a USDC en Aave, +3 $ de media (con USDC, sin riesgo de precio).
+
 ## 3. Campos de entrada
 
 ![Controles del simulador](docs/img/simulador-1-controles.png)
