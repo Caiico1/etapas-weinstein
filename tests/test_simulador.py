@@ -298,6 +298,7 @@ def test_recomendacion_favorable_cuando_gana_de_media_y_al_sin_riesgo():
            "rangos": [_rg_reco("±10%", 5120, 5060, 40, p10=4300), _rg_reco("±20%", 5080, 5030, 20)]}
     r = S.recomendacion(res)
     assert r["veredicto"] == "favorable" and "±10%" in r["texto"]
+    assert S.AVISO_FAVORABLE in r["hacer"]                      # I1: el «compensa» lleva su advertencia
     assert any("700 $" in t for t in r["hacer"])                          # pérdida del escenario malo
     assert any("Fiabilidad" in t or "fiabilidad media" in t for t in r["no_hacer"])
     assert any("Prueba ±30%" in t for t in r["mejorar"])

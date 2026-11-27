@@ -506,6 +506,13 @@ sube el P10 ≥ 2 % del capital). Panel «Tu plan» y primeras frases de la Reco
 5.000 $ en los dos años, casi todo por elegir el más ancho; protegerse solo funciona con perpetuo (30 d: P10
 real 4.397 → 4.864 $, coste según el año). Rangos de más de ±50 % probados y descartados (F3): ±70 y ±90 % pierden aún menos frente a guardar los tokens (30 d: −32 y −25 $ frente a −41 $ con ±50 %) pero siguen perdiendo, sin óptimo; ampliar el plan mejoró solo 5–40 $ y no en los dos años. La frase del plan da el «vs guardar los tokens». Pruebas en `tests/test_plan.py`.
 
+**¿Cuándo compensa ser LP? (I1, 27-nov-2026).** 3.331 aperturas de dos años (24 pools, 30/90 d, ±10/30/50 %),
+14 condiciones conocidas al abrir (comisiones recientes altas, volatilidad baja, precio o etapa laterales,
+simulador positivo, TVL) y sus combinaciones, eligiendo con un año y comprobando con el otro: ninguna ganó a
+guardar los tokens en los dos años; cuando el simulador daba «vs mantener» > 0 (2–6 % de las aperturas), lo
+real siguió perdiendo. La Recomendación lo advierte en el «compensa» (`simulador.AVISO_FAVORABLE`) y ya no
+sugiere esperar a que suban las comisiones.
+
 **Cobertura con perpetuo (`etapas/perpetuo.py`).** La alternativa que sí se puede abrir hoy: en pares
 activo/estable con perpetuo en Bybit, parte del capital va de margen aislado a un corto del activo por la
 parte c (0, ½, 1) de lo que el pool tiene en activo al abrir; margen = (r − 1) + MMR·r por $ de corto, con

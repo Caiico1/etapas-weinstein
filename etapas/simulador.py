@@ -1045,6 +1045,18 @@ def _num1(x: float) -> str:
     return f"{x:.1f}".replace(".", ",")
 
 
+# I1 (27-nov-2026): ¿hubo condiciones, conocidas al abrir, en que ser LP ganara a guardar los tokens? 24 pools de
+# referencia, 3.331 aperturas de dos años a 30 y 90 días, ±10/30/50 %; 14 condiciones (comisiones recientes
+# altas, volatilidad baja, precio o etapa de Weinstein laterales, simulador positivo, TVL) y sus combinaciones
+# (47 con ≥ 50 aperturas por año): NINGUNA ganó en los dos años; las mejores de un año perdieron en el otro
+# (p. ej. comisiones 30 d ≥ ×1,2, 30 d ±10 %: +86 $ un año, −143 $ el otro). Cuando el simulador daba «vs
+# mantener» > 0 (2–6 % de las aperturas) la realidad siguió perdiendo (30 d ±10 %: −119 $ y −56 $ por 5.000 $).
+AVISO_FAVORABLE = ("Ojo con este «compensa»: en la validación (dos años, 24 pools), las pocas veces que el simulador "
+                   "daba ganancia frente a guardar los tokens, la realidad siguió perdiendo de media, y ninguna "
+                   "condición (comisiones altas, volatilidad baja, precio o etapa laterales) hizo ganar al LP en los "
+                   "dos años. Tómalo como «de los menos malos», no como una ganancia esperada.")
+
+
 def recomendacion(res: dict) -> dict:
     """La lectura para quien no quiere interpretar la tabla: veredicto, qué hacer, qué no hacer y cómo
     intentar mejorarlo. Se basa en la MEDIA de los escenarios (cuenta los malos con su peso), comparada con
@@ -1073,6 +1085,7 @@ def recomendacion(res: dict) -> dict:
                      f"permitirte ver caer: en un escenario malo (1 de cada 10) pierdes unos {_usd(perdida_mala, False)}.")
         hacer.append("Vigílala: apúntala en posiciones.txt para que la rutina te avise si se acerca a un borde, y "
                      "revísala a mitad de plazo con «Mis posiciones».")
+        hacer.append(AVISO_FAVORABLE)
     elif any(r["valor_final"]["p50"] > cap for r in rs):
         t = max(rs, key=lambda r: r["valor_final"]["p50"])
         veredicto = ("desfavorable",
@@ -1125,7 +1138,8 @@ def recomendacion(res: dict) -> dict:
                          "recomiendo»): usa menos capital del que usarías en una etapa lateral.")
     elif et.get("nivel") == "apta" and et.get("etapa") in (1, 3) and buenos:
         hacer.append(f"La etapa acompaña: {et['par']} está en etapa {et['etapa']} (lateral) en el marco "
-                     f"{et['marco_label']}, la más favorable para un rango.")
+                     f"{et['marco_label']}, la que más tiempo deja el precio dentro del rango (aunque, frente a "
+                     "guardar los tokens, abrir en etapa lateral no ganó de forma fiable en la validación).")
     elif et.get("nivel") == "sin datos":
         mejorar.append("No he podido leer la etapa del par: compruébala con /pool antes de abrir.")
 
@@ -1224,8 +1238,9 @@ def recomendacion(res: dict) -> dict:
                    "más comisiones por la misma liquidez puede darle la vuelta.")
     nivel = res.get("nivel_reciente") or 1.0
     if nivel < 0.8:
-        mejorar.append(f"Las comisiones de este pool están ahora al {_pct(nivel)} de su media de dos años: vuelve a "
-                       "mirarlo cuando suban (el resultado mejora casi en proporción).")
+        mejorar.append(f"Las comisiones de este pool están ahora al {_pct(nivel)} de su media de dos años. Esperar a "
+                       "que suban no basta: en la validación, abrir con comisiones altas ganó a guardar los tokens un "
+                       "año y perdió el otro.")
     if dias >= 60:
         mejorar.append("Prueba un plazo de 30 días: el simulador es más fiable y te deja revisar y decidir antes.")
     if (res.get("escala_vol") or 1.0) < 0.95:

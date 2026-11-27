@@ -910,6 +910,37 @@ datos, así que no se aplica. La etapa se queda como aviso en la Recomendación,
 
 ---
 
+### ¿Hay momentos en que ser LP sí compensa? (I1, 27-nov-2026)
+
+Se buscaron condiciones, conocidas el día de abrir, en que ser LP hubiera ganado a guardar los mismos
+tokens: 24 pools de referencia, 3.331 aperturas de dos años a 30 y 90 días, con ±10, ±30 y ±50 %. Se
+probaron 14 condiciones y sus combinaciones de dos: comisiones recientes altas (≥ ×1,2 de su media),
+volatilidad baja, precio lateral en los últimos 30 días, etapa de Weinstein lateral (semanal o mensual),
+simulador positivo y TVL ≥ 10 M$. Se eligió con un año y se comprobó con el otro.
+
+**Ninguna ganó en los dos años.** Las mejores de un año perdieron en el otro, a menudo con fuerza:
+
+| Condición (30 días, ±10 %, por 5.000 $, frente a guardar los tokens) | Un año | El otro |
+|---|---|---|
+| Todas las aperturas | −142 $ | −74 $ |
+| Comisiones de 30 días ≥ ×1,2 de su media | +86 $ | −143 $ |
+| Volatilidad ≤ media y etapa mensual lateral | +48 $ | −143 $ |
+| El simulador daba «vs mantener» positivo (solo 2–6 % de las aperturas) | −119 $ | −56 $ |
+
+**Qué cambia en la Recomendación:**
+- Cuando el veredicto es «compensa», lleva una advertencia: en la validación, las pocas veces que el
+  simulador daba ganancia frente a guardar los tokens, la realidad siguió perdiendo. Léelo como «de los
+  menos malos», no como una ganancia esperada.
+- «Vuelve a mirarlo cuando suban las comisiones» pasa a «esperar a que suban no basta»: abrir con
+  comisiones altas ganó un año y perdió el otro.
+- La etapa lateral sigue siendo la que más tiempo deja el precio dentro del rango, pero frente a guardar
+  los tokens no ganó de forma fiable.
+
+**Conclusión de todo lo validado:** en estos pools y estos dos años, ser LP perdió frente a guardar los
+tokens, y no hubo una señal fiable de cuándo no. El simulador sirve para perder menos (ancho, pool,
+cobertura con perpetuo) y para medir el riesgo, no para encontrar el momento de ganar. Si lo que buscas es
+renta sin riesgo de precio, la alternativa es la referencia sin riesgo (USDC en Aave, Letras o T-bills).
+
 ## 8 e. ¿Cómo ha acertado con tus simulaciones?
 
 La validación del simulador se hizo con aperturas «de laboratorio»: ±10 %, cada 7 días, en los pools de
