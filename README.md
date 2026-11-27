@@ -666,7 +666,14 @@ Ethereum; WBTC/USDT y USDC/WBTC 0,05 % en Arbitrum, donde el simulador no reprod
 Si algún plazo sale de su banda, abre una issue «simulador-calibracion» (llega por correo) con lo que
 hay que mirar: a 30 días, el ajuste propuesto; a los demás, revisar `EXPONENTE_PLAZO`. La cierra
 cuando todos vuelven a estar en banda.
-Registro en `out/simulador_calibracion.jsonl` y `out/simulador_aviso.log`. Tarda un par de minutos.
+Además vigila las piezas validadas una sola vez (`etapas/simulador_vigila.py`, aperturas del último año a
+30 días): veces que salta el stop simulado frente a real (diferencia ≤ 10 puntos), funding del corto
+simulado ÷ real (×0,6–1,4), error de la media cubierta del todo (±2 % del capital), plan de mejor media
+frente a ±10 % en lo real (≥ 0 $) y pools que dejan de cuadrar con Revert desde el mes anterior (≤ 2). Si
+alguna se sale, la misma issue con su tabla (solo cifras agregadas). Primera medida (27-nov-2026, 1.166
+aperturas): stop 50 % / 42 %, funding ×0,99, cubierto +17 $, plan +59 $: todo en banda. Pruebas en
+`tests/test_simulador_vigila.py`; a mano: `python -m etapas.simulador_vigila`.
+Registro en `out/simulador_calibracion.jsonl` y `out/simulador_aviso.log`. Tarda unos cinco minutos.
 No va en la rutina de GitHub Actions porque necesita MetaProDB.
 
 **Corrección por plazo (22-nov-2026).** Con un factor único (0,88) las comisiones salían bajas a

@@ -1059,7 +1059,18 @@ xychart-beta
 - **Vigilancia mensual:** el día 1 de cada mes una tarea de Windows («Simulador calibracion») repite la
   comprobación a **7, 30, 90 y 180 días**. Si algún plazo se desvía de su banda, abre una issue en
   GitHub, que llega por correo, con lo que hay que mirar: a 30 días, el ajuste propuesto; a los demás
-  plazos, revisar el exponente de la corrección por plazo.
+  plazos, revisar el exponente de la corrección por plazo. Desde el 27-nov-2026 vigila también, con las aperturas del último
+  año a 30 días, las piezas que se validaron una sola vez:
+
+  | Pieza | Avisa si | Primera medida (27-nov-2026) |
+  |---|---|---|
+  | Stop: veces que salta, simulado / real | La diferencia pasa de 10 puntos | 50 % / 42 % |
+  | Funding del corto, simulado ÷ real | Sale de ×0,6–1,4 | ×0,99 |
+  | Cubierto del todo con perpetuo: error de la media | Más de ±100 $ por 5.000 $ | +17 $ |
+  | Plan de mejor media frente a ±10 % sin más (real) | Pierde (menos de 0 $) | +59 $ |
+  | Pools que dejan de cuadrar con Revert desde el mes anterior | Más de 2 | — (primera vez) |
+
+  Si alguna se sale, la misma issue lleva su tabla (solo cifras agregadas) y qué revisar.
 - **Revisión con los datos corregidos (H2, 27-nov-2026).** Tras quitar las horas de pool vacío y los
   picos de comisiones, se rehicieron con el mismo método las validaciones de comisiones, horquilla, stop y
   cobertura con perpetuo (24 pools de referencia, dos años de aperturas). Ninguna constante se sale de su

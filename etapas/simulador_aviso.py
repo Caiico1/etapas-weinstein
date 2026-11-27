@@ -11,7 +11,9 @@ junta los resultados por plazo:
     `AJUSTE_COMISIONES` ya no vale (el de 30 días es el que lo fija; los demás avisan de que las
     comisiones se desvían a ese plazo);
   - lo real dentro del P10–P90: fuera de su banda → la horquilla es demasiado estrecha o ancha.
-Si algún plazo se desvía, abre una issue de GitHub (etiqueta «simulador-calibracion», que GitHub
+Además vigila las piezas validadas una sola vez (`simulador_vigila`: stop, cobertura con perpetuo, plan
+y contraste con Revert), cada una con su banda.
+Si algún plazo o pieza se desvía, abre una issue de GitHub (etiqueta «simulador-calibracion», que GitHub
 envía por correo) con lo que hay que mirar; si todos vuelven a estar en banda, la cierra. Con la
 issue abierta no repite el aviso. Cada ejecución se añade a out/simulador_calibracion.jsonl.
 
@@ -251,9 +253,9 @@ def _hist_txt(h: dict | None) -> str:
             + ("" if historial_ok(h) else " ⚠"))
 
 
-def decide(vs: list[Verdict], open_n: int | None, hist_ok: bool = True) -> str | None:
+def decide(vs: list[Verdict], open_n: int | None, hist_ok: bool = True, piezas_ok: bool = True) -> str | None:
     """abrir | cerrar | None."""
-    ok = all(v.ok for v in vs) and hist_ok
+    ok = all(v.ok for v in vs) and hist_ok and piezas_ok
     if not ok and open_n is None:
         return "abrir"
     if ok and open_n is not None:
@@ -267,24 +269,30 @@ def _corto(vs: list[Verdict]) -> str:
 
 
 def run(gh: GitHub | None, simulate: bool = False, vs: list[Verdict] | None = None,
-        hist: dict | None = None) -> str:
+        hist: dict | None = None, piezas: list | None = None) -> str:
     vs = vs or measure()
     hist = hist if hist is not None else historial()
     hok = historial_ok(hist)
+    piezas = piezas or []
+    pok = all(x.ok for x in piezas)
     hoy = pd.Timestamp.now().strftime("%Y-%m-%d")
     LOG.parent.mkdir(exist_ok=True)
     with LOG.open("a", encoding="utf-8") as f:
         f.write(json.dumps({"fecha": hoy, "ok": all(v.ok for v in vs), "ajuste": vs[0].ajuste,
                             "plazos": [{"dias": v.dias, "ratio": round(v.ratio, 4), "cobertura": round(v.cobertura, 4),
-                                        "pruebas": v.pruebas, "ok": v.ok, "pools": v.por_pool} for v in vs]},
+                                        "pruebas": v.pruebas, "ok": v.ok, "pools": v.por_pool} for v in vs],
+                            "piezas": [{"nombre": x.nombre, "valor": x.valor, "ok": x.ok, "pruebas": x.pruebas}
+                                       for x in piezas]},
                            ensure_ascii=False) + "\n")
     principal = next((v for v in vs if v.dias == PRINCIPAL), None)
-    ok = all(v.ok for v in vs) and hok
+    ok = all(v.ok for v in vs) and hok and pok
     ht = _hist_txt(hist)
-    summary = f"{hoy}: {_corto(vs)}{' · ' + ht if ht else ''} → " + ("en banda" if ok else "DESVIADO" + (
+    from . import simulador_vigila as V
+    pt = V.texto(piezas) if piezas else ""
+    summary = f"{hoy}: {_corto(vs)}{' · ' + ht if ht else ''}{' · ' + pt if pt else ''} → " + ("en banda" if ok else "DESVIADO" + (
         f" (ajuste propuesto {principal.ajuste_propuesto:.2f})" if principal and not principal.ok_comisiones else ""))
     open_n = gh.open_issue() if gh else None
-    act = decide(vs, open_n, hok)
+    act = decide(vs, open_n, hok, pok)
     if act and not simulate and gh:
         if act == "abrir":
             b = body(vs, hoy)
@@ -293,7 +301,15 @@ def run(gh: GitHub | None, simulate: bool = False, vs: list[Verdict] | None = No
                               f"pantalla que ya han vencido, lo real cayó dentro del P10–P90 el {hist['dentro_p10_p90']:.0%} "
                               f"(banda {HIST_BANDA[0]:.0%}–{HIST_BANDA[1]:.0%}). Detalle local: "
                               "`python -m etapas.simulador_historial`.\n\n" + MARKER)
-            gh.create(title(vs) if not all(v.ok for v in vs) else "Simulador de pools: tus simulaciones se desvían", b)
+            if piezas:
+                b = b.replace(MARKER, "### Piezas del simulador\n\n" + "\n".join(V.tabla(piezas)) + "\n\n" + MARKER)
+            if not all(v.ok for v in vs):
+                tt = title(vs)
+            elif not pok:
+                tt = "Simulador de pools: revisar " + ", ".join(x.nombre.lower() for x in piezas if not x.ok)
+            else:
+                tt = "Simulador de pools: tus simulaciones se desvían"
+            gh.create(tt, b)
         else:
             gh.close(open_n, f"Calibración del {hoy} en banda: {_corto(vs)}. Se cierra el aviso.")
     return summary + (f" · {act} issue" if act else "")
@@ -303,16 +319,28 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--simular", action="store_true", help="no tocar GitHub")
     a = ap.parse_args(argv)
+    from . import simulador_vigila as V
+    nuevos = None
     try:                                   # contraste de comisiones con Revert (lo usa el semáforo de fiabilidad)
         from . import contraste_revert as CR
+        try:
+            antes = json.loads(CR.CACHE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            antes = None
         r = CR.calcular()
         CR.guardar(r)
         s = CR.resumen(r)
+        nuevos = V.nuevos_fuera(antes, r)
         print(f"contraste con Revert: {s['pools']} pools, MetaProDB ÷ Revert ×{s['mediana']:.2f} (mediana)")
     except Exception as e:                 # noqa: BLE001 (sin red, sigue la calibración)
         print(f"contraste con Revert no disponible: {type(e).__name__}: {e}", file=sys.stderr)
+    try:                                   # stop, perpetuo y plan con las aperturas del último año
+        piezas = V.comprobar(V.medir(), nuevos)
+    except Exception as e:                 # noqa: BLE001
+        print(f"vigilancia de piezas no disponible: {type(e).__name__}: {e}", file=sys.stderr)
+        piezas = []
     try:
-        print(run(None if a.simular else GitHub(), a.simular))
+        print(run(None if a.simular else GitHub(), a.simular, piezas=piezas))
     except subprocess.CalledProcessError as e:
         print(f"gh falló: {e.stderr}", file=sys.stderr)
         return 1
