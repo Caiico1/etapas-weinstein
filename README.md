@@ -409,6 +409,12 @@ valor final, frente a mantener, comisiones, APR, rentabilidad, % del tiempo en r
 de pérdida y por qué lado acaba, con la horquilla P10–P90 de los escenarios. Varios rangos del mismo
 pool a la vez, sin reajustes. Necesita `D:\MetaProDB\metapro.duckdb`; solo funciona en local.
 
+Además: ranking de pools, «Tu plan» (ancho × stop × corto en el perpetuo, frente a tus tokens rindiendo en
+staking o Aave), «Tu plan» para cada posición abierta en Revert, vigilante horario del stop, contraste de las
+comisiones con Revert y una comprobación mensual que abre aviso si algo se desvía. **Conclusión de dos años de
+validación (nov-2026):** ser LP perdió frente a guardar los mismos tokens, y más frente a tenerlos rindiendo; lo
+que funciona es perder menos (ancho, pool) y protegerse con el perpetuo.
+
 **Pantalla:** <http://localhost:8768>
 
 ```

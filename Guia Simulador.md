@@ -8,22 +8,40 @@ cómo leer los resultados para elegir un rango.
 > posición en cada uno (comisiones, valor final, tiempo en rango, probabilidad de perder).
 > Es **análisis de escenarios, no una predicción** ni una recomendación de inversión.
 
+> **Lo que dicen dos años de validación (nov-2026, 24 pools de referencia, miles de aperturas reales):**
+> - Ser LP **perdió frente a guardar los mismos tokens** de media, y más aún frente a tenerlos rindiendo
+>   (ETH como wstETH, el resto en Aave): −48 $ al mes por 5.000 $ con ±50 %, en todos los pools y años.
+> - Cuanto **más ancho** el rango, menos pierde (sin un ancho que gane); ninguna condición al abrir
+>   (comisiones altas, volatilidad baja, etapa lateral…) hizo ganar al LP de forma fiable.
+> - Lo que sí funciona: elegir dónde y cómo perder menos (ranking, ancho, plan) y **protegerse con un corto
+>   en el perpetuo**, que sube de verdad el escenario malo.
+> - Las cifras del simulador están calibradas (comisiones, horquilla P10–P90, stop, perpetuo) y una tarea
+>   mensual comprueba que lo sigan estando.
+
 **Índice**
 
 1. [Cómo abrirlo](#1-cómo-abrirlo)
 2. [La pantalla de un vistazo](#2-la-pantalla-de-un-vistazo)
-   - [2 b. Mis posiciones abiertas (Revert)](#2-b-mis-posiciones-abiertas-revert)
+   - [2 a. ¿En qué pool añade más ser LP? (ranking)](#2-a-en-qué-pool-añade-más-ser-lp-ranking)
+   - [2 b. Mis posiciones abiertas (Revert)](#2-b-mis-posiciones-abiertas-revert), con «Tu plan» para cada una
 3. [Campos de entrada](#3-campos-de-entrada)
 4. [Los rangos](#4-los-rangos)
 5. [La línea de datos](#5-la-línea-de-datos)
    - [5 b. En resumen: conclusión y semáforo de fiabilidad](#5-b-en-resumen-conclusión-y-semáforo-de-fiabilidad)
+   - [5 c. Tu plan (ancho, stop y cobertura juntos)](#5-c-tu-plan-ancho-stop-y-cobertura-juntos), con «tus tokens rindiendo»
 6. [Gráfico 1: precio en los escenarios](#6-gráfico-1-precio-en-los-escenarios-y-tus-rangos)
 7. [Gráfico 2: resultado frente a lo invertido](#7-gráfico-2-resultado-frente-a-lo-invertido)
    - [7 b. Gráfico 3: de dónde sale el resultado](#7-b-gráfico-3-de-dónde-sale-el-resultado)
 8. [La tabla de detalle, columna a columna](#8-la-tabla-de-detalle-columna-a-columna)
+   - [8 a. ¿Y si lo reajustas cuando se sale?](#8-a-y-si-lo-reajustas-cuando-se-sale)
+   - [8 a b. ¿Y si sale mal? (casos de estrés)](#8-a-b-y-si-sale-mal-casos-de-estrés)
+   - [8 a b b. ¿Y si pones un stop?](#8-a-b-b-y-si-pones-un-stop)
+   - [8 a c. Cubrirlo con un préstamo en Aave](#8-a-c-cubrirlo-con-un-préstamo-en-aave)
+   - [8 a c b. Cubrirlo con un corto en un perpetuo](#8-a-c-b-cubrirlo-con-un-corto-en-un-perpetuo)
    - [8 b. Buscar el mejor ancho](#8-b-buscar-el-mejor-ancho)
    - [8 c. Comparar con otros pools del mismo par](#8-c-comparar-con-otros-pools-del-mismo-par)
-   - [8 d. Recomendación](#8-d-recomendación)
+   - [8 d. Recomendación](#8-d-recomendación), y si hay momentos en que ser LP compensa
+   - [8 e. ¿Cómo ha acertado con tus simulaciones?](#8-e-cómo-ha-acertado-con-tus-simulaciones)
 9. [Cómo funciona por dentro](#9-cómo-funciona-por-dentro)
 10. [Cómo elegir un rango (receta)](#10-cómo-elegir-un-rango-receta)
 11. [Fiabilidad y límites](#11-fiabilidad-y-límites)
@@ -61,7 +79,8 @@ flowchart TB
     B --> RK["¿En qué pool añade más ser LP?<br/>ranking de MetaProDB (botón Calcular ranking)"]
     RK --> M["Mis posiciones abiertas (Revert)<br/>(botón Cargar y simular)"]
     M --> R["③ En resumen<br/>conclusión en frases + semáforo de fiabilidad"]
-    R --> C["④ Gráfico de precio<br/>abanico de escenarios y tus rangos"]
+    R --> PL["Tu plan<br/>ancho, stop y cobertura juntos + tus tokens rindiendo"]
+    PL --> C["④ Gráfico de precio<br/>abanico de escenarios y tus rangos"]
     C --> D["⑤ Gráfico de resultado<br/>ganancia o pérdida de cada rango"]
     D --> G["⑥ De dónde sale el resultado<br/>precio, pérdida impermanente, comisiones, costes"]
     G --> E["⑦ Tabla de detalle<br/>todas las cifras + referencia sin riesgo"]
@@ -80,7 +99,8 @@ Los dos últimos y «Mis posiciones» no se calculan solos: pulsa su botón. Par
 lanzados: **http://localhost:8768/#ranking,posiciones,buscar,comparar** (o solo los que quieras).
 
 Empieza por **③ En resumen**: dice en tres o cuatro frases lo que hay en los gráficos y en la tabla, y
-cuánto fiarte.
+cuánto fiarte. Justo debajo, **Tu plan** junta en una decisión el ancho, el stop y la cobertura, y lo
+compara con tener los mismos tokens rindiendo sin pool.
 
 Cada vez que cambias un campo o un rango, **vuelve a simular solo** (en menos de medio segundo). El
 botón **Simular** fuerza una nueva simulación. Mientras calcula, la pantalla se atenúa.
@@ -917,10 +937,11 @@ malos con su peso. Un rango «compensa» solo si cumple las dos cosas a la vez:
 
 | Bloque | Qué dice |
 |---|---|
+| **Tu plan** (primeras frases) | El plan de mejor media, frente a tener los mismos tokens rindiendo sin pool, y el plan para protegerte si lo hay (sección 5 c). |
 | **Frase principal** | El veredicto con sus números. Si compensa: qué rango abrir y cuánto ganaría de media. Si no: lo que pasa en el caso típico, lo que se pierde en un escenario malo y lo que se pierde de media. |
-| **✅ Qué haría** | Si compensa: abrir ese rango con dinero que puedas ver caer (dice cuánto se pierde en un escenario malo) y vigilarlo con `posiciones.txt` y «Mis posiciones». Si no compensa: las alternativas, que son guardar el token si lo que quieres es tenerlo, la renta sin riesgo en dólares si lo que buscas es renta, y, si aun así quieres probar, el rango menos malo con poco dinero. |
+| **✅ Qué haría** | Si compensa: abrir ese rango con dinero que puedas ver caer (dice cuánto se pierde en un escenario malo) y vigilarlo con `posiciones.txt` y «Mis posiciones», con la advertencia de que en la validación las veces que el simulador daba ganancia la realidad siguió perdiendo (léelo como «de los menos malos»). Si no compensa: las alternativas, que son guardar el token si lo que quieres es tenerlo, la renta sin riesgo en dólares si lo que buscas es renta, y, si aun así quieres probar, el rango menos malo con poco dinero. |
 | **⛔ Qué no recomiendo** | Los rangos que pasan mucho tiempo fuera, elegir por el APR más alto, fiarse solo del «Valor final (mediana)», abrir un rango que ya está fuera de rango hoy, y tomar las cifras al pie de la letra si la fiabilidad no es alta. |
-| **🔧 Para intentar mejorarlo** | Probar el ancho que propone el buscador (o avisar de que ni el más ancho compensa), comparar el mismo par en otros pools, esperar a que suban las comisiones si están por debajo de su media, acortar el plazo si es largo, y volver a simular antes de abrir si los últimos meses han sido tranquilos. |
+| **🔧 Para intentar mejorarlo** | Probar el ancho que propone el buscador (o avisar de que ni el más ancho compensa), comparar el mismo par en otros pools, avisar si las comisiones están por debajo de su media (sin sugerir esperar: abrir con comisiones altas ganó un año y perdió el otro), acortar el plazo si es largo, y volver a simular antes de abrir si los últimos meses han sido tranquilos. |
 
 **Ejemplo** (WETH/USDC 0,05 % de Base, 5.000 $, 30 días, 24-nov-2026): «no compensa». Lo normal es ganar un
 poco (+130 $ con ±10 % en el escenario de en medio), pero en un escenario malo se pierden unos 831 $ y de
@@ -1060,6 +1081,12 @@ Claves:
 
 ## 10. Cómo elegir un rango (receta)
 
+**Atajo validado:** mira primero **Tu plan** (sección 5 c). Con dos años de datos, el plan de mejor media
+suele ser un rango ancho (±30–50 %), porque cuanto más ancho menos se pierde frente a guardar los tokens;
+y si el par tiene perpetuo, «para protegerte» es la forma de subir el escenario malo que de verdad
+funcionó. Compáralo siempre con la fila «Tus tokens rindiendo»: en la validación ganó al pool en todos los
+pools. La receta de abajo sirve para entender y comparar tus propios rangos.
+
 ```mermaid
 flowchart TD
     A["Elige pool, capital y plazo"] --> B["Pulsa + P25–P75, + P10–P90 y + P5–P95<br/>(y algún ± que quieras comparar)"]
@@ -1074,14 +1101,16 @@ flowchart TD
     I -->|sí| J["Candidato: compara el P50 y el P10<br/>de los que pasan y quédate con el más equilibrado"]
 ```
 
-**Rangos orientativos para empezar** (pares volátiles tipo ETH/USDC; ajusta según lo que salga):
+**Rangos para comparar** (pares volátiles tipo ETH/USDC). Los estrechos cobran más comisiones, pero en la
+validación perdieron más frente a guardar los tokens (a 30 días: ±10 % −101 $, ±30 % −60 $, ±50 % −41 $ por
+5.000 $); úsalos para ver la diferencia, no como punto de partida:
 
 | Marco | Plazo | Rangos para comparar |
 |---|---|---|
 | Semanal | 7 | ±3 %, ±5 %, ±8 % |
 | Quincenal | 14 | ±5 %, ±8 %, ±12 % |
-| Mensual | 30 | ±8 %, ±10 %, ±15 %, ±20 % |
-| Trimestral | 90 | ±15 %, ±25 %, ±35 % |
+| Mensual | 30 | ±10 %, ±20 %, ±30 %, ±50 % |
+| Trimestral | 90 | ±20 %, ±30 %, ±50 % |
 
 - **Si crees que el precio subirá**, prueba un rango asimétrico hacia arriba (`-5/+15`), pero deja la
   tendencia en **neutral**: el simulador no debe confirmar tu opinión, solo medir el riesgo.
@@ -1256,6 +1285,18 @@ python -m etapas.simulador "WETH/USDC 0.05%" --red base --capital 5000 --dias 30
 
 ```powershell
 python -m etapas.simulador "WETH/USDC 0.05%" --red base --calibrar --ultimos 365
+```
+
+**Otras herramientas del simulador:**
+
+```powershell
+python -m etapas.ranking                     # ranking de pools (guarda out/ranking.json)
+python -m etapas.posiciones_lp               # tus posiciones abiertas en Revert, con su plan
+python -m etapas.contraste_revert            # comisiones de MetaProDB frente a Revert (año y último mes)
+python -m etapas.simulador_vigila            # stop, perpetuo y plan con las aperturas del último año
+python -m etapas.simulador_aviso --simular   # la comprobación mensual completa, sin tocar GitHub
+python -m etapas.vigilante_stop --simular    # qué avisaría ahora el vigilante del stop
+python -m etapas.simulador_historial         # cómo han acertado tus simulaciones guardadas
 ```
 
 Más detalle técnico en el [README](README.md#simulador-de-pools-a-futuro-rango-fijo).
