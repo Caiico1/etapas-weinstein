@@ -47,6 +47,7 @@ cómo leer los resultados para elegir un rango.
 11. [Fiabilidad y límites](#11-fiabilidad-y-límites)
 12. [Problemas frecuentes](#12-problemas-frecuentes)
 13. [Desde la consola](#13-desde-la-consola)
+14. [Apéndice técnico (para quien toca el código)](#14-apéndice-técnico-para-quien-toca-el-código)
 
 ---
 
@@ -1309,4 +1310,341 @@ node tools/capturas_simulador.mjs                 # todas, en docs/img
 node tools/capturas_simulador.mjs plan detalle    # solo las que contengan esas palabras
 ```
 
-Más detalle técnico en el [README](README.md#simulador-de-pools-a-futuro-rango-fijo).
+Más detalle técnico en el [apéndice técnico](#14-apéndice-técnico-para-quien-toca-el-código).
+
+---
+
+## 14. Apéndice técnico (para quien toca el código)
+
+Módulos, constantes, cómo se calcula cada pieza y cómo se validó, con sus cifras. Antes estaba en el README; ahora solo está aquí.
+
+Simula cómo podría ir una posición de rango fijo en un pool de MetaProDB durante los próximos días:
+valor final, frente a mantener, comisiones, APR, rentabilidad, % del tiempo en rango, probabilidad
+de pérdida y por qué lado acaba, con la horquilla P10–P90 de los escenarios. Varios rangos del mismo
+pool a la vez, sin reajustes. Necesita `D:\MetaProDB\metapro.duckdb`; solo funciona en local.
+
+Además: ranking de pools, «Tu plan» (ancho × stop × corto en el perpetuo, frente a tus tokens rindiendo en
+staking o Aave), «Tu plan» para cada posición abierta en Revert, vigilante horario del stop, contraste de las
+comisiones con Revert y una comprobación mensual que abre aviso si algo se desvía. **Conclusión de dos años de
+validación (nov-2026):** ser LP perdió frente a guardar los mismos tokens, y más frente a tenerlos rindiendo; lo
+que funciona es perder menos (ancho, pool) y protegerse con el perpetuo.
+
+**Pantalla:** <http://localhost:8768>
+
+```
+python -m etapas.simulador_web                  # o --port 8770 si el 8768 está ocupado
+```
+
+Arranca solo al iniciar sesión en Windows: la tarea programada «Simulador web» lanza
+`simulador_web.vbs` → `simulador_web.bat` (sin ventana, registro en `out\simulador_web.log`). También
+está en el panel Power4 (https://caiico1.github.io/power4-panel/, sección «Simulador»), que lo muestra
+desde este PC; en el móvil no carga porque el simulador solo corre aquí.
+
+(En Claude Code: `preview_start` con la configuración `simulador-pool` de `.claude/launch.json`.)
+
+**Consola:**
+
+```
+python -m etapas.simulador "WETH/USDC 0.05%" --red base --capital 5000 --dias 30 --rangos "1500-1900,±10%,-5/+15"
+```
+
+Rangos: precios (`1500-1900`), % simétrico (`±10%`), asimétrico (`-5/+15`, % abajo / % arriba) o
+percentiles del precio al final del plazo en los escenarios (`P10-P90`: acaba dentro en 8 de cada
+10; botones `+ P25–P75`, `+ P10–P90` y `+ P5–P95` en la pantalla), ajustados hacia fuera a los ticks
+del pool. Con P10–P90 el precio está dentro ~90 % del tiempo y fue, en ETH y BTC a 7, 30 y 180 días,
+el ancho más equilibrado: casi el mejor «vs mantener» en la mediana con un P10 bastante menos malo
+que el de P25–P75. Opciones: `--historia` (días de histórico, 730),
+`--escenarios` (1000), `--bloque` (horas por bloque, 168), `--tendencia neutral|historica`,
+`--nivel` (días del nivel reciente de comisiones, 90; 0 = sin nivel), `--ajuste` (factor común de
+comisiones, 0,97), `--exponente` (corrección por plazo, 0,05; 0 = sin corrección), `--escala`
+(volatilidad de los escenarios; por defecto automática, 1 = el histórico tal cual), `--gas`, `--json`.
+
+**Cómo funciona.** Cada escenario encadena bloques de 7 días consecutivos sacados al azar del
+histórico del pool: precio y comisiones van juntos (semanas movidas traen su volumen) y las
+comisiones se reescalan al precio de hoy (g0·√P y g1/√P son invariantes). El **nivel** de comisiones
+es el de los últimos 90 días: los escenarios conservan la forma del histórico (semanas tranquilas y
+movidas), pero se multiplican por (media de los últimos 90 días / media del histórico) × 0,97 ×
+(días del plazo / 30)^−0,05 (corrección por plazo, ver abajo). Los movimientos del precio se escalan a
+la volatilidad reciente y al plazo (ver «Volatilidad»). Con tendencia «neutral»
+se quita la subida o bajada media: el simulador no apuesta por la dirección. La posición se abre
+hoy con la misma matemática que `backtest.simulate` (test de paridad), cobra L × fee_growth en las
+horas en rango diluido por la liquidez activa del pool, y paga el gas de abrir y la comisión del
+cambio inicial. «vs mantener» = guardar los mismos tokens depositados. Referencia: USDC en Aave en
+la misma red.
+
+**Resumen, semáforo y desglose (pantalla y `--json`).** `conclusiones` escribe 3–4 frases a partir de
+la tabla: si algún rango supera a mantener, si supera a la referencia sin riesgo, el riesgo de cola
+(mediana que gana con media que pierde) y los rangos que se salen mucho. `fiabilidad` da un semáforo
+alta/media/baja con sus motivos: histórico (≥ 1 año: recortado a 180 o 365 días acertó como con 730; completarlo con otro pool del mismo par no mejoró, 25-nov-2026), TVL (> 2 M$), plazo (> 90 días baja a
+media), pools con datos anómalos y, si existe, la calibración mensual del propio pool
+(`calibracion_pool`, que lee `out/simulador_calibracion.jsonl`, local y sin subir). `desglose` reparte el
+resultado medio en precio de los tokens + pérdida impermanente + comisiones + costes (suma exacta;
+«vs mantener» = las tres últimas). Ejemplo: WETH/USDC de Base a 30 días con ±5 % gana 80 $ en la
+mediana pero pierde 192 $ de media, porque la pérdida impermanente de los escenarios malos (−336 $ de
+media) no tiene techo.
+
+**Reajuste (`simulate_reajuste`, `comparar_reajustes`).** Cada rango, dejado fijo frente a recentrarlo
+(mismo ancho y asimetría) cuando lleva fuera 0, 24 o 72 horas (`REGLAS`): retira todo, cambia pagando la
+comisión del pool y reabre, con un gas por reajuste; igual que `backtest.simulate --reajuste fuera` (1–2 %
+sobre el histórico real). Usa escenarios propios (`escenarios_reajuste`: bloques de 14 días y volatilidad
+reciente sin el ensanche por plazo), porque con los de la tabla salían un 30–50 % más reajustes de los
+reales a 30 días. Validado en 16 pools y 1.113 aperturas del último año: reajustes 6,5 simulados frente a
+6,0 reales (±5 %, 30 d), diferencia frente a fijo algo prudente (unos 20–35 $ por 5.000 $). Sin validar a
+más de 30 días (la pantalla lo avisa). La Recomendación dice «No persigas el precio» si ninguna regla gana
+a fijo por más del 0,5 % del capital, o propone la que gana.
+
+**Estrés (`estres`).** Cada rango en caminos fijos (`CASOS_ESTRES`: −30 %, +30 % y un latigazo −20 % de ida
+y vuelta, con las comisiones medias del pool × el ajuste de la tabla) y en el peor tramo real de ese plazo
+del histórico del pool (sus movimientos y comisiones). Da el día y el precio en que sale del rango y el
+valor de la posición en cada borde (el de abajo, sitio para el stop). No es una previsión: pone la cola
+con nombre y cifra. La Recomendación lo resume en «Ten clara tu salida».
+
+**Stop (`simulate_salida`, `comparar_salidas`, `SALIDAS`).** Cada rango sin stop frente a cerrar y pasar a
+dólares la primera hora que el activo cierra al borde de abajo, un 5 % o un 10 % por debajo (comisión del
+pool + gas), en los escenarios de la tabla. Se sugiere el que más sube el P10 si lo sube ≥ 2 % del capital
+costando de media < 1 %. Validado (revisado el 27-nov-2026 con los datos corregidos, 17 pools, dos años, 7/30/90 d): las veces que
+salta salen casi exactas (30 d ±10 %: 52 % simulado, 49 % real) y recorta la cola real (P10 de 3.906 $ a 4.351 $); lo que
+cuesta de media depende del año (en el lateral coincidió, en el bajista el stop ganó). Tras salir, los dólares
+rinden la referencia sin riesgo (`apy`). Volver a entrar al regresar el precio al rango se probó y se
+descartó: en la realidad salió peor que el stop solo en todos los casos y perdía la protección de la cola
+(entraba y salía 2–6 veces por plazo).
+
+**Cobertura con Aave (`cobertura`, `_cubierta`, `aave_hoy`).** En pares activo/estable, el pool sin
+cubrir, cubierto a medias y del todo (el activo que pide el rango, prestado en Aave con la estable de
+garantía; V = C / (1 + c·s·(1/u − 1)), como `aave_backtest.simulate_covered`), en los escenarios de la tabla
+y en los de estrés, con los tipos de hoy fijos y liquidación de Aave V3. HF = máx(2, HF histórico + 0,1).
+Coincide con `aave_backtest cubierta` a pocos dólares; validado en 10 pools y ~680 aperturas (cubierto del
+todo: sesgo ±4 $, P10–P90 78–84 %). **Desde el 29-oct-2026 USDC y USDT tienen LTV 0 en Aave** (Ethereum, Base,
+Arbitrum): la pantalla lo avisa y las cifras son hipotéticas.
+
+**Plan completo (`etapas/plan.py`).** Ancho (del mínimo fiable a ±50 %) × stop (ninguno, al salirse, 5 % por
+debajo) × cobertura con perpetuo (0, ½, 1) en los mismos escenarios; si salta el stop se cierran a la vez el
+pool y el corto (`simulate_plan`, que reproduce exactamente `simulate`, `simulate_salida` y
+`perpetuo.cubierta`). Dos planes: mejor media y «para protegerte» (mejor P10 cediendo ≤ 1 % de media, solo si
+sube el P10 ≥ 2 % del capital). Panel «Tu plan» y primeras frases de la Recomendación. Validado (27-nov-2026,
+24 pools, dos años, 30/90 d, funding real): mejor media frente a ±10 % sin más, +37/+68/+106/+229 $ reales por
+5.000 $ en los dos años, casi todo por elegir el más ancho; protegerse solo funciona con perpetuo (30 d: P10
+real 4.397 → 4.864 $, coste según el año). Rangos de más de ±50 % probados y descartados (F3): ±70 y ±90 % pierden aún menos frente a guardar los tokens (30 d: −32 y −25 $ frente a −41 $ con ±50 %) pero siguen perdiendo, sin óptimo; ampliar el plan mejoró solo 5–40 $ y no en los dos años. La frase del plan da el «vs guardar los tokens». Pruebas en `tests/test_plan.py`.
+
+**Tus tokens rindiendo (`etapas/rendir.py`, J1, 27-nov-2026).** La alternativa al pool con los mismos tokens del
+rango: ETH como wstETH (staking, del precio wstETH/WETH de MetaProDB, mediana diaria) y el resto en Aave V3 de la
+red (`supply_apy` de MetaProDB); escenarios con el rendimiento de 90 días. Fila y frase en «Tu plan». Validado
+(24 pools, 3.331 aperturas, dos años): rindiendo ganan a guardarlos +10 $ al mes por 5.000 $, el pool ±50 % pierde
+frente a ellos −48 $ al mes (−139 $ a 90 d) en todos los pools y los dos años; error de lo simulado ±3 $. Pruebas
+en `tests/test_rendir.py`.
+
+**Tu plan para tus posiciones (`plan.opciones_abierta`, G2, 27-nov-2026).** En «Mis posiciones», para cada posición
+abierta y en los mismos escenarios: mantenerla, con stop, cubierta con un corto (margen aparte), cerrarla y dejar sus
+tokens rindiendo o pasar a USDC en Aave; la mejor de media y, si protege de verdad, la prudente (`texto_plan`). Reúsa
+piezas validadas (stop, perpetuo, J1); `simulate_plan` y `simulate_rendir` aceptan `abierta=True` (sin costes de
+entrada). Pruebas en `tests/test_plan.py` y `tests/test_posiciones_lp.py`.
+
+**¿Cuándo compensa ser LP? (I1, 27-nov-2026).** 3.331 aperturas de dos años (24 pools, 30/90 d, ±10/30/50 %),
+14 condiciones conocidas al abrir (comisiones recientes altas, volatilidad baja, precio o etapa laterales,
+simulador positivo, TVL) y sus combinaciones, eligiendo con un año y comprobando con el otro: ninguna ganó a
+guardar los tokens en los dos años; cuando el simulador daba «vs mantener» > 0 (2–6 % de las aperturas), lo
+real siguió perdiendo. La Recomendación lo advierte en el «compensa» (`simulador.AVISO_FAVORABLE`) y ya no
+sugiere esperar a que suban las comisiones.
+
+**Cobertura con perpetuo (`etapas/perpetuo.py`).** La alternativa que sí se puede abrir hoy: en pares
+activo/estable con perpetuo en Bybit, parte del capital va de margen aislado a un corto del activo por la
+parte c (0, ½, 1) de lo que el pool tiene en activo al abrir; margen = (r − 1) + MMR·r por $ de corto, con
+r = mayor subida histórica en el plazo + 0,1; V = C / (1 + c·s·m). El corto cobra el funding (medio de 90
+días de la API pública de Bybit, caché en `out/`), paga taker al abrir y cerrar y se liquida si el margen no
+aguanta. Validado (revisado el 27-nov-2026 con los datos corregidos, 10 pools, dos años, 30/90 d, funding real
+hora a hora): cubierto del todo, sesgo 0 $ a 30 d, P10–P90 76 %, dispersión real ÷2 (563 → 274 $), P10 real
+3.943 → 4.544 $; liquidaciones prudentes (0,9 % frente a 0 %). Pruebas en `tests/test_perpetuo.py`. Las comisiones a 90–180 días se
+revisaron con dos años: ×0,96–0,97 en todos los plazos, sin corrección. Revisión H2 (27-nov-2026): con los
+datos corregidos se rehicieron comisiones, horquilla, stop y perpetuo; ninguna constante se sale de su banda
+(comisiones, mediana por pool ×0,95–1,02; P10–P90 77–91 %) y no se cambia nada.
+
+**Historial de tus simulaciones (`simulador_historial`).** Cada rango simulado en la pantalla se guarda en
+`out/simulador_historial.jsonl` (local, fuera de git; uno por pool, plazo, capital, rango y día). Al vencer,
+`evaluar` lo rehace con las horas reales del pool desde aquel día y anota lo real en
+`out/simulador_historial_res.jsonl`; `resumen` da lo real dentro del P10–P90, el error medio y el acierto del
+veredicto. Lo usan la sección «¿Cómo ha acertado con tus simulaciones?» (`/api/historial`) y el aviso mensual
+(con ≥ 20 vencidas, avisa si el P10–P90 sale de 65–92 %; en la issue solo número y porcentaje).
+`python -m etapas.simulador_historial`.
+
+**Valor final medio y Recomendación.** La tabla muestra el valor final en la mediana y en la **media**
+(`valor_media`), porque una posición de liquidez gana poco y a menudo y pierde mucho de vez en cuando: la
+mediana puede salir en verde con la media en rojo. `recomendacion` cierra la página con un veredicto en
+lenguaje llano (compensa / no compensa), «qué haría», «qué no recomiendo» y «para intentar mejorarlo».
+Un rango compensa si, **de media**, gana a guardar los tokens y a la referencia sin riesgo. Usa el
+buscador de anchos (`mejor_ancho`, calculado en cada simulación), el nivel de comisiones, el plazo, la
+volatilidad reciente y el semáforo.
+
+**Etapa del par.** `etapa_del_par` calcula la etapa de Weinstein del par con la misma lectura que `/pool`
+(`analyze_symbol` + `liquidez.verdict`), en el marco del plazo (semanal hasta 14 días, mensual desde 30).
+La muestra en la línea de datos y la usa en la Recomendación. En «precaución» (etapa 2 o transición hacia
+ella, semanal o mensual) desaconseja un rango estrecho y centrado y propone ensancharlo o desplazarlo hacia
+arriba, porque los escenarios no apuestan por la dirección y ese riesgo no está en sus cifras. Se guarda
+una hora; tarda unos 5 segundos la primera vez por par. No cambia los escenarios: condicionarlos a la etapa
+queda como experimento, que solo se activaría si la validación fuera de muestra lo justifica.
+
+**Ranking de pools (`etapas/ranking.py`, pantalla y consola).** Todos los pools de MetaProDB con datos
+recientes, TVL ≥ 0,5 M$, ≥ 1 año de histórico y fiabilidad media o alta (sin pares de dos estables ni
+`ANOMALOS`) con su mejor ancho a `dias`, ordenados por «vs mantener» medio; excluye los de comisiones
+imposibles (> 15 % al mes o |vs| > capital). Validado con los datos corregidos y comprobados contra Revert (26-nov-2026, 61 pools, 53
+fechas de dos años, 30 d): los 10 primeros −10 $ reales por 5.000 $ frente a −23 $ de media, ganan a la media
+el 66 % de las fechas (70 % con TVL ≥ 2 M$, en los dos años); ordenar por comisiones de 7 días no; por
+resultado total nadie ordena. Sirve para perder menos frente a mantener, no para encontrar pools que ganen.
+`python -m etapas.ranking`; en la
+página, «Calcular ranking» (en segundo plano, `/api/ranking`) o `#ranking`. Pruebas en `tests/test_ranking.py`.
+
+**Limpieza de MetaProDB (26-nov-2026).** `backtest.load_hours` quita las horas con el pool vacío (liquidez 0,
+tick ≥ ±887.000 o TVL v3 < 1.000 $; 175.745 horas en 84 pools) antes de buscar huecos: hacían explotar los
+escenarios. `History.concentracion()` mide qué parte de las comisiones cae en el 0,1 % de horas más altas
+(3,5–10 % en pools grandes, 30–93 % en pares pegados al 0,01 % por excursiones a ticks casi vacíos); por
+encima de `MAX_CONCENTRACION` (0,30), `quitar_picos` anula las horas de más de 1.000 × la mediana.
+`etapas/contraste_revert.py` compara las comisiones de los LP del último año según Revert (`discover_pools`,
+eventos propios) con las de MetaProDB ya limpias: grandes ×0,77–0,95 (Revert suma los LP just-in-time),
+pegados ×20–270 tal cual y ×0,8–1,3 sin picos; 163 pools, mediana ×0,94, 16 % fuera de ×0,5–2 (sobre todo
+v4). Va al semáforo (fuera de ×0,5–2 baja; de ×0,67–1,5 media), se guarda en `out/contraste_revert.json` y lo
+refresca `simulador_aviso` cada mes. H3: también el último mes (`recientes`): si cuadra en el año pero el mes sale de ×0,5–2, fiabilidad media; si el mes sale > ×2 (MetaProDB infla), fuera del ranking (ENA/WETH, líder del ranking, tenía una hora con 420.122 $ de 525.000 $ del mes). Pruebas en `tests/test_contraste_revert.py`.
+
+**Mis posiciones abiertas (`etapas/posiciones_lp.py`, pantalla y consola).** Lee las posiciones abiertas
+del MCP público de Revert (`https://mcp.revert.finance/mcp`, JSON-RPC por HTTP, solo `get_positions`)
+con las carteras de `~/.cripto-renta/config.json` (nunca en el repositorio), busca cada pool en
+MetaProDB y simula lo que queda desde hoy con sus ticks y su valor reales y sin gas
+(`simulate(..., abierta=True)`, `rango_de_ticks`). Da probabilidad de salirse del rango, tiempo dentro,
+dónde acaba, comisiones y «vs cerrar» (frente a cerrarla hoy y guardar sus tokens), con una lectura
+(compensa / dudosa / no compensa / fuera de rango) y el semáforo. Cruza con `posiciones.txt`, por número o
+por rango, y avisa de lo que no cuadra. `python -m etapas.posiciones_lp --dias 30`; en la página,
+«Cargar y simular» o `#posiciones`. Pruebas en `tests/test_posiciones_lp.py`, con un Revert falso.
+
+**Vigilante del stop (`etapas/vigilante_stop.py`, tarea de Windows «Vigilante stop», cada hora).** Cada
+posición abierta lleva el stop que sugiere `comparar_salidas` (`posiciones_lp.stop_de`, o el elegido en
+`~/.cripto-renta/stops.json`; sin sugerido, el borde de abajo) pasado a ticks (`simulador.nivel_stop`).
+Cada hora compara el `pool_tick` de Revert con ese nivel (`estado_stop`: lejos / cerca a < 3 % / cruzado)
+y, solo cuando empeora, manda una notificación de Windows con el detalle y abre o comenta la issue
+`stop-posicion` con únicamente el número de posiciones afectadas (repositorio público); la cierra cuando
+todas están lejos. Estado y niveles en `out/` (fuera de git). Comprobado contra el replay de dos años (16
+pools, 19.845 casos): misma hora que el stop simulado el 99,1 %, nunca después; «cerca» avisa una mediana
+de 16 h antes. Lanzador `vigilante_stop.vbs` → `.bat`. Pruebas en `tests/test_vigilante_stop.py`.
+
+**Buscador de ancho y comparación de pools (pantalla).** `optimizar` / `barrido` prueba rangos
+simétricos desde `ancho_minimo` (3 × la volatilidad diaria) hasta ±70 % y elige el de más «vs mantener»
+en la media (o en la mediana). `comparar` simula la misma estrategia en todos los pools del mismo par
+(`par_de`: ETH = WETH, BTC = WBTC = cbBTC, estables = USD) con TVL ≥ 0,1 M$, con el mejor ancho de cada
+uno. La página admite `#buscar,comparar` para abrir con los dos lanzados. Validación (23-nov-2026, 15
+pools, 3.587 aperturas de dos años a 7, 30 y 90 días, eligiendo con los datos de antes de cada fecha):
+sin ancho mínimo el buscador elegía ±0,1 % y perdía más que nadie (el reparto horario sobrestima los
+rangos estrechos); con él, su orden coincide con el real. En ese periodo ninguna posición ganó de media a
+mantener los tokens y cuanto más ancha menos perdió (30 d: −104 $ con ±5 %, −29 $ con ±70 %, por 5.000 $).
+También destapó que «vs mantener» fallaba según el año (abajo, «Volatilidad»).
+
+**Volatilidad (23-nov-2026).** «vs mantener» salía optimista en un año movido (nov-24 a nov-25; a 30 días
+con ±10 %, real − simulado −107 $ por 5.000 $, precio dentro del P10–P90 el 63 %) y algo pesimista en uno
+tranquilo (+26 $, 82 %): la volatilidad va por rachas y al encadenar semanas al azar se pierden las
+tendencias de varias semanas. `escala_vol` escala los movimientos por (volatilidad de los últimos 90 días /
+la de los dos años, con rendimientos de 4 horas: hora a hora cada pool añade su propio ruido, y con el
+mismo ETH salía ×1,00 en Ethereum y ×0,79 en Base) × (días/7)^0,1, con el plazo limitado a 90 días. Se probaron 18 variantes en 17
+pools y 3.587 aperturas (escala fija, bloques de 14 y 30 días, volatilidad de 30 o 90 días, ensanche
+por plazo):
+
+| ±10 %, real − simulado por 5.000 $ (año movido / tranquilo) | Antes | Ahora |
+|---|---|---|
+| 7 días | −15 / +15 $ | −5 / −1 $ |
+| 30 días | −107 / +26 $ | −30 / +21 $ |
+| 90 días | −323 / +59 $ | −24 / +155 $ (prudente en el tranquilo) |
+| Precio dentro del P10–P90 a 30 días | 63 / 82 % | 75 / 79 % |
+
+La volatilidad de 30 días tenía un error medio parecido pero peor cobertura. Al ensanchar, el precio pasa menos tiempo en rango: las comisiones se
+recuadraron con `AJUSTE_COMISIONES` 0,97 y `EXPONENTE_PLAZO` 0,05. Calibración real del último año:
+comisiones 7 d 0,91 · 30 d 0,99 · 90 d 0,85 · 180 d 0,80; P10–P90 80 %, 71 %, 91 % y 89 %, todo en banda
+(a 90–180 días las comisiones salen algo altas en este año y bajas en el anterior).
+`--escala 1` vuelve al histórico tal cual.
+
+**Fiabilidad.** `--calibrar` lanza el simulador desde muchas fechas pasadas con solo los datos
+anteriores y lo compara con lo que pasó:
+
+```
+python -m etapas.simulador "WETH/USDC 0.05%" --red base --calibrar --dias 30 --ancho 10
+```
+
+Cómo se eligió el método de comisiones (22-nov-2026, 23 pools con ≥ 2 años de datos, aperturas
+a 30 días con ±10 %, el factor calibrado con un año y aplicado al otro, fuera de muestra):
+
+| Método | Sesgo (real / simulado) | Pools dentro de ±20 % |
+|---|---|---|
+| Sin ajuste | 0,73–0,90 | 13–74 % |
+| Factor fijo 0,85 | 0,86–1,05 | 52–70 % |
+| Factor por pool del año anterior | 0,81 | 39 % |
+| Nivel de 90 días × 0,88 (hasta el 22-nov, solo medido a 30 días) | 0,94–1,07 | 83–87 % |
+
+Después se vio que ese factor único fallaba según el plazo (ver «Corrección por plazo»): hoy es
+nivel de 90 días × 0,97 × (días/30)^−0,05 (recuadrado el 23-nov junto con la volatilidad).
+
+Calibrar la horquilla P10–P90 por plazo se probó y se descartó (25-nov-2026, 16 pools, 6.451 aperturas
+de dos años): en conjunto recoge el 77–80 % a 7 y 30 días y el 87–91 % a 90 y 180, pero el desvío cambia
+de signo de un año a otro (a 30 días, 82–84 % el primer año y 72–78 % el segundo) y el ajuste aprendido
+con un año empeoró el otro en 6 de 8 casos. Detalle en la guía, «Calibración real».
+
+El factor por pool empeora: el de un año va en contra del siguiente (correlación −0,59). Lo que se
+repite es una caída general de las comisiones por unidad de liquidez, que el nivel reciente recoge.
+Con 730 días de histórico la horquilla recoge mejor los años movidos (aperturas del último año:
+68–77 % dentro del P10–P90 frente a 64–75 % con 365). En un año bajista lo que queda fuera cae sobre
+todo por debajo del P10: el simulador no apuesta por la dirección. Límites: supone que el próximo
+mes se parece a los dos últimos años del pool en volatilidad y al último trimestre en comisiones; no
+modela MEV/JIT ni cambios bruscos de liquidez; con rangos muy estrechos el reparto horario
+sobrestima. Es un análisis de escenarios, no una predicción.
+
+**Vigilancia mensual de la calibración** (`etapas/simulador_aviso.py`). La tarea de Windows
+«Simulador calibracion» (día 1 de cada mes a las 10:30, o al encender el PC si se pasó;
+`simulador_aviso.vbs` → `.bat`, como el aviso de Aave) calibra con las aperturas del **último año**
+a **7, 30, 90 y 180 días** en los pools de referencia: TVL > 2 M$, histórico suficiente para el
+plazo, sin pares de dos estables ni los de datos anómalos (PAXG/WETH 0,3 %, wstETH/WETH 0,01 % en
+Ethereum; WBTC/USDT y USDC/WBTC 0,05 % en Arbitrum, donde el simulador no reproduce las comisiones).
+
+| Plazo | Comisiones real / simulado (mediana entre pools) | Real dentro del P10–P90 |
+|---|---|---|
+| 7 días | 0,85–1,15 | 70–90 % |
+| 30 días (fija `AJUSTE_COMISIONES`) | 0,90–1,10 | 70–90 % |
+| 90 y 180 días | 0,80–1,20 | 65–92 % (pocas pruebas independientes) |
+
+Si algún plazo sale de su banda, abre una issue «simulador-calibracion» (llega por correo) con lo que
+hay que mirar: a 30 días, el ajuste propuesto; a los demás, revisar `EXPONENTE_PLAZO`. La cierra
+cuando todos vuelven a estar en banda.
+Además vigila las piezas validadas una sola vez (`etapas/simulador_vigila.py`, aperturas del último año a
+30 días): veces que salta el stop simulado frente a real (diferencia ≤ 10 puntos), funding del corto
+simulado ÷ real (×0,6–1,4), error de la media cubierta del todo (±2 % del capital), plan de mejor media
+frente a ±10 % en lo real (≥ 0 $) y pools que dejan de cuadrar con Revert desde el mes anterior (≤ 2). Si
+alguna se sale, la misma issue con su tabla (solo cifras agregadas). Primera medida (27-nov-2026, 1.166
+aperturas): stop 50 % / 42 %, funding ×0,99, cubierto +17 $, plan +59 $: todo en banda. Pruebas en
+`tests/test_simulador_vigila.py`; a mano: `python -m etapas.simulador_vigila`.
+Registro en `out/simulador_calibracion.jsonl` y `out/simulador_aviso.log`. Tarda unos cinco minutos.
+No va en la rutina de GitHub Actions porque necesita MetaProDB.
+
+**Corrección por plazo (22-nov-2026).** Con un factor único (0,88) las comisiones salían bajas a
+plazos cortos y altas a largos, porque el nivel de los últimos 90 días se arrastraba todo el plazo:
+real ÷ simulado 1,12 a 7 días, 1,05 a 30, 0,88 a 60, 0,79 a 90 y 0,64 a 180. Se probaron cuatro
+modelos en 17 pools y 6.273 aperturas de dos años, ajustando con un año y midiendo en el otro:
+
+| Modelo | Resultado fuera de muestra (7–180 días) |
+|---|---|
+| Factor único (0,88, el anterior; reajustándolo, 0,74–1,34) | 0,64–1,16 |
+| Volver a la media del histórico | 0,63–1,49: peor, las comisiones no rebotan |
+| Prolongar la tendencia reciente | 0,72–1,31: no aporta |
+| **(días/30)^−β** | **0,90–1,08; β = 0,15 con cualquiera de los dos años** |
+
+`AJUSTE_COMISIONES = 0,85` y `EXPONENTE_PLAZO = 0,15` (el óptimo conjunto era 0,82, pero apenas
+cambia entre 0,82 y 0,86; con 0,85 los dos años quedan en 0,87–1,04). Calibración real con las
+aperturas del último año: 7 d 0,93 · 30 d 1,09 · 90 d 0,96 · 180 d 0,88, con 72–95 % de los pools
+dentro de ±20 %; P10–P90 84 %, 71 %, 87 % y 77 %, todo en banda.
+**Histórico:** 730 días iguala o supera a 365 y a 1.095 en todos los plazos (mismas aperturas,
+17–20 pools; a 180 días, 83 % dentro frente a 78 % con 1.095), así que es el valor para cualquier
+plazo (`historia_para`).
+
+```
+python -m etapas.simulador_aviso --simular      # calibra y dice qué haría, sin tocar GitHub
+```
+
+Primera ejecución (22-nov-2026), con el método anterior (0,85 fijo): comisiones 0,80 (Arbitrum
+WBTC/WETH 0,62), porque las comisiones habían bajado de forma sostenida y el histórico completo lo
+tapaba. Con el nivel de 90 días × 0,88 y 730 días de histórico: comisiones 1,03 y P10–P90 del 72 %
+(21 pools, 1.113 pruebas), en banda. Con la corrección por plazo, los cuatro plazos en banda (arriba).
+
+Código: `etapas/simulador.py` (motor y calibración), `etapas/simulador_web.py` y
+`simulador_web.html` (pantalla, sin dependencias nuevas), `etapas/simulador_aviso.py`,
+`tests/test_simulador.py` y `tests/test_simulador_aviso.py`.
