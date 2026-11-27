@@ -123,11 +123,11 @@
     "ETH/BTC 0.0241901-0.0313411": "dentro"
   },
   "oportunidades": {
-    "BTC/USDC 3000 todas": "Semanal · Uniswap v4 · Base · USDC/cbBTC 0,05 % · precaución",
-    "ETH/USDC 3000 todas": "Diario · Uniswap v4 · Base · ETH/USDC 0,30 %",
+    "BTC/USDC 3000 todas": "",
+    "ETH/USDC 3000 todas": "",
     "ETH/USDT 3000 todas": "",
     "BTC/ETH 3000 todas": "Semanal · Uniswap v3 · Ethereum · WBTC/WETH 0,05 %",
-    "ETH/USD 5000 todas": "Diario · Uniswap v4 · Base · ETH/USDC 0,30 %",
-    "BTC/USD 5000 todas": ""
+    "ETH/USD 5000 todas": "",
+    "BTC/USD 5000 todas": "Mensual · Uniswap v4 · Ethereum · WBTC/USDT 0,05 %"
   }
 }
