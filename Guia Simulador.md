@@ -408,6 +408,8 @@ los demás se juzgan por su histórico, su TVL y el plazo.
 
 ## 5 c. Tu plan (ancho, stop y cobertura juntos)
 
+![Tu plan](docs/img/simulador-1c-plan.png)
+
 Justo debajo de «En resumen». Las secciones de más abajo responden por separado qué ancho, si poner stop y
 si cubrirse con el perpetuo; aquí se prueban **a la vez**, en los mismos escenarios, y se dan dos planes:
 
