@@ -486,6 +486,20 @@ def simulate_reajuste(h: History, paths: Paths, rango: Rango, espera: int | None
 SALIDAS = {"sin stop": None, "al salirse por abajo": 0.0, "5 % bajo el borde": 0.05, "10 % bajo el borde": 0.10}
 
 
+def hora_stop(h: History, paths: Paths, rango: Rango, x: float) -> tuple[np.ndarray, np.ndarray]:
+    """(salta, t) por escenario: si el stop salta y en qué hora (índice de `paths.sp[:, 1:]`; la última si
+    no salta). Salta la primera hora en que el activo cierra un `x` por debajo del borde de abajo."""
+    sa, sb = B._sqrt(rango.tl), B._sqrt(rango.tu)
+    nxt = paths.sp[:, 1:]
+    _, _, asset0 = B.pair_of(h.pool)
+    if asset0:                                   # precio del activo = P del pool
+        salta = nxt ** 2 <= sa ** 2 * (1 - x)
+    else:                                        # el activo es el token1: cae cuando P sube
+        salta = nxt ** 2 >= sb ** 2 / (1 - x)
+    hay = salta.any(axis=1)
+    return hay, np.where(hay, salta.argmax(axis=1), nxt.shape[1] - 1)
+
+
 def simulate_salida(h: History, paths: Paths, rango: Rango, x: float | None, capital: float = 5000.0,
                     gas: float | None = None, diluir: bool = True, abierta: bool = False, apy: float = 0.0) -> Sim:
     """Como `simulate`, pero con un stop: la primera hora en que el precio del activo cierra un `x` por
@@ -514,13 +528,7 @@ def simulate_salida(h: History, paths: Paths, rango: Rango, x: float | None, cap
     nxt = sp[:, 1:]
     F0 = np.cumsum(L * dil * paths.q0 / nxt * part, axis=1)          # comisiones acumuladas a cada hora
     F1 = np.cumsum(L * dil * paths.q1 * nxt * part, axis=1)
-    _, quote, asset0 = B.pair_of(pool)
-    if asset0:                                   # precio del activo = P del pool
-        salta = nxt ** 2 <= sa ** 2 * (1 - x)
-    else:                                        # el activo es el token1: cae cuando P sube
-        salta = nxt ** 2 >= sb ** 2 / (1 - x)
-    hay = salta.any(axis=1)
-    t = np.where(hay, salta.argmax(axis=1), nxt.shape[1] - 1)
+    hay, t = hora_stop(h, paths, rango, x)
     r = np.arange(n)
     s, u = nxt[r, t], u1[r, t + 1]
     p0 = np.where(s <= sa, 1 / sa - 1 / sb, np.where(s >= sb, 0.0, 1 / s - 1 / sb)) * L + F0[r, t]
@@ -1223,7 +1231,10 @@ def recomendacion(res: dict) -> dict:
     if (res.get("escala_vol") or 1.0) < 0.95:
         mejorar.append("Los últimos meses han sido tranquilos y los escenarios lo reflejan: si vuelve la volatilidad, el "
                        "pool saldrá peor que esto. Vuelve a simular antes de abrir.")
-    return {"veredicto": veredicto[0], "texto": veredicto[1], "hacer": hacer, "no_hacer": no_hacer, "mejorar": mejorar,
+    pf = (res.get("plan") or {}).get("frases")
+    plan_txt = [pf["media"], pf["prudente"]] if pf else []
+    return {"veredicto": veredicto[0], "texto": veredicto[1], "plan": plan_txt,
+            "hacer": hacer, "no_hacer": no_hacer, "mejorar": mejorar,
             "nota": "Análisis de escenarios con el histórico real del pool, no una recomendación de inversión "
                     "personalizada: el simulador no conoce tu situación ni sabe hacia dónde irá el precio."}
 
@@ -1529,6 +1540,13 @@ def run(key: str, chain: str | None, rangos: list[str], capital: float = 5000, d
         res["cobertura_perp"] = perpetuo.cobertura(h, dias, rgs, paths, capital, gas, ep, ei)
     except Exception as e:                                                    # noqa: BLE001 (sin red no cae todo)
         res["cobertura_perp"] = {"error": f"no se pudo calcular la cobertura con perpetuo ({type(e).__name__})"}
+    try:
+        from . import plan
+        pl = plan.planes(h, dias, paths, capital, gas, apy=ref["apy"] if ref else 0.0)
+        pl["frases"] = plan.frases(pl, asset, capital, dias)
+        res["plan"] = pl
+    except Exception as e:                                                    # noqa: BLE001
+        res["plan"] = {"error": f"no se pudo calcular el plan ({type(e).__name__})"}
     res["recomendacion"] = recomendacion(res)
     return res
 

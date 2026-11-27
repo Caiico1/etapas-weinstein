@@ -497,6 +497,15 @@ Coincide con `aave_backtest cubierta` a pocos dólares; validado en 10 pools y ~
 todo: sesgo ±4 $, P10–P90 78–84 %). **Desde el 29-oct-2026 USDC y USDT tienen LTV 0 en Aave** (Ethereum, Base,
 Arbitrum): la pantalla lo avisa y las cifras son hipotéticas.
 
+**Plan completo (`etapas/plan.py`).** Ancho (del mínimo fiable a ±50 %) × stop (ninguno, al salirse, 5 % por
+debajo) × cobertura con perpetuo (0, ½, 1) en los mismos escenarios; si salta el stop se cierran a la vez el
+pool y el corto (`simulate_plan`, que reproduce exactamente `simulate`, `simulate_salida` y
+`perpetuo.cubierta`). Dos planes: mejor media y «para protegerte» (mejor P10 cediendo ≤ 1 % de media, solo si
+sube el P10 ≥ 2 % del capital). Panel «Tu plan» y primeras frases de la Recomendación. Validado (27-nov-2026,
+24 pools, dos años, 30/90 d, funding real): mejor media frente a ±10 % sin más, +37/+68/+106/+229 $ reales por
+5.000 $ en los dos años, casi todo por elegir el más ancho; protegerse solo funciona con perpetuo (30 d: P10
+real 4.397 → 4.864 $, coste según el año). Pruebas en `tests/test_plan.py`.
+
 **Cobertura con perpetuo (`etapas/perpetuo.py`).** La alternativa que sí se puede abrir hoy: en pares
 activo/estable con perpetuo en Bybit, parte del capital va de margen aislado a un corto del activo por la
 parte c (0, ½, 1) de lo que el pool tiene en activo al abrir; margen = (r − 1) + MMR·r por $ de corto, con

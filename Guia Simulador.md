@@ -360,6 +360,47 @@ los demás se juzgan por su histórico, su TVL y el plazo.
 
 ---
 
+## 5 c. Tu plan (ancho, stop y cobertura juntos)
+
+Justo debajo de «En resumen». Las secciones de más abajo responden por separado qué ancho, si poner stop y
+si cubrirse con el perpetuo; aquí se prueban **a la vez**, en los mismos escenarios, y se dan dos planes:
+
+- **Mejor media:** el de más valor final medio.
+- **Para protegerte:** el de mejor escenario malo (P10) entre los que ceden como mucho un 1 % del capital de
+  media. Solo se propone si sube el P10 al menos un 2 % del capital; si no, la pantalla dice que protegerse
+  no compensa.
+
+Se prueban los anchos desde el mínimo fiable del pool hasta ±50 % (±5, 10, 15, 20, 30 y 50 %), sin stop, con
+stop al salirse por abajo o un 5 % por debajo, y, si el par tiene perpetuo en Bybit, sin cubrir, a medias o
+del todo. Si salta el stop, se cierran a la vez el pool (a dólares) y el corto; después los dólares rinden
+la referencia sin riesgo. La tabla enseña los dos planes, el de partida (±10 % sin stop ni cobertura) y los
+tres siguientes por media; la Recomendación empieza por estas dos frases.
+
+**Ejemplo (WETH/USDC de Base, 5.000 $, 30 días, nov-2026):** mejor media, ±50 % sin stop ni cobertura:
+−22 $ de media (+82 $ frente a ±10 %), −475 $ en el escenario malo. Para protegerte, el mismo ±50 % con un
+corto de 1.440 $ en ETHUSDT (1.262 $ de margen y 3.738 $ al pool): el escenario malo pasa a −130 $ y cuesta
+5 $ de media.
+
+**Validación (27-nov-2026):** 24 pools de referencia, aperturas de dos años a 30 y 90 días. En cada fecha se
+simularon todos los planes con los datos de antes y se calculó lo real de cada uno (con el funding real hora
+a hora):
+
+| Por 5.000 $, plan elegido frente a ±10 % sin más (real) | 30 d sin perpetuo | 30 d con perpetuo | 90 d sin perpetuo | 90 d con perpetuo |
+|---|---|---|---|---|
+| Mejor media: de media / año lateral / año bajista | +37 / +48 / +26 $ | +68 / +41 / +86 $ | +106 / +150 / +37 $ | +229 / +173 / +272 $ |
+| Para protegerte: de media | +15 $ | +80 $ | +96 $ | +274 $ |
+| P10 real: partida → mejor media → para protegerte | 3.830 → 3.898 → 3.889 $ | 3.943 → 4.397 → 4.864 $ | 3.146 → 3.408 → 3.409 $ | 3.800 → 4.222 → 4.520 $ |
+| Real dentro del P10–P90 del plan | 76–77 % | 79–82 % | 84 % | 87–90 % |
+
+**Lectura honesta:**
+- El plan de mejor media gana al punto de partida en los dos años, pero casi todo viene del **ancho**: en el
+  70–77 % de las fechas elige el rango más ancho sin nada más, y la regla fija «el más ancho» da lo mismo.
+  Es la misma lección del buscador: ser LP perdió frente a guardar los tokens y cuanto más ancho, menos.
+- **Protegerse solo funciona de verdad con perpetuo.** Con él, el escenario malo real sube unos 470 $ a
+  30 días; lo que cuesta depende del año (a 30 días, −68 $ frente a la mejor media en el lateral, +62 $ en
+  el bajista). Sin perpetuo, los stops cuestan casi lo que protegen y el P10 apenas se mueve.
+- Validado de 30 a 90 días; en otros plazos la pantalla avisa.
+
 ## 6. Gráfico 1: precio en los escenarios y tus rangos
 
 ![Gráfico de abanico del precio](docs/img/simulador-2-abanico-precio.png)

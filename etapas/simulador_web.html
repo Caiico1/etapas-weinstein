@@ -128,6 +128,14 @@ summary{cursor:pointer;color:var(--text)}
     <div class="hint" id="fiabWhy"></div>
   </section>
 
+  <section class="panel" id="outPlan" hidden>
+    <h2>Tu plan <span class="mut" style="font-weight:400;font-size:13px">(ancho, stop y cobertura juntos)</span></h2>
+    <div class="hint">Prueba a la vez anchos desde el mínimo fiable del pool hasta ±50 %, sin stop o con stop (al salirse o un 5 % por debajo) y, si el par tiene perpetuo, sin cubrir, a medias o del todo, en los mismos escenarios. Si salta el stop se cierran el pool y el corto, y los dólares rinden la referencia sin riesgo. «Mejor media»: el de más valor final medio. «Para protegerte»: el de mejor escenario malo (P10) entre los que ceden como mucho un 1 % del capital de media. Validado con aperturas reales de dos años a 30 y 90 días (24 pools): elegir así ganó en lo real a ±10 % sin más en los dos años (de +37 a +229 $ por 5.000 $), sobre todo porque elige rangos anchos; la protección solo funcionó de verdad con perpetuo (a 30 días, P10 real de 4.397 $ a 4.864 $), con un coste que depende del año.</div>
+    <ul id="planTxt" class="concl"></ul>
+    <div class="tw" style="margin-top:8px"><table id="planTab" style="min-width:980px"></table></div>
+    <div class="hint" id="planNota"></div>
+  </section>
+
   <section class="panel" id="outFan" hidden>
     <h2>Precio en los escenarios y tus rangos</h2>
     <svg id="fan" viewBox="0 0 1200 340"></svg>
@@ -224,6 +232,7 @@ summary{cursor:pointer;color:var(--text)}
   <section class="panel reco" id="outReco" hidden>
     <h2>Recomendación <span id="recoTag" class="fiab"></span></h2>
     <p id="recoTxt" class="reco-txt"></p>
+    <ul id="recoPlan" class="concl" hidden></ul>
     <div class="reco-grid">
       <div><h3>✅ Qué haría</h3><ul id="recoHacer"></ul></div>
       <div><h3>⛔ Qué no recomiendo</h3><ul id="recoNo"></ul></div>
@@ -309,8 +318,8 @@ function render(d){
       :`etapa: <span class="mut">${esc(d.etapa.nivel)}</span>`):"",
     `gas <b>${d.gas} $</b>`, `cambio inicial <b>${pct(d.comision_cambio,2,false)}</b>`,
     d.aviso?`<span class="neg">${d.aviso}</span>`:""].filter(Boolean).map(t=>`<span>${t}</span>`).join("");
-  ["outSum","outFan","outBars","outDes","outTable","outRea","outEst","outSal","outCob","outCobP","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);
-  summary(d); fan(d); bars(d); desglose(d); table(d); reaDraw(d); estDraw(d); salDraw(d); cobDraw(d); cpDraw(d); reco(d.recomendacion||{});
+  ["outSum","outPlan","outFan","outBars","outDes","outTable","outRea","outEst","outSal","outCob","outCobP","outOpt","outCmp","outReco"].forEach(id=>$(id).hidden=false);
+  summary(d); planDraw(d); fan(d); bars(d); desglose(d); table(d); reaDraw(d); estDraw(d); salDraw(d); cobDraw(d); cpDraw(d); reco(d.recomendacion||{});
   const sel=$("cmpRango"), prev=sel.value;
   sel.innerHTML=["P10-P90",...ranges.filter(Boolean)].filter((v,i,a)=>a.indexOf(v)===i).map(r=>`<option>${esc(r)}</option>`).join("");
   if(prev&&[...sel.options].some(o=>o.value===prev)) sel.value=prev;
@@ -460,6 +469,7 @@ function cmpDraw(c){
 function reco(r){
   const t=$("recoTag"); t.className="fiab "+(r.veredicto||""); t.textContent=r.veredicto==="favorable"?"compensa":"no compensa";
   $("recoTxt").textContent=r.texto||"";
+  $("recoPlan").innerHTML=(r.plan||[]).map(x=>`<li>${esc(x)}</li>`).join(""); $("recoPlan").hidden=!(r.plan||[]).length;
   const li=a=>(a||[]).map(x=>`<li>${esc(x)}</li>`).join("");
   $("recoHacer").innerHTML=li(r.hacer); $("recoNo").innerHTML=li(r.no_hacer); $("recoMejorar").innerHTML=li(r.mejorar);
   $("recoNota").textContent=r.nota||"";
@@ -569,6 +579,29 @@ function estDraw(d){
       <td class="${cls(c.vs_mantener)}">${usd(c.vs_mantener,true)}</td>
       <td>${usd(c.comisiones)}</td><td>${Math.round(c.en_rango*100)} %</td>
       <td class="mut">${c.sale_dia===null?"no se sale":"día "+c.sale_dia.toLocaleString("es-ES",{maximumFractionDigits:1})+" a "+price(c.sale_precio)}</td></tr>`).join("")).join("")+"</tbody>";
+}
+
+function planDraw(d){
+  const p=d.plan; $("outPlan").hidden=!p;
+  if(!p) return;
+  if(p.error){$("planTxt").innerHTML=`<li class="neg">${esc(p.error)}</li>`;$("planTab").innerHTML="";$("planNota").innerHTML="";return;}
+  const fr=p.frases||{};
+  $("planTxt").innerHTML=[fr.media,fr.prudente].filter(Boolean).map(t=>`<li>${esc(t)}</li>`).join("");
+  const md=p.elegido.media, pr=p.elegido.prudente, b=p.base;
+  const filas=[["Mejor media",md],...(fr.proteger?[["Para protegerte",pr]]:[]),["Partida: ±10 % sin más",b]];
+  const kk=f=>f.ancho+"|"+f.stop+"|"+f.cobertura; const otros=p.filas.filter(f=>kk(f)!==kk(md)&&!(fr.proteger&&kk(f)===kk(pr))).sort((a,c)=>c.valor_media-a.valor_media).slice(0,3);
+  const que=f=>`±${(f.ancho*100).toLocaleString("es-ES")} % <span class="mut">${price(f.lo)}–${price(f.hi)}</span>`;
+  const st=f=>f.stop==="sin stop"?'<span class="mut">—</span>':`${esc(f.stop)}${f.precio_stop?" · "+price(f.precio_stop):""}`;
+  const cb=f=>f.cobertura>0?`${f.cobertura>=1?"del todo":"a medias"} · corto ${usd(f.corto)}, margen ${usd(f.margen)}`:'<span class="mut">—</span>';
+  const row=(n,f,cl)=>`<tr class="${cl||""}"><td class="lab">${n}</td><td>${que(f)}</td><td class="lab">${st(f)}</td><td class="lab">${cb(f)}</td>
+    <td class="${cls(f.valor_media-d.capital)}">${usd(f.valor_media)}</td><td class="${cls(f.valor_p10-d.capital)}">${usd(f.valor_p10)}</td>
+    <td class="mut">${usd(f.valor_p90)}</td><td class="${f.prob_perdida>0.5?"neg":""}">${Math.round(f.prob_perdida*100)} %</td>
+    <td class="mut">${f.stop==="sin stop"?"—":Math.round(f.prob_stop*100)+" %"}</td></tr>`;
+  $("planTab").innerHTML=`<thead><tr><th class="lab">Plan</th><th>Rango</th><th class="lab">Stop</th><th class="lab">Cobertura${p.perpetuo?" ("+esc(p.perpetuo)+")":""}</th><th>Valor final<br><span style="font-weight:400">(media)</span></th><th>Escenario malo<br><span style="font-weight:400">(P10)</span></th><th>Bueno<br><span style="font-weight:400">(P90)</span></th><th>Prob. de perder</th><th>Salta el stop</th></tr></thead><tbody>`+
+    filas.map(([n,f],i)=>row(n,f,i===0?"grp":"")).join("")+otros.map((f,i)=>row(i===0?'<span class="mut">Siguientes por media</span>':"",f,i===0?"grp":"")).join("")+"</tbody>";
+  $("planNota").innerHTML=(p.aviso?`<span class="neg">${esc(p.aviso)}.</span> `:"")
+    +(fr.validado?"":`<span class="neg">A ${d.dias} días el plan no está validado (solo de 30 a 90): tómalo como orientación.</span> `)
+    +`${p.filas.length} planes probados en los mismos escenarios${p.perpetuo?`; funding medio de 90 días ${pct(p.apr_funding,1,false)} anual`:""}. Análisis de escenarios, no una orden.`;
 }
 
 function salDraw(d){
