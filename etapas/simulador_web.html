@@ -283,7 +283,14 @@ async function loadPools(){
   const r=await fetch("/api/pools"); const ps=await r.json();
   const sel=$("pool"); const byChain={};
   ps.forEach(p=>(byChain[p.chain]??=[]).push(p));
-  for(const [c,list] of Object.entries(byChain)){
+  // Redes en este orden (las que no estén, al final por nombre) y, dentro de cada una, pools por orden alfabético
+  const ORDEN_REDES=["base","arbitrum","ethereum"], pos=c=>{const i=ORDEN_REDES.indexOf(c);return i<0?ORDEN_REDES.length:i;};
+  const alfa=(a,b)=>a.localeCompare(b,"es",{sensitivity:"base",numeric:true});
+  const redes=Object.keys(byChain).sort((a,b)=>pos(a)-pos(b)||alfa(a,b));
+  for(const c of redes){
+    // «WETH/USDC 0.05%»: primero el par por orden alfabético y luego la comisión de menor a mayor
+    const par=l=>l.replace(/\s+[\d.]+%$/,""), com=l=>parseFloat((l.match(/([\d.]+)%$/)||[0,0])[1]);
+    const list=byChain[c].sort((a,b)=>alfa(par(a.label),par(b.label))||com(a.label)-com(b.label)||alfa(a.version,b.version));
     const g=document.createElement("optgroup"); g.label=c;
     list.forEach(p=>{const o=document.createElement("option");o.value=p.chain+"|"+p.pool_id;
       o.textContent=`${p.label} · ${p.version} · TVL ${p.tvl?nf0.format(p.tvl/1e6)+" M$":"?"}`;g.appendChild(o);});
