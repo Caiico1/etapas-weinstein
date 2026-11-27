@@ -580,11 +580,11 @@ def salidas(h: History, paths: Paths, rango: Rango, capital: float = 5000.0, gas
     return out
 
 
-# Validado el 25-nov-2026 (16 pools de referencia, aperturas de dos años, 7/30/90 días, ±10 % y ±20 %, con
-# los escenarios de la tabla principal): las veces que salta el stop salen casi exactas (30 d ±10 % «al
-# salirse por abajo»: 52 % simulado frente a 46 % real; 90 d: 74 % frente a 70 %), el P10–P90 con stop
-# recoge el 77–88 % y el stop recorta la cola real como dice el simulador (30 d ±10 %: P10 real de 3.881 $
-# a 4.453 $ por 5.000 $). Tras salir, los dólares rinden la referencia sin riesgo (USDC en Aave).
+# Validado el 25-nov-2026 y revisado el 27-nov con los datos corregidos (17 pools de referencia, aperturas
+# de dos años, 7/30/90 días, ±10 % y ±20 %, con los escenarios de la tabla principal): las veces que salta el
+# stop salen casi exactas (30 d ±10 % «al salirse por abajo»: 52 % simulado frente a 49 % real; 90 d: 75 %
+# frente a 72 %), el P10–P90 con stop recoge el 78–85 % y el stop recorta la cola real como dice el
+# simulador (30 d ±10 %: P10 real de 3.906 $ a 4.351 $ por 5.000 $). Tras salir, los dólares rinden la referencia sin riesgo (USDC en Aave).
 # Volver a entrar cuando el precio regresa al rango, probado y descartado (25-nov-2026, mismas aperturas): en
 # la realidad salió peor que el stop solo en todos los casos (30 d ±10 %: −12 $ frente a +29 $; 90 d: −77 $
 # frente a +44 $) y perdía casi toda la protección de la cola (P10 real 4.148 $ frente a 4.453 $): entra y

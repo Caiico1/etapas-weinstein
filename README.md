@@ -482,8 +482,8 @@ con nombre y cifra. La Recomendación lo resume en «Ten clara tu salida».
 **Stop (`simulate_salida`, `comparar_salidas`, `SALIDAS`).** Cada rango sin stop frente a cerrar y pasar a
 dólares la primera hora que el activo cierra al borde de abajo, un 5 % o un 10 % por debajo (comisión del
 pool + gas), en los escenarios de la tabla. Se sugiere el que más sube el P10 si lo sube ≥ 2 % del capital
-costando de media < 1 %. Validado (25-nov-2026, 16 pools, dos años, 7/30/90 d): las veces que salta salen
-casi exactas (30 d ±10 %: 52 % simulado, 46 % real) y recorta la cola real (P10 de 3.881 $ a 4.453 $); lo que
+costando de media < 1 %. Validado (revisado el 27-nov-2026 con los datos corregidos, 17 pools, dos años, 7/30/90 d): las veces que
+salta salen casi exactas (30 d ±10 %: 52 % simulado, 49 % real) y recorta la cola real (P10 de 3.906 $ a 4.351 $); lo que
 cuesta de media depende del año (en el lateral coincidió, en el bajista el stop ganó). Tras salir, los dólares
 rinden la referencia sin riesgo (`apy`). Volver a entrar al regresar el precio al rango se probó y se
 descartó: en la realidad salió peor que el stop solo en todos los casos y perdía la protección de la cola
@@ -502,10 +502,12 @@ activo/estable con perpetuo en Bybit, parte del capital va de margen aislado a u
 parte c (0, ½, 1) de lo que el pool tiene en activo al abrir; margen = (r − 1) + MMR·r por $ de corto, con
 r = mayor subida histórica en el plazo + 0,1; V = C / (1 + c·s·m). El corto cobra el funding (medio de 90
 días de la API pública de Bybit, caché en `out/`), paga taker al abrir y cerrar y se liquida si el margen no
-aguanta. Validado (25-nov-2026, 10 pools, dos años, 30/90 d, funding real hora a hora): cubierto del todo,
-sesgo −4 $ a 30 d, P10–P90 76 %, dispersión real ÷2 (565 → 295 $), P10 real 4.028 → 4.567 $; liquidaciones
-prudentes (0,8 % frente a 0 %). Pruebas en `tests/test_perpetuo.py`. Las comisiones a 90–180 días se
-revisaron con dos años: ×0,96–0,97 en todos los plazos, sin corrección.
+aguanta. Validado (revisado el 27-nov-2026 con los datos corregidos, 10 pools, dos años, 30/90 d, funding real
+hora a hora): cubierto del todo, sesgo 0 $ a 30 d, P10–P90 76 %, dispersión real ÷2 (563 → 274 $), P10 real
+3.943 → 4.544 $; liquidaciones prudentes (0,9 % frente a 0 %). Pruebas en `tests/test_perpetuo.py`. Las comisiones a 90–180 días se
+revisaron con dos años: ×0,96–0,97 en todos los plazos, sin corrección. Revisión H2 (27-nov-2026): con los
+datos corregidos se rehicieron comisiones, horquilla, stop y perpetuo; ninguna constante se sale de su banda
+(comisiones, mediana por pool ×0,95–1,02; P10–P90 77–91 %) y no se cambia nada.
 
 **Historial de tus simulaciones (`simulador_historial`).** Cada rango simulado en la pantalla se guarda en
 `out/simulador_historial.jsonl` (local, fuera de git; uno por pool, plazo, capital, rango y día). Al vencer,

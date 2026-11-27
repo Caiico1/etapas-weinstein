@@ -607,16 +607,19 @@ mejor vigilar y decidir al salirse.
 probabilidad de perder pasa del 40 % al 55 %. Con ±20 % ningún stop compensa: el rango ya aguanta más y
 el stop solo salta en caídas que luego se recuperan a menudo.
 
-**Validación (25-nov-2026):** 16 pools de referencia, aperturas de dos años, 7, 30 y 90 días, ±10 % y
-±20 %, con los datos de antes de cada apertura:
+**Validación (27-nov-2026, con los datos corregidos):** 17 pools de referencia, aperturas de dos años,
+7, 30 y 90 días, ±10 % y ±20 %, con los datos de antes de cada apertura:
 
 | ±10 %, por 5.000 $ | 30 días | 90 días |
 |---|---|---|
-| Salta (stop al salirse), simulado / real | 52 % / 46 % | 74 % / 70 % |
-| P10 real de las aperturas, sin stop → con stop | 3.881 → 4.453 $ | 3.516 → 4.321 $ |
-| Frente a sin stop, año lateral (hasta ago-2025), simulado / real | −45 / −38 $ | −125 / −119 $ |
-| Frente a sin stop, año bajista (desde ago-2025), simulado / real | −29 / +87 $ | −67 / +230 $ |
-| Real dentro del P10–P90 con stop | 82 % | 84 % |
+| Salta (stop al salirse), simulado / real | 52 % / 49 % | 75 % / 72 % |
+| P10 real de las aperturas, sin stop → con stop | 3.906 → 4.351 $ | 3.450 → 4.318 $ |
+| Frente a sin stop, año lateral (hasta oct-2025), simulado / real | −43 / −46 $ | −107 / −112 $ |
+| Frente a sin stop, año bajista (desde oct-2025), simulado / real | −24 / +68 $ | −62 / +214 $ |
+| Real dentro del P10–P90 con stop | 80 % | 85 % |
+
+(La validación del 25-nov, con los datos sin corregir, daba lo mismo: 52 % / 46 % y P10 de 3.881 a
+4.453 $. Los pools de referencia son grandes y apenas tenían horas vacías o picos.)
 
 Las veces que salta y el recorte de la cola salen como en la realidad. Lo que cuesta de media depende de
 la tendencia, que el simulador no apuesta: en el año lateral coincidió; en el bajista, el stop ganó. A
@@ -717,18 +720,20 @@ del corto (apalancamiento 1,14x, porque ETH llegó a subir un 77 % en 30 días).
 pool y 1.471 $ de margen. De media +12 $ frente a no cubrirlo; el escenario malo (P10) pasa de 4.157 $ a
 4.606 $; si ETH cae un 30 %, de −1.297 $ a −409 $; si sube un 30 %, de +289 $ a −296 $.
 
-**Validación (25-nov-2026):** 10 pools activo/estable de ETH y BTC, aperturas de dos años, 30 y 90 días,
+**Validación (25-nov-2026, revisada el 27-nov):** 10 pools activo/estable de ETH y BTC, aperturas de dos años, 30 y 90 días,
 ±10 % y ±20 %; los escenarios con el funding medio de 90 días antes de cada apertura y lo real con el
 funding real de Bybit hora a hora:
 
 | Por 5.000 $, ±10 % | 30 días | 90 días |
 |---|---|---|
-| Error de la media, sin cubrir / cubierto del todo | −51 / −4 $ | −141 / −44 $ |
-| Real dentro del P10–P90, cubierto del todo | 76 % | 95 % |
-| Dispersión real (desviación), sin cubrir → cubierto | 565 → 295 $ | 825 → 378 $ |
-| P10 real, sin cubrir → cubierto | 4.028 → 4.567 $ | 3.733 → 4.268 $ |
-| Liquidaciones, simuladas / reales | 0,8 % / 0 % | 4,9 % / 1,8 % |
-| Funding, simulado / real | 6,8 / 5,6 $ | 17,6 / 14,5 $ |
+| Error de la media, sin cubrir / cubierto del todo | −40 / 0 $ | −122 / −11 $ |
+| Real dentro del P10–P90, cubierto del todo | 76 % | 91 % |
+| Dispersión real (desviación), sin cubrir → cubierto | 563 → 274 $ | 773 → 365 $ |
+| P10 real, sin cubrir → cubierto | 3.943 → 4.544 $ | 3.800 → 4.302 $ |
+| Liquidaciones, simuladas / reales | 0,9 % / 0 % | 4,7 % / 3,3 % |
+| Funding, simulado / real | 6,6 / 5,5 $ | 16,5 / 13,6 $ |
+
+(Revalidado el 27-nov-2026 con los datos corregidos; el 25-nov daba sesgo −4 $ y dispersión 565 → 295 $.)
 
 Acierta la media y reduce de verdad el riesgo: la dispersión real baja a la mitad. Las liquidaciones salen
 prudentes y el funding algo optimista (un 20 %, pocos dólares).
@@ -1014,6 +1019,14 @@ xychart-beta
   comprobación a **7, 30, 90 y 180 días**. Si algún plazo se desvía de su banda, abre una issue en
   GitHub, que llega por correo, con lo que hay que mirar: a 30 días, el ajuste propuesto; a los demás
   plazos, revisar el exponente de la corrección por plazo.
+- **Revisión con los datos corregidos (H2, 27-nov-2026).** Tras quitar las horas de pool vacío y los
+  picos de comisiones, se rehicieron con el mismo método las validaciones de comisiones, horquilla, stop y
+  cobertura con perpetuo (24 pools de referencia, dos años de aperturas). Ninguna constante se sale de su
+  banda y no se cambia nada: comisiones reales ÷ simuladas, mediana por pool ×0,95–1,02 en todos los plazos
+  (total ×0,90–0,97; a 7 días es lo que más baja, ×0,90–0,91, por las semanas recientes de comisiones bajas);
+  real dentro del P10–P90 el 77–81 % a 7–30 días, 87 % a 90 y 91 % a 180. Los pools de referencia son
+  grandes: solo dos tenían picos anulados (6 horas y 1 hora) y quitar sus horas vacías apenas mueve las
+  cifras, así que las validaciones anteriores apenas estaban contaminadas, al contrario que el ranking.
 - **Comisiones a 90–180 días: sin corrección (25-nov-2026).** Con dos años de aperturas (16 pools, ±10 % y
   ±20 %), las comisiones reales salen ×0,96–0,97 de las simuladas en todos los plazos de 7 a 180 días. El
   ×0,80 de 180 días de la tabla es de este año: el anterior salió ×1,05, así que corregirlo empeoraría el
