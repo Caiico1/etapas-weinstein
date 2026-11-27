@@ -402,6 +402,8 @@ resultado lo bastante para justificar esa complejidad.
 
 ## Simulador de pools a futuro (rango fijo)
 
+> **Para empezar: [Guía de Usuario](Guia%20Usuario%20Simulador.md)** (paso a paso, sin tecnicismos, con glosario).
+>
 > **Toda la documentación está en la [Guía Simulador](Guia%20Simulador.md)**: el manual de la pantalla, con
 > capturas, y un [apéndice técnico](Guia%20Simulador.md#14-apéndice-técnico-para-quien-toca-el-código) con
 > módulos, constantes y validaciones. Aquí solo el resumen.

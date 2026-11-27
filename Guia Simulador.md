@@ -1,5 +1,8 @@
 # Guía del Simulador de pools
 
+> **¿Empiezas?** Lee antes la **[Guía de Usuario](Guia%20Usuario%20Simulador.md)**: paso a paso, sin tecnicismos y
+> con un glosario de todos los términos. Esta es la guía de referencia, con el detalle y las validaciones.
+
 Manual de uso de la pantalla **Simulador de pools**: qué hace, qué significa cada campo y cada columna, y
 cómo leer los resultados para elegir un rango.
 
