@@ -1076,22 +1076,50 @@ def recomendacion(res: dict) -> dict:
     sr = ref["valor_final"] - cap if ref else 0.0
     best = max(rs, key=vm)
     f = res.get("fiabilidad") or {"nivel": "alta", "motivos": []}
-    asset = (res.get("par") or "/").split("/")[0]
+    asset, quote = ((res.get("par") or "/") + "/").split("/")[:2]
+    # Par con una estable (ETH/USDC, EURC/USDC): el resultado total está en dólares y se compara con la referencia
+    # sin riesgo. Par sin estable (cbBTC/WBTC, CLANKER/WETH): el total lo mueve sobre todo el precio de los dos
+    # tokens, así que se decide por lo que AÑADE el pool frente a guardarlos, que debe superar lo que rendirían
+    # esos tokens sin pool (staking / Aave) y, como mínimo, la referencia sin riesgo.
+    con_estable = quote.upper() in {x.upper() for x in B._STABLE} | {"USD"}
+    pegado = asset.upper() == quote.upper()                    # cbBTC/WBTC, wstETH/WETH…: el precio es la relación
+    par_pool = ((res.get("pool") or {}).get("label") or res.get("par") or "").split(" ")[0]
+    nombre = par_pool if pegado else asset                       # de qué precio hablan los textos
     hacer, no_hacer, mejorar = [], [], []
-    buenos = [r for r in rs if vm(r) > 0 and gana(r) > sr]
+    rd = (res.get("plan") or {}).get("rendir") or {}
+    rinden = max(0.0, rd.get("vs_mantener") or 0.0)              # lo que rendirían los tokens sin pool
+    liston = max(rinden, sr)
+    if con_estable:
+        buenos = [r for r in rs if vm(r) > 0 and gana(r) > sr]
+    else:
+        buenos = [r for r in rs if vm(r) > liston]
 
     if buenos:
-        b = max(buenos, key=gana)
+        b = max(buenos, key=gana if con_estable else vm)
         perdida_mala = cap - b["valor_final"]["p10"]
-        veredicto = ("favorable",
-                     f"Con estos números, abrir el rango {b['texto']} tiene sentido: de media gana {_usd(vm(b))} frente a "
+        if con_estable:
+            txt_v = (f"Con estos números, abrir el rango {b['texto']} tiene sentido: de media gana {_usd(vm(b))} frente a "
                      f"guardar los tokens y {_usd(gana(b))} en total en {dias} días"
                      + (f", más que los {_usd(sr)} sin riesgo de {ref['nombre']}." if ref else "."))
+        else:
+            txt_v = (f"Con estos números, abrir el rango {b['texto']} tiene sentido: de media añade {_usd(vm(b))} frente a "
+                     f"guardar los tokens en {dias} días, más que lo que rendirían sin pool ({_usd(rinden)})"
+                     + (f" y que los {_usd(sr)} sin riesgo de {ref['nombre']}" if ref else "")
+                     + f". El resultado total ({_usd(gana(b))}) depende sobre todo del precio de {par_pool}.")
+        veredicto = ("favorable", txt_v)
         hacer.append(f"Abre {b['texto']} ({_fmt_price(b['lo'])}–{_fmt_price(b['hi'])}) solo con dinero que puedas "
                      f"permitirte ver caer: en un escenario malo (1 de cada 10) pierdes unos {_usd(perdida_mala, False)}.")
         hacer.append("Vigílala: apúntala en posiciones.txt para que la rutina te avise si se acerca a un borde, y "
                      "revísala a mitad de plazo con «Mis posiciones».")
         hacer.append(AVISO_FAVORABLE)
+    elif not con_estable and any(vm(r) > 0 for r in rs):
+        t = max(rs, key=vm)
+        veredicto = ("desfavorable",
+                     f"Con estos números no abriría ninguno de estos rangos. El mejor, {t['texto']}, añade de media "
+                     f"{_usd(vm(t))} frente a guardar los tokens, y no supera "
+                     + (f"los {_usd(sr)} sin riesgo de {ref['nombre']} (sin pool, esos tokens rendirían {_usd(rinden)})"
+                        if ref and sr >= rinden else f"lo que esos tokens rendirían sin pool ({_usd(rinden)})")
+                     + f". Lo que ganes o pierdas dependerá del precio de {par_pool}, no del pool.")
     elif any(r["valor_final"]["p50"] > cap for r in rs):
         t = max(rs, key=lambda r: r["valor_final"]["p50"])
         veredicto = ("desfavorable",
@@ -1172,14 +1200,17 @@ def recomendacion(res: dict) -> dict:
     if es:
         bd, casos = es["bordes"], {c["caso"]: c for c in es["casos"]}
         cae, peor = casos.get("Cae 30 %"), next((c for c in es["casos"] if c.get("real")), None)
-        txt = (f"Ten clara tu salida con {foco}: deja de cobrar si {asset} baja a {_fmt_price(bd['abajo']['precio'])} "
+        txt = (f"Ten clara tu salida con {foco}: deja de cobrar si {nombre} baja a {_fmt_price(bd['abajo']['precio'])} "
                f"(la posición valdría {_usd(bd['abajo']['valor'], False)}, {_usd(bd['abajo']['resultado'])}) o sube a "
                f"{_fmt_price(bd['arriba']['precio'])}. Ese precio de abajo es un buen sitio para el stop.")
-        if cae:
+        if cae and not pegado:                    # en un par pegado una caída del 30 % de la relación no tiene sentido
             txt += (f" Si {asset} cae un 30 % en el plazo, el resultado sería de {_usd(cae['resultado'])} "
                     f"({_usd(cae['vs_mantener'])} frente a guardar los tokens)")
             txt += (f"; en el peor tramo real del pool ({asset} {_mov(peor['movimiento'])} en {dias} días desde el "
                     f"{pd.Timestamp(peor['desde']):%d-%m-%Y}), de {_usd(peor['resultado'])}." if peor else ".")
+        elif peor:
+            txt += (f" En el peor tramo real del pool ({nombre} {_mov(peor['movimiento'])} en {dias} días desde el "
+                    f"{pd.Timestamp(peor['desde']):%d-%m-%Y}), el resultado habría sido de {_usd(peor['resultado'])}.")
         sl = next((x for x in (res.get("salida") or {}).get("rangos", []) if x["texto"] == foco), None)
         if sl:
             sg = next((x for x in sl["reglas"] if x["regla"] == sl["sugerido"]), None)

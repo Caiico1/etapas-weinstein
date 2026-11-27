@@ -16,7 +16,9 @@ from . import backtest as B
 from . import perpetuo as P
 from . import simulador as S
 
-ANCHOS_PLAN = (0.05, 0.10, 0.15, 0.20, 0.30, 0.50)
+# Los estrechos (±0,2–3 %) solo entran en pools de poca volatilidad (pares pegados o de divisas): `candidatos`
+# exige el mínimo fiable del pool (3 × la volatilidad diaria), que en los 24 pools de la validación es ≥ ±3,9 %.
+ANCHOS_PLAN = (0.002, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05, 0.10, 0.15, 0.20, 0.30, 0.50)
 STOPS_PLAN = {"sin stop": None, "al salirse por abajo": 0.0, "5 % bajo el borde": 0.05}
 COBERTURAS_PLAN = (0.0, 0.5, 1.0)
 CRITERIOS_PLAN = ("media", "prudente")

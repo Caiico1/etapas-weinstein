@@ -419,7 +419,8 @@ si cubrirse con el perpetuo; aquí se prueban **a la vez**, en los mismos escena
   media. Solo se propone si sube el P10 al menos un 2 % del capital; si no, la pantalla dice que protegerse
   no compensa.
 
-Se prueban los anchos desde el mínimo fiable del pool hasta ±50 % (±5, 10, 15, 20, 30 y 50 %), sin stop, con
+Se prueban los anchos desde el mínimo fiable del pool hasta ±50 % (±0,2, 0,5, 1, 1,5, 2, 3, 5, 10, 15, 20, 30 y
+50 %; los estrechos solo entran en pools de poca volatilidad, como los pares pegados o de divisas), sin stop, con
 stop al salirse por abajo o un 5 % por debajo, y, si el par tiene perpetuo en Bybit, sin cubrir, a medias o
 del todo. Si salta el stop, se cierran a la vez el pool (a dólares) y el corto; después los dólares rinden
 la referencia sin riesgo. La tabla enseña los dos planes, el de partida (±10 % sin stop ni cobertura) y los
@@ -937,6 +938,12 @@ malos con su peso. Un rango «compensa» solo si cumple las dos cosas a la vez:
 
 1. de media gana a **guardar los tokens** (no estar en el pool);
 2. de media gana más que la **referencia sin riesgo** (USDC en Aave en la misma red).
+
+En un **par sin estable** (cbBTC/WBTC, CLANKER/WETH, WBTC/WETH…) el resultado total lo mueve sobre todo el
+precio de los dos tokens, así que no sirve compararlo con USDC. Ahí «compensa» solo si **lo que añade el pool
+frente a guardar los tokens** supera lo que esos tokens rendirían sin pool (staking o Aave) y, como mínimo, la
+referencia sin riesgo. En los pares pegados (cbBTC/WBTC, wstETH/WETH…) los textos hablan del par y no del
+activo, y no usan el caso «cae un 30 %», que no tiene sentido para la relación entre los dos.
 
 | Bloque | Qué dice |
 |---|---|

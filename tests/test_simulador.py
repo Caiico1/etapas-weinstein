@@ -480,6 +480,38 @@ def test_recomendacion_da_la_salida_con_el_estres():
     assert "1.522" in t and "−374 $" in t.replace("-", "−") and "cae un 30 %" in t and "−45 %" in t and "07-01-2026" in t
 
 
+def test_recomendacion_par_sin_estable_decide_por_lo_que_anade_el_pool():
+    """cbBTC/WBTC: el total lo mueve el precio de BTC; «compensa» solo si lo que añade el pool supera lo que
+    rendirían los tokens sin pool y la referencia sin riesgo. Y los textos hablan del par, sin «cae un 30 %»."""
+    est = {"rangos": [{"texto": "±0.2%", "bordes": {"abajo": {"precio": 0.9997, "valor": 4987, "resultado": -13},
+                                                     "arriba": {"precio": 1.0038, "valor": 5010, "resultado": 10}},
+                       "casos": [{"caso": "Cae 30 %", "resultado": -1502, "vs_mantener": -739, "real": False},
+                                 {"caso": "Peor tramo real (30 d)", "resultado": -1205, "real": True,
+                                  "movimiento": -0.001, "desde": "2025-10-22"}]}]}
+    base = {"capital": 5000, "dias": 30, "par": "BTC/BTC", "pool": {"label": "cbBTC/WBTC 0.01%"},
+            "nivel_reciente": 1.0, "escala_vol": 1.0, "sin_riesgo": {"nombre": "USDC en Aave", "valor_final": 5013},
+            "fiabilidad": {"nivel": "alta", "motivos": []},
+            "mejor_ancho": {"texto": "±0.2%", "vs_media": 1, "es_el_mas_ancho": False},
+            "rangos": [_rg_reco("±0.2%", 5004, 5035, 1, p10=4284)], "estres": est,
+            "plan": {"rendir": {"vs_mantener": 0.0}}}
+    r = S.recomendacion(base)
+    assert r["veredicto"] == "desfavorable" and "cbBTC/WBTC" in r["texto"] and "no supera" in r["texto"]
+    t = next(x for x in r["mejorar"] if "ten clara tu salida" in x)
+    assert "cbBTC/WBTC baja a" in t and "cae un 30 %" not in t and "peor tramo real" in t
+    # con un pool que sí añade más que el listón, compensa y lo dice en esos términos
+    base["rangos"] = [_rg_reco("±0.2%", 5004, 5060, 40, p10=4284)]
+    r = S.recomendacion(base)
+    assert r["veredicto"] == "favorable" and "añade +40 $" in r["texto"] and "depende sobre todo del precio" in r["texto"]
+
+
+def test_plan_prueba_anchos_estrechos_solo_si_el_pool_lo_permite():
+    from etapas import plan as PL
+    assert min(PL.ANCHOS_PLAN) < 0.01
+    h = S.features(POOL, _walk(n=24 * 60, g0=1e-20, g1=1e-12))
+    mn = S.ancho_minimo(h)
+    assert all(w >= mn for w, _, _ in PL.candidatos(h, False))
+
+
 # --- regla de salida (stop) -------------------------------------------------------------------
 
 @pytest.mark.parametrize("pool", [POOL, POOL_INV])
