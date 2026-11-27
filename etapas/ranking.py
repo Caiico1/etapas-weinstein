@@ -72,6 +72,11 @@ def puntuar(p: dict, dias: int = 30, capital: float = 5000, escenarios: int = 50
     fiab = S.fiabilidad(h, dias, S.calibracion_pool(p["pool_id"], p["chain"], dias))
     if fiab["nivel"] == "baja":
         return base | {"excluido": "fiabilidad baja: " + "; ".join(fiab["motivos"])[:160]}
+    from .contraste_revert import BANDA_BAJA, de_pool
+    cr = de_pool(p["pool_id"], p["chain"])
+    if cr and (cr.get("ratio_mes") or 0) > BANDA_BAJA[1]:          # H3: comisiones recientes infladas
+        return base | {"excluido": f"en el último mes MetaProDB le cuenta ×{cr['ratio_mes']:.2f} las comisiones "
+                                   "de Revert (horas fantasma recientes)".replace(".", ",")}
     paths = S.bootstrap(h, dias * 24, escenarios)
     best = S.mejor_rango(S.barrido(h, paths, capital), "media")
     if (not np.isfinite(best["vs_media"]) or best["comisiones"] / capital > MAX_COMISIONES_MES * dias / 30

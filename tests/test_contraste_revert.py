@@ -37,3 +37,11 @@ def test_pocas_comisiones_no_dan_cociente(monkeypatch):
     pool = {"chain": "ethereum", "pool_id": "0xabc", "label": "x", "version": "v4"}
     r = C.contrastar(pool, Cliente({"year": 500, "month": 50}), con=None, cargar=lambda pid, ch: H())
     assert r["ano"]["ratio"] is None
+
+
+def test_recientes_cuadra_en_el_ano_pero_no_en_el_mes():
+    from etapas import contraste_revert as CR
+    r = {"pools": {"a": {"label": "A", "chain": "base", "version": "v3", "ano": {"ratio": 1.0}, "mes": {"ratio": 2.5}},
+                   "b": {"label": "B", "chain": "base", "version": "v3", "ano": {"ratio": 3.0}, "mes": {"ratio": 3.0}},
+                   "c": {"label": "C", "chain": "base", "version": "v3", "ano": {"ratio": 1.0}, "mes": {"ratio": 1.1}}}}
+    assert [x["label"] for x in CR.recientes(r)] == ["A"]

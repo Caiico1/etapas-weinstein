@@ -575,7 +575,7 @@ encima de `MAX_CONCENTRACION` (0,30), `quitar_picos` anula las horas de más de 
 eventos propios) con las de MetaProDB ya limpias: grandes ×0,77–0,95 (Revert suma los LP just-in-time),
 pegados ×20–270 tal cual y ×0,8–1,3 sin picos; 163 pools, mediana ×0,94, 16 % fuera de ×0,5–2 (sobre todo
 v4). Va al semáforo (fuera de ×0,5–2 baja; de ×0,67–1,5 media), se guarda en `out/contraste_revert.json` y lo
-refresca `simulador_aviso` cada mes. Pruebas en `tests/test_contraste_revert.py`.
+refresca `simulador_aviso` cada mes. H3: también el último mes (`recientes`): si cuadra en el año pero el mes sale de ×0,5–2, fiabilidad media; si el mes sale > ×2 (MetaProDB infla), fuera del ranking (ENA/WETH, líder del ranking, tenía una hora con 420.122 $ de 525.000 $ del mes). Pruebas en `tests/test_contraste_revert.py`.
 
 **Mis posiciones abiertas (`etapas/posiciones_lp.py`, pantalla y consola).** Lee las posiciones abiertas
 del MCP público de Revert (`https://mcp.revert.finance/mcp`, JSON-RPC por HTTP, solo `get_positions`)

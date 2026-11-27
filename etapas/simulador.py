@@ -973,6 +973,12 @@ def fiabilidad(h: History, dias: int, calib: dict | None = None, revert: dict | 
             malos.append((0, txt))
         else:
             buenos.append(txt)
+        rm = revert.get("ratio_mes")
+        if rm and BANDA_BAJA[0] <= r <= BANDA_BAJA[1] and not BANDA_BAJA[0] <= rm <= BANDA_BAJA[1]:
+            # H3: cuadra en el año pero no en el último mes; el simulador usa el nivel de los últimos 90 días
+            malos.append((0, (f"en el último mes sus comisiones en MetaProDB son ×{rm:.2f} de las de Revert: algo "
+                              "reciente no cuadra y el nivel de comisiones que usa el simulador puede estar "
+                              + ("inflado" if rm > 1 else "bajo")).replace(".", ",")))
     if dias > 90:
         malos.append((0, f"a {dias} días el error por pool es mayor (en comisiones, la mitad de los pools se "
                          "desvía más de un 20 %)"))

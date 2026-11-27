@@ -160,6 +160,14 @@ contaminadas por las comisiones fantasma, que aparecían a la vez en lo simulado
   El contraste entra en el **semáforo**: fuera de ×0,5–2, fiabilidad baja («sus comisiones no son
   fiables»); fuera de ×0,67–1,5, media. Se guarda en `out/contraste_revert.json` y lo refresca la tarea
   mensual de calibración. Desde la consola: `python -m etapas.contraste_revert`.
+- **El último mes también (H3, 27-nov-2026).** El contraste guarda también las comisiones del último mes.
+  Si un pool cuadra en el año pero en el último mes sale fuera de ×0,5–2, el semáforo baja a fiabilidad
+  media («algo reciente no cuadra»): el simulador usa el nivel de comisiones de los últimos 90 días, así
+  que una hora fantasma reciente lo infla. Y si MetaProDB le cuenta más del doble que Revert en el último
+  mes, sale del ranking. Primer caso: ENA/WETH 0,3 % de Ethereum, que encabezaba el ranking, tenía en
+  noviembre de 2026 **una sola hora con 420.122 $ de comisiones de 525.000 $ en todo el mes** (×2,30 de
+  Revert en el mes, ×1,34 en el año). El 27-nov había 7 pools así (UNI/USDC, ONDO/WETH, USDC/USDT 0,01 %,
+  ENA/WETH, USDe/USDC v4, cbBTC/WBTC de Arbitrum y RLUSD/USDC).
 - **Datos sospechosos que queden:** el ranking también excluye los pools cuyo mejor rango cobraría más de un
   15 % al mes o cuyo «vs mantener» supera el capital.
 

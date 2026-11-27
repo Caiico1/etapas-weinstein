@@ -51,3 +51,14 @@ def test_lanzar_en_segundo_plano(monkeypatch, tmp_path):
             break
         espera.wait(0.05)
     assert not R.estado()["calculando"] and json.loads((tmp_path / "r.json").read_text())["fecha"] == "x"
+
+
+def test_excluye_comisiones_recientes_infladas_frente_a_revert(monkeypatch):
+    from etapas import contraste_revert as CR
+    monkeypatch.setattr(S, "calibracion_pool", lambda *a, **k: None)
+    d = _walk(n=24 * 400, g0=1e-20, g1=4e-11, seed=1)
+    d["tvl_usd"] = 5e6
+    h = S.features(POOL, d)
+    monkeypatch.setattr(CR, "de_pool", lambda pid, ch, path=None: {"ratio": 1.0, "ratio_mes": 2.4})
+    r = R.puntuar(_p("x"), 30, 5000, 100, cargar=lambda pid, ch: h)
+    assert "último mes" in r["excluido"] and "×2,40" in r["excluido"]

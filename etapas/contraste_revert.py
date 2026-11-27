@@ -112,7 +112,20 @@ def de_pool(pool_id: str, chain: str, path: Path | None = None) -> dict | None:
     if not x or not (x.get("ano") or {}).get("ratio"):
         return None
     return {"ratio": x["ano"]["ratio"], "revert": x["ano"]["revert"], "metaprodb": x["ano"]["metaprodb"],
+            "ratio_mes": (x.get("mes") or {}).get("ratio"),
             "fecha": r.get("fecha"), "picos_quitados": x.get("picos_quitados", False)}
+
+
+def recientes(r: dict) -> list[dict]:
+    """H3: pools que cuadran con Revert en el año pero no en el último mes (fuera de la banda baja): algo
+    reciente no cuadra (un cambio en el pool, en el ingestor o comisiones fantasma nuevas)."""
+    lo, hi = BANDA_BAJA
+    out = []
+    for x in r.get("pools", {}).values():
+        a, m = (x.get("ano") or {}).get("ratio"), (x.get("mes") or {}).get("ratio")
+        if a and m and lo <= a <= hi and not lo <= m <= hi:
+            out.append({"label": x["label"], "chain": x["chain"], "version": x.get("version"), "ano": a, "mes": m})
+    return sorted(out, key=lambda x: -abs(np.log(x["mes"])))
 
 
 def resumen(r: dict) -> dict:
@@ -141,6 +154,11 @@ def main(argv: list[str] | None = None) -> int:
     for ratio, label, chain, ver in filas:
         if not BANDA_MEDIA[0] <= ratio <= BANDA_MEDIA[1]:
             print(f"  ×{ratio:8.2f}  {label} ({chain} {ver})")
+    rec = recientes(r)
+    if rec:
+        print(f"{len(rec)} pools cuadran en el año pero no en el último mes (fuera de ×0,5–2):")
+        for x in rec:
+            print(f"  año ×{x['ano']:.2f}, mes ×{x['mes']:.2f}  {x['label']} ({x['chain']} {x['version']})")
     return 0
 
 

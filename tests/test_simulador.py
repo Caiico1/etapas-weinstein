@@ -623,6 +623,10 @@ def test_fiabilidad_con_el_contraste_de_revert():
     assert nivel(0.9)["nivel"] == "alta" and "×0,90" in nivel(0.9)["a_favor"][0]
     assert nivel(1.6)["nivel"] == "media" and nivel(0.6)["nivel"] == "media"
     assert nivel(3.0)["nivel"] == "baja" and "no son fiables" in nivel(3.0)["motivos"][0]
+    # H3: cuadra en el año pero no en el último mes → media, con el motivo
+    f = S.fiabilidad(h, 30, revert={"ratio": 0.9, "ratio_mes": 2.4})
+    assert f["nivel"] == "media" and any("último mes" in m and "inflado" in m for m in f["motivos"])
+    assert S.fiabilidad(h, 30, revert={"ratio": 0.9, "ratio_mes": 1.3})["nivel"] == "alta"
 
 
 def test_load_hours_quita_las_horas_con_el_pool_vacio(monkeypatch):
